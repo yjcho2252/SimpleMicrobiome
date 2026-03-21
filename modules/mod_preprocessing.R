@@ -21,17 +21,17 @@ mod_preprocessing_ui <- function(id) {
               verbatimTextOutput(ns("sample_count_info"))
           ),
           hr(),
-          h4(icon("vial"), "Normalization"),
-          selectInput(ns("norm_method"), "Select Transformation Method:",
-                      choices = c(
-                        "TSS (Total Sum Scaling / %)" = "tss",
-                        "CLR (Centered Log-Ratio)" = "clr",
-                        "None (Raw Counts / Filtered)" = "none"
-                      ),
-                      selected = "tss"
-          ),
-          uiOutput(ns("norm_description")),
-          hr(),
+          # h4(icon("vial"), "Normalization"),
+          # selectInput(ns("norm_method"), "Select Transformation Method:",
+          #             choices = c(
+          #               "TSS (Total Sum Scaling / %)" = "tss",
+          #               "CLR (Centered Log-Ratio)" = "clr",
+          #               "None (Raw Counts / Filtered)" = "none"
+          #             ),
+          #             selected = "tss"
+          # ),
+          # uiOutput(ns("norm_description")),
+          # hr(),
           actionButton(ns("reset_selection"), "Reset: Select All Samples", 
                        icon = icon("sync"), class = "btn-secondary btn-sm", width = "100%")
         )
@@ -94,7 +94,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
         ), 
         options = list(
           dom = 'ftip', 
-          pageLength = 10,
+          pageLength = 20,
           columnDefs = list(list(className = 'dt-center', targets = "_all"))
         )
       ) 

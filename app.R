@@ -29,7 +29,6 @@ ui <- page_navbar(
     primary = "#2c3e50"
   ),
   
-  # 상단 탭 구성
   nav_panel(
     title = "Data Loading", 
     icon = icon("upload"),
@@ -40,8 +39,7 @@ ui <- page_navbar(
     icon = icon("sliders"),
     mod_preprocessing_ui("mod_preprocessing")
   ),
-  
-  # 분석 메뉴 그룹화 (드롭다운으로 묶어 전문성 향상)
+    
   nav_menu(
     title = "Visualization",
     icon = icon("chart-line"),
