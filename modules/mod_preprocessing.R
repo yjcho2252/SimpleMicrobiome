@@ -2,68 +2,75 @@ library(shiny)
 library(phyloseq)
 library(dplyr)
 library(DT)
-library(microbiome) # CLR 변환 최적화를 위해 권장
 
-### UI 함수 -------------------------------------------------------------------
+## UI
 mod_preprocessing_ui <- function(id) {
   ns <- NS(id)
   tagList(
     fluidRow(
       column(
-        width = 4,
+        width = 3,
         wellPanel(
           h4(icon("filter"), "Sample Selection Overview"),
-          p("All samples are selected by default."),
-          p("Unselect rows in the table to **EXCLUDE** samples."),
+          p("All samples over 2000 reads are selected by default."),
+          p("Unselect rows in the table to EXCLUDE samples.", style = "margin-top: -8px;"),
           hr(),
-          # 정보 표시창
           div(style = "background: #f8f9fa; padding: 10px; border-radius: 5px;",
               verbatimTextOutput(ns("sample_count_info"))
           ),
           hr(),
-          # h4(icon("vial"), "Normalization"),
-          # selectInput(ns("norm_method"), "Select Transformation Method:",
-          #             choices = c(
-          #               "TSS (Total Sum Scaling / %)" = "tss",
-          #               "CLR (Centered Log-Ratio)" = "clr",
-          #               "None (Raw Counts / Filtered)" = "none"
-          #             ),
-          #             selected = "tss"
-          # ),
-          # uiOutput(ns("norm_description")),
-          # hr(),
+          h5(icon("layer-group"), "Group-based Toggle"),
+          selectInput(ns("toggle_group_var"), "Group variable", choices = NULL),
+          selectizeInput(
+            ns("toggle_group_levels"),
+            "Group level",
+            choices = NULL,
+            multiple = FALSE,
+            options = list(
+              placeholder = "Select one level",
+              plugins = list("remove_button")
+            )
+          ),
+          actionButton(
+            ns("toggle_group_selection"),
+            "Toggle Selected Group Rows",
+            icon = icon("exchange-alt"),
+            class = "btn-secondary btn-sm",
+            style = "font-size: 12px;",
+            width = "100%"
+          ),
+          hr(),
           actionButton(ns("reset_selection"), "Reset: Select All Samples", 
-                       icon = icon("sync"), class = "btn-secondary btn-sm", width = "100%")
+                       icon = icon("sync"), class = "btn-secondary btn-sm", style = "font-size: 12px;", width = "100%")
         )
       ),
       column(
-        width = 8,
+        width = 9,
         wellPanel(
           h4(icon("list-check"), "Individual Sample Selection (Click to Toggle)"),
-          # 샘플 목록 표
-          DTOutput(ns("sample_table"))
+          div(
+            style = "width: 100%; overflow-x: auto;",
+            DTOutput(ns("sample_table"))
+          )
         )
       )
     )
   )
 }
 
-### Server 함수 ---------------------------------------------------------------
+## Server
 mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
   moduleServer(id, function(input, output, session) {
     
-    # 내부 반응형 값 저장소
     ps_filtered <- reactiveVal(NULL) 
     ps_normalized <- reactiveVal(NULL) 
     
-    # 1. 메타데이터 가공 (테이블용)
     meta_df_for_dt <- reactive({
       req(ps_obj_initial())
       ps <- ps_obj_initial()
       
       meta_df <- data.frame(phyloseq::sample_data(ps))
       
-      # SampleID 중복 제거 및 정리
       if ("SampleID" %in% colnames(meta_df)) {
         meta_df <- meta_df %>% dplyr::select(-SampleID)
       }
@@ -79,55 +86,142 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       return(df_for_dt)
     })
     
-    # 2. 샘플 테이블 렌더링 (초기 전체 선택 핵심)
     output$sample_table <- renderDT({
       df <- meta_df_for_dt()
       req(df)
+      initial_selected_rows <- which(df$`Read Count` >= 2000)
       
       datatable(
         df,
         rownames = FALSE, 
         selection = list(
           mode = 'multiple', 
-          selected = seq_len(nrow(df)), # <--- 모든 행을 초기에 강제 선택
+          selected = initial_selected_rows,
           target = 'row'
         ), 
         options = list(
           dom = 'ftip', 
           pageLength = 20,
-          columnDefs = list(list(className = 'dt-center', targets = "_all"))
+          columnDefs = list(list(className = 'dt-center', targets = "_all")),
+          scrollX = TRUE
+        ),
+        callback = JS(
+          sprintf(
+            "table.on('init.dt', function() {
+               var container = $(table.table().container());
+               var filterBox = container.find('div.dataTables_filter');
+               if (filterBox.find('.toggle-selection-btn').length === 0) {
+                 $('<button type=\"button\" class=\"btn btn-secondary btn-sm toggle-selection-btn\" style=\"margin-left:8px;\">Toggle Selection</button>')
+                   .appendTo(filterBox)
+                   .on('click', function() {
+                     Shiny.setInputValue('%s', Date.now(), {priority: 'event'});
+                   });
+               }
+             });",
+            session$ns("toggle_selection_all")
+          )
         )
       ) 
     }, server = TRUE)
     
-    # 3. 리셋 버튼 (전체 다시 선택)
     proxy <- DT::dataTableProxy('sample_table')
+    
+    observe({
+      req(meta_df_for_dt())
+      df <- meta_df_for_dt()
+      group_vars <- setdiff(colnames(df), c("SampleID", "Read Count"))
+      selected_var <- input$toggle_group_var
+      if (is.null(selected_var) || !selected_var %in% group_vars) {
+        selected_var <- if (length(group_vars) > 0) group_vars[1] else NULL
+      }
+      updateSelectInput(session, "toggle_group_var", choices = group_vars, selected = selected_var)
+    })
+    
+    observeEvent(list(meta_df_for_dt(), input$toggle_group_var), {
+      df <- meta_df_for_dt()
+      validate(need(input$toggle_group_var %in% colnames(df), "Selected group variable is not available."))
+      
+      level_choices <- sort(unique(as.character(df[[input$toggle_group_var]])))
+      level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      selected_levels <- isolate(input$toggle_group_levels)
+      if (is.null(selected_levels) || !nzchar(selected_levels)) selected_levels <- character(0)
+      selected_level_safe <- NULL
+      if (length(selected_levels) > 0 && selected_levels[1] %in% level_choices) {
+        selected_level_safe <- selected_levels[1]
+      }
+      updateSelectizeInput(
+        session,
+        "toggle_group_levels",
+        choices = level_choices,
+        selected = selected_level_safe,
+        server = TRUE
+      )
+    }, ignoreInit = FALSE)
+    
     observeEvent(input$reset_selection, {
       req(meta_df_for_dt())
       DT::selectRows(proxy, seq_len(nrow(meta_df_for_dt())))
     })
     
-    # 4. 필터링 로직 (사용자 선택 반영)
-    observe({
-      # 탭이 활성화되거나 선택이 바뀔 때 실행
+    observeEvent(input$toggle_selection_all, {
+      req(meta_df_for_dt())
+      target_rows <- input$sample_table_rows_all
+      if (is.null(target_rows) || length(target_rows) == 0) {
+        return()
+      }
+      current_selected <- input$sample_table_rows_selected
+      if (is.null(current_selected)) {
+        current_selected <- integer(0)
+      }
+      
+      selected_in_target <- intersect(current_selected, target_rows)
+      toggled_target <- setdiff(target_rows, selected_in_target)
+      selected_outside_target <- setdiff(current_selected, target_rows)
+      new_selected <- sort(unique(c(selected_outside_target, toggled_target)))
+      
+      DT::selectRows(proxy, new_selected)
+    })
+    
+    observeEvent(input$toggle_group_selection, {
+      req(meta_df_for_dt(), input$toggle_group_var)
+      selected_level <- input$toggle_group_levels
+      validate(need(!is.null(selected_level) && nzchar(selected_level),
+                    "Select one group level to toggle."))
+      
+      df <- meta_df_for_dt()
+      validate(need(input$toggle_group_var %in% colnames(df), "Selected group variable is not available."))
+      
+      group_values <- as.character(df[[input$toggle_group_var]])
+      target_rows <- which(group_values == selected_level)
+      validate(need(length(target_rows) > 0, "No rows match the selected group level."))
+      
+      current_selected <- input$sample_table_rows_selected
+      if (is.null(current_selected)) {
+        current_selected <- integer(0)
+      }
+      
+      selected_in_target <- intersect(current_selected, target_rows)
+      toggled_target <- setdiff(target_rows, selected_in_target)
+      selected_outside_target <- setdiff(current_selected, target_rows)
+      new_selected <- sort(unique(c(selected_outside_target, toggled_target)))
+      
+      DT::selectRows(proxy, new_selected)
+    })
+    
+    observe({      
       req(ps_obj_initial(), meta_df_for_dt())
       
-      # 만약 아무것도 선택되지 않았다면 (초기 로딩 포함) 초기 데이터 사용 시도
       selected_indices <- input$sample_table_rows_selected
       
       if (is.null(selected_indices)) {
-        # 초기 상태: 모든 샘플 포함
         ps_new <- ps_obj_initial()
       } else if (length(selected_indices) == 0) {
-        # 사용자가 수동으로 다 해제했을 때
         ps_new <- phyloseq::prune_samples(character(0), ps_obj_initial())
       } else {
-        # 선택된 샘플만 추출
         selected_samples <- meta_df_for_dt()$SampleID[selected_indices]
         ps_new <- phyloseq::prune_samples(selected_samples, ps_obj_initial())
       }
       
-      # Abundance가 0인 Taxa 제거 (Data Clean-up)
       if (phyloseq::nsamples(ps_new) > 0) {
         ps_new <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps_new) > 0, ps_new)
       }
@@ -135,59 +229,37 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       ps_filtered(ps_new)
     })
     
-    # 5. 정규화 로직
     observe({
       ps_obj <- ps_filtered()
       req(ps_obj)
-      
-      method <- input$norm_method
       
       if (phyloseq::nsamples(ps_obj) == 0) {
         ps_normalized(ps_obj)
         return()
       }
+      if (phyloseq::ntaxa(ps_obj) == 0) {
+        ps_normalized(ps_obj)
+        return()
+      }
       
-      # 정규화 계산
       ps_res <- tryCatch({
-        if (method == "clr") {
-          # microbiome 패키지가 있다면 최우선 사용 (안전함)
-          if (requireNamespace("microbiome", quietly = TRUE)) {
-            microbiome::transform(ps_obj, "clr")
-          } else {
-            # ALDEx2 방식 (기존 코드 유지)
-            otu_mat <- as.matrix(phyloseq::otu_table(ps_obj))
-            # ALDEx2는 sample이 열이어야 함
-            if (!phyloseq::taxa_are_rows(ps_obj)) otu_mat <- t(otu_mat)
-            clr_res <- ALDEx2::aldex.clr(otu_mat, mc.samples = 1, verbose = FALSE)
-            # 간략화된 CLR 추출 로직
-            clr_mat <- sapply(clr_res@analysisData, function(x) x[,1])
-            ps_t <- ps_obj
-            phyloseq::otu_table(ps_t) <- phyloseq::otu_table(clr_mat, taxa_are_rows = TRUE)
-            ps_t
-          }
-        } else if (method == "tss") {
-          phyloseq::transform_sample_counts(ps_obj, function(x) (x / sum(x)) * 100)
-        } else {
-          ps_obj
-        }
+        phyloseq::transform_sample_counts(ps_obj, function(x) (x / sum(x)) * 100)
       }, error = function(e) {
-        showNotification(paste("Transformation Error:", e$message), type = "error")
+        showNotification(
+          paste0(
+            "Transformation Error: ", e$message,
+            " [method=tss",
+            ", nsamples=", phyloseq::nsamples(ps_obj),
+            ", ntaxa=", phyloseq::ntaxa(ps_obj), "]"
+          ),
+          type = "error"
+        )
         ps_obj
       })
       
       ps_normalized(ps_res)
     })
-    
-    # 6. UI 보조 출력
-    output$norm_description <- renderUI({
-      desc <- switch(input$norm_method,
-                     "tss" = "Relative abundance (%). Best for Barplots.",
-                     "clr" = "Log-ratio transform. Best for PCA/ANCOM.",
-                     "none" = "Filtered raw counts."
-      )
-      p(em(desc), style = "color: gray; font-size: 0.9em;")
-    })
-    
+
     output$sample_count_info <- renderText({
       req(ps_obj_initial())
       ps_now <- ps_normalized()
@@ -202,7 +274,6 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       res
     })
     
-    # 7. 모듈 외부로 데이터 전달
     return(list(
       ps_filtered_raw = ps_filtered,
       ps_normalized = ps_normalized

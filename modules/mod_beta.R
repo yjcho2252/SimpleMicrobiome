@@ -1,10 +1,12 @@
-### UI 함수
+## UI
 mod_beta_ui <- function(id) {
   ns <- NS(id)
   tagList(
     sidebarLayout(
       sidebarPanel(
         width = 3,
+        h4(icon("project-diagram"), "Beta Diversity"),
+        hr(),
         
         uiOutput(ns("primary_group_selector")),
         uiOutput(ns("primary_color_controls")),
@@ -12,7 +14,7 @@ mod_beta_ui <- function(id) {
         uiOutput(ns("secondary_group_selector")),
         hr(),
         
-        h4("Plot Settings"),
+        h4(icon("sliders"), "Plot Settings"),
         numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 600, min = 300, max = 1500, step = 50),
         numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 450, min = 300, max = 1500, step = 50),
         hr(),
@@ -23,15 +25,10 @@ mod_beta_ui <- function(id) {
         
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
         
-        # --- Vector/Taxa Analysis 섹션 전체 제거 ---
-        # hr(),
-        # h4("Vector/Taxa Analysis"),
-        # ...
-        # ----------------------------------------------
         
         hr(),
         
-        h4("Axis Limits"),
+        h4(icon("arrows-alt-h"), "Axis Limits"),
         helpText("Leave blank to use automatic limits."),
         numericInput(ns("x_min"), "X-axis minimum:", value = NA),
         numericInput(ns("x_max"), "X-axis maximum:", value = NA),
@@ -44,24 +41,39 @@ mod_beta_ui <- function(id) {
         tabsetPanel(
           id = ns("beta_tabs"),
           tabPanel("PCoA (Bray-Curtis)",
-                   h4("PCoA - Bray Curtis Ordination"),
-                   downloadButton(ns("download_pcoa"), "Download PCoA Plot (PNG)"),
-                   tags$div(style = "margin-bottom: 15px;"),
-                   uiOutput(ns("pcoa_plot_ui"))
+                   h4(icon("chart-scatter"), "PCoA - Bray Curtis Ordination", style = "margin-top: 12px;"),
+                   uiOutput(ns("pcoa_plot_ui")),
+                   tags$div(style = "margin-top: 12px;",
+                            downloadButton(
+                              ns("download_pcoa"),
+                              "Download PCoA Plot (PNG)",
+                              style = "width: 240px; height: 40px; font-size: 12px; display: flex; align-items: center; justify-content: center;"
+                            ))
           ),
           tabPanel("NMDS (Bray-Curtis)",
-                   h4("NMDS - Bray Curtis Ordination"),
-                   actionButton(ns("redraw_nmds"), "Redraw Plot"),
-                   downloadButton(ns("download_nmds"), "Download NMDS Plot (PNG)"),
-                   tags$div(style = "margin-bottom: 15px;"),
-                   uiOutput(ns("nmds_plot_ui"))
+                   h4(icon("chart-line"), "NMDS - Bray Curtis Ordination", style = "margin-top: 12px;"),
+                   uiOutput(ns("nmds_plot_ui")),
+                   tags$div(
+                     style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
+                     downloadButton(
+                       ns("download_nmds"),
+                       "Download NMDS Plot (PNG)",
+                       style = "width: 240px; height: 40px; font-size: 12px; display: flex; align-items: center; justify-content: center;"
+                     ),
+                     actionButton(
+                       ns("redraw_nmds"),
+                       "Redraw Plot",
+                       style = "width: 240px; height: 40px; font-size: 12px;"
+                     )
+                   )
           )
         ),
         
         hr(),
-        h4("Statistical Test: PERMANOVA Results"),
+        h4(icon("flask"), "Statistical Test: PERMANOVA Results"),
         div(
           class = "alert alert-info",
+          style = "width: 600px; height: 180px; overflow-y: auto; font-size: 12px;",
           htmlOutput(ns("permanova_results_out"))
         )
       )
@@ -69,7 +81,7 @@ mod_beta_ui <- function(id) {
   )
 }
 
-### Server 함수
+## Server
 mod_beta_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
     
@@ -135,7 +147,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       })
       
-      do.call(tagList, c(list(hr(), h4("Primary Group Colors")), controls, list(hr())))
+      do.call(tagList, c(list(hr(), h4(icon("palette"), "Primary Group Colors")), controls, list(hr())))
     })
     
     primary_color_map <- reactive({
@@ -208,8 +220,6 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
            y = build_limits(input$y_min, input$y_max))
     })
     
-    # ⭐ 제거됨: group_vector_data reactive
-    # ⭐ 제거됨: taxa_vector_data reactive
     
     pcoa_ordination_reactive <- reactive({
       req(ps_plot_obj())
@@ -258,7 +268,6 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         p <- p + ggplot2::geom_text(data = plot_data, mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = SampleID), color = "black", size = 3, hjust = 0.2, vjust = 0.5)
       }
       
-      # ⭐ 제거됨: Vector/Taxa plotting logic (input$show_vectors)
       
       limits <- axis_limits()
       if (!is.null(limits$x) || !is.null(limits$y)) {
@@ -314,7 +323,6 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         p <- p + ggplot2::geom_text(data = plot_data, mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = SampleID), color = "black", size = 3, hjust = -0.1, vjust = 0.5)
       }
       
-      # ⭐ 제거됨: Vector/Taxa plotting logic (input$show_vectors)
       
       limits <- axis_limits()
       if (!is.null(limits$x) || !is.null(limits$y)) {

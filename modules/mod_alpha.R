@@ -1,19 +1,23 @@
+## UI
 mod_alpha_ui <- function(id) {
   ns <- NS(id)
   tagList(
     sidebarLayout(
       sidebarPanel(
+        width = 3,
+        h4(icon("circle-nodes"), "Alpha Diversity"),
+        hr(),
         uiOutput(ns("local_group_selector")),
         uiOutput(ns("secondary_group_selector")), 
         hr(),
         
-        h4("Index Selection"),
+        h4(icon("list-check"), "Index Selection"),
         checkboxGroupInput(ns("alpha_methods"), "Indices:",
                            choices = c("Observed", "Chao1", "Shannon", "Simpson"),
                            selected = c("Chao1", "Shannon")),
         
         hr(),
-        h4("Visualization Options"),
+        h4(icon("sliders"), "Visualization Options"),
         checkboxInput(ns("show_p_val"), "Show P-value Comparison Bars", value = TRUE),
         
         conditionalPanel(
@@ -27,13 +31,14 @@ mod_alpha_ui <- function(id) {
                     selected = "wilcox.test"),
         
         hr(),
-        h4("Plot Dimensions (px)"),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions (px)"),
         numericInput(ns("plot_width"), "Plot Width:", value = 800, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height:", value = 600, min = 300, step = 50),
         
         hr(),
-        downloadButton(ns("download_alpha_plot"), "Download Plot (PNG)"),
-        downloadButton(ns("download_alpha_data"), "Download Data (TSV)")
+        h5(icon("download"), "Download"),
+        downloadButton(ns("download_alpha_plot"), "Download Plot (PNG)", style = "font-size: 12px;"),
+        downloadButton(ns("download_alpha_data"), "Download Data (TSV)", style = "font-size: 12px;")
       ),
       mainPanel(
         plotOutput(ns("alpha_plot_out"), height = "auto"), 
@@ -44,6 +49,7 @@ mod_alpha_ui <- function(id) {
   )
 }
 
+## Server
 mod_alpha_server <- function(id, ps_obj, meta_cols) { 
   moduleServer(id, function(input, output, session) {
     
@@ -100,7 +106,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
         ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7) +
         ggplot2::geom_jitter(width = 0.1, alpha = 0.5, size = 1.5) +
         ggplot2::theme_bw() +
-        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.35))) 
+        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.45)))
       
       if (is_secondary) {
         p <- p + ggplot2::facet_grid(stats::as.formula(paste("Alpha_Index ~", primary_col)), scales = "free_y")
@@ -110,9 +116,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
       
       if (input$show_p_val && num_groups >= 2) {
         all_comps <- utils::combn(group_levels, 2, simplify = FALSE)
-        
-        # ⭐ 유의미성 여부에 따른 라벨 형식 결정 ⭐
-        current_label <- if(input$only_sig) "p.signif" else "p.format"
+        current_label <- if (input$only_sig) "p.signif" else "p.format"
         
         if (input$only_sig) {
           final_comps <- list()
@@ -123,7 +127,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
               d1 <- sub_data$Value[sub_data[[x_axis_col]] == comp[1]]
               d2 <- sub_data$Value[sub_data[[x_axis_col]] == comp[2]]
               if (length(d1) > 1 && length(d2) > 1) {
-                p_val <- if(input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value
+                p_val <- if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value
                 if (!is.na(p_val) && p_val < 0.05) { is_sig_anywhere <- TRUE; break }
               }
             }
@@ -137,20 +141,27 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
           p <- p + ggpubr::stat_compare_means(
             comparisons = final_comps,
             method = input$stat_method,
-            label = current_label, # ⭐ 동적 라벨링 적용
-            step.increase = 0.15,
+            label = current_label,
+            step.increase = 0.08,
+            label.y.npc = 0.96,
             hide.ns = input$only_sig,
-            digits = 3             # p-value 수치 표시 시 소수점 3자리까지
+            digits = 3
           )
         }
         
         p <- p + ggpubr::stat_compare_means(
-          method = if(num_groups > 2) "kruskal.test" else input$stat_method,
-          label.y.npc = "bottom",
+          method = if (num_groups > 2) "kruskal.test" else input$stat_method,
+          label.x.npc = "center",
+          label.y.npc = 1.03,
           size = 3
         )
       }
-      return(p + ggplot2::theme(legend.position = "none", strip.background = ggplot2::element_rect(fill = "white")))
+      return(
+        p + ggplot2::theme(
+          legend.position = "none",
+          strip.background = ggplot2::element_rect(fill = "white")
+        )
+      )
     })
     
     output$alpha_plot_out <- renderPlot({ alpha_plot_reactive() },

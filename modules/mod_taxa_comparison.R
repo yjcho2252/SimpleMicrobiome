@@ -3,13 +3,15 @@ library(ggplot2)
 library(dplyr)
 library(phyloseq)
 
-## UI Module ------------------------------------------------------------------
+## UI
 mod_taxa_comparison_ui <- function(id) {
   ns <- NS(id)
   tagList(
     sidebarLayout(
       sidebarPanel(
         width = 3,
+        h4(icon("square-poll-vertical"), "Taxa Comparison"),
+        hr(),
         uiOutput(ns("group_selector")),
         selectInput(
           ns("tax_level"),
@@ -28,26 +30,26 @@ mod_taxa_comparison_ui <- function(id) {
           )
         ),
         selectInput(
-          ns("plot_mode"),
-          "Plot Mode:",
+          ns("abundance_mode"),
+          "Abundance Scale:",
           choices = c(
-            "Multiple Taxa (Facet)" = "multi",
-            "Single Taxa Detail (p-value)" = "single"
+            "CLR Abundance" = "clr",
+            "Relative Abundance (%)" = "relative",
+            "Log TSS (log10(% + 1))" = "log_tss"
           ),
-          selected = "single"
+          selected = "clr"
         ),
-        uiOutput(ns("single_taxa_selector")),
-        checkboxInput(ns("use_relative"), "Use Relative Abundance (%)", value = FALSE),
         hr(),
-        numericInput(ns("plot_width"), "Plot Width (px):", value = 1100, min = 400, step = 50),
-        numericInput(ns("plot_height"), "Plot Height (px):", value = 700, min = 300, step = 50),
+        numericInput(ns("plot_width"), "Plot Width (px):", value = 400, min = 300, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px):", value = 500, min = 300, step = 50),
         hr(),
-        downloadButton(ns("download_taxa_plot"), "Download Plot (PNG)"),
-        downloadButton(ns("download_taxa_data"), "Download Data (TSV)"),
+        h5(icon("download"), "Download Plot"),
+        downloadButton(ns("download_taxa_plot"), "Download Plot (PNG)", style = "font-size: 12px;"),
+        downloadButton(ns("download_taxa_data"), "Download Data (TSV)", style = "font-size: 12px;"),
         hr(),
-        h5("Download Full Matrix"),
-        downloadButton(ns("download_raw_matrix"), "Raw Counts Matrix (TSV)"),
-        downloadButton(ns("download_rel_matrix"), "Relative Abundance Matrix (TSV)")
+        h5(icon("table"), "Download Full Matrix"),
+        downloadButton(ns("download_raw_matrix"), "Raw Counts Matrix (TSV)", style = "font-size: 12px;"),
+        downloadButton(ns("download_rel_matrix"), "Relative Abundance Matrix (TSV)", style = "font-size: 12px;")
       ),
       mainPanel(
         width = 9,
@@ -57,11 +59,10 @@ mod_taxa_comparison_ui <- function(id) {
   )
 }
 
-## Server Module --------------------------------------------------------------
+## Server
 mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
     
-    # 1. Grouping Variable Selector UI 생성
     output$group_selector <- renderUI({
       req(meta_cols())
       group_choices <- setdiff(meta_cols(), "SampleID")
@@ -74,14 +75,12 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       )
     })
     
-    # 2. Phyloseq 객체를 긴 형태(Long format)의 데이터프레임으로 변환
     taxa_long_data <- reactive({
       req(ps_obj(), input$group_var, input$tax_level)
       
       ps <- ps_obj()
       tax_level <- input$tax_level
       
-      # Taxonomy Glom (ASV가 아닌 경우)
       if (tax_level != "ASV") {
         validate(need(!is.null(phyloseq::tax_table(ps)), "Taxonomy table is missing."))
         tax_ranks <- phyloseq::rank_names(ps)
@@ -89,14 +88,17 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         ps <- phyloseq::tax_glom(ps, taxrank = tax_level, NArm = FALSE)
       }
       
-      # Relative Abundance 변환 (필요시)
-      if (isTRUE(input$use_relative)) {
+      abundance_mode <- input$abundance_mode
+      if (is.null(abundance_mode) || !abundance_mode %in% c("clr", "relative", "log_tss")) {
+        abundance_mode <- "clr"
+      }
+
+      if (abundance_mode %in% c("relative", "log_tss")) {
         ps <- phyloseq::transform_sample_counts(ps, function(x) {
           s <- sum(x)
           if (s == 0) x else x / s
         })
       } else {
-        # raw count 대신 CLR 변환값 사용 (pseudo-count +1)
         otu_mat <- as(phyloseq::otu_table(ps), "matrix")
         if (!phyloseq::taxa_are_rows(ps)) {
           otu_mat <- t(otu_mat)
@@ -124,7 +126,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       
       df <- phyloseq::psmelt(ps)
       
-      # 메타데이터 컬럼명 복원 (make.names 방지)
       meta_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
       for (meta_col in colnames(meta_df)) {
         syntactic_col <- make.names(meta_col)
@@ -133,7 +134,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         }
       }
       
-      # Taxa 이름 정리
       if (tax_level == "ASV") {
         df$Taxa <- as.character(df$OTU)
       } else {
@@ -142,12 +142,16 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         df$Taxa <- taxa_values
       }
       
-      # 그룹 설정 및 NA 필터링
       df$Group <- as.factor(df[[input$group_var]])
       df <- df[!is.na(df$Group), , drop = FALSE]
       
-      # Plot용 Abundance 값 계산
-      df$AbundancePlot <- if (isTRUE(input$use_relative)) df$Abundance * 100 else df$Abundance
+      if (abundance_mode == "relative") {
+        df$AbundancePlot <- df$Abundance * 100
+      } else if (abundance_mode == "log_tss") {
+        df$AbundancePlot <- log10((df$Abundance * 100) + 1)
+      } else {
+        df$AbundancePlot <- df$Abundance
+      }
       df <- df[is.finite(df$AbundancePlot), , drop = FALSE]
       
       df
@@ -209,7 +213,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       list(raw = raw_df, rel = rel_df)
     })
     
-    # 3. Taxa 선택 UI 업데이트 (상위 8개 자동 선택)
     observeEvent(list(taxa_long_data(), input$tax_level), {
       df <- taxa_long_data()
       taxa_summary <- df %>%
@@ -220,12 +223,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       taxa_choices <- as.character(taxa_summary$Taxa)
       taxa_choices <- taxa_choices[!is.na(taxa_choices) & nzchar(taxa_choices)]
       
-      # 초기값이 없으면 상위 8개를 기본값으로 세팅
       current_selected <- input$taxa_selected
       default_selected <- if (length(current_selected) > 0) {
         intersect(current_selected, taxa_choices)
       } else {
-        head(taxa_choices, min(8, length(taxa_choices)))
+        head(taxa_choices, 1)
+      }
+      if (length(default_selected) == 0 && length(taxa_choices) > 0) {
+        default_selected <- head(taxa_choices, 1)
       }
       
       updateSelectizeInput(
@@ -237,50 +242,19 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       )
     })
     
-    # 4. Single Taxa Selector UI 생성
-    output$single_taxa_selector <- renderUI({
-      req(input$plot_mode == "single", taxa_long_data())
-      df <- taxa_long_data()
-      taxa_choices <- df %>%
-        dplyr::group_by(Taxa) %>%
-        dplyr::summarise(mean_abundance = mean(AbundancePlot, na.rm = TRUE), .groups = "drop") %>%
-        dplyr::arrange(dplyr::desc(mean_abundance)) %>%
-        dplyr::pull(Taxa) %>%
-        as.character()
-      
-      selectInput(
-        session$ns("single_taxa_selected"),
-        "Single Taxa:",
-        choices = taxa_choices,
-        selected = head(taxa_choices, 1)
-      )
-    })
-    
-    # 5. 최종 플롯용 데이터 필터링 (초기 로딩 시 Fallback 포함)
     taxa_plot_data <- reactive({
-      req(taxa_long_data(), input$group_var, input$plot_mode)
+      req(taxa_long_data(), input$group_var)
       df <- taxa_long_data()
-      
-      # UI가 로딩되기 전이라도 데이터를 표시하기 위한 Fallback 로직
-      if (input$plot_mode == "single") {
-        selected_taxa <- if (is.null(input$single_taxa_selected) || input$single_taxa_selected == "") {
-          head(unique(df$Taxa), 1)
-        } else {
-          input$single_taxa_selected
-        }
+      selected_taxa <- if (is.null(input$taxa_selected) || length(input$taxa_selected) == 0) {
+        character(0)
       } else {
-        selected_taxa <- if (is.null(input$taxa_selected) || length(input$taxa_selected) == 0) {
-          head(unique(df$Taxa), 8)
-        } else {
-          input$taxa_selected
-        }
+        input$taxa_selected
       }
       
-      validate(need(length(selected_taxa) > 0, "Wait for taxa selection..."))
+      validate(need(length(selected_taxa) > 0, "Select at least one taxa in 'Taxa to Compare'."))
       
       df_sub <- df[df$Taxa %in% selected_taxa, , drop = FALSE]
       
-      # 중앙값 기준 정렬
       taxa_order <- df_sub %>%
         dplyr::group_by(Taxa) %>%
         dplyr::summarise(med = stats::median(AbundancePlot, na.rm = TRUE), .groups = "drop") %>%
@@ -291,45 +265,72 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       df_sub
     })
     
-    # 6. 플롯 생성 로직
     taxa_plot_reactive <- reactive({
       req(taxa_plot_data())
       df <- taxa_plot_data()
-      y_label <- if (isTRUE(input$use_relative)) "Relative Abundance (%)" else "CLR Abundance"
-      
-      if (input$plot_mode == "single") {
-        n_groups <- length(unique(df$Group))
-        p_val <- tryCatch({
-          if (n_groups == 2) {
-            stats::wilcox.test(AbundancePlot ~ Group, data = df)$p.value
-          } else if (n_groups > 2) {
-            stats::kruskal.test(AbundancePlot ~ Group, data = df)$p.value
-          } else { NA_real_ }
-        }, error = function(e) NA_real_)
-        
-        p_label <- if (is.na(p_val)) "p-value: NA" else paste0("p-value = ", format(p_val, digits = 3))
-        y_annot <- max(df$AbundancePlot, na.rm = TRUE) * 1.1
-        
-        ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
-          ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.65) +
-          ggplot2::geom_jitter(width = 0.18, alpha = 0.7, size = 1.8) +
-          ggplot2::theme_bw() +
-          ggplot2::labs(title = paste0("Taxa Detail: ", unique(df$Taxa)[1]),
-                        subtitle = p_label, x = input$group_var, y = y_label) +
-          ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 25, hjust = 1))
-      } else {
-        ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
-          ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.65) +
-          ggplot2::geom_jitter(width = 0.15, alpha = 0.6, size = 1.5) +
-          ggplot2::facet_wrap(~ Taxa, scales = "free_y") +
-          ggplot2::theme_bw() +
-          ggplot2::labs(title = paste0("Taxa Comparison: ", input$tax_level),
-                        x = input$group_var, y = y_label) +
-          ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 25, hjust = 1))
+      abundance_mode <- input$abundance_mode
+      if (is.null(abundance_mode) || !abundance_mode %in% c("clr", "relative", "log_tss")) {
+        abundance_mode <- "clr"
       }
+      y_label <- switch(
+        abundance_mode,
+        "relative" = "Relative Abundance (%)",
+        "log_tss" = "Log TSS (log10(% + 1))",
+        "CLR Abundance"
+      )
+      integer_breaks <- function(x) {
+        if (length(x) == 0 || all(!is.finite(x))) {
+          return(NULL)
+        }
+        rng <- range(x, na.rm = TRUE)
+        lo <- 0
+        hi <- ceiling(rng[2])
+        if (!is.finite(lo) || !is.finite(hi)) {
+          return(NULL)
+        }
+        if (hi < 0) {
+          hi <- 0
+        }
+        if (lo == hi) {
+          return(lo)
+        }
+        step <- max(1, ceiling((hi - lo) / 6))
+        seq(lo, hi, by = step)
+      }
+      
+      pval_df <- df %>%
+        dplyr::group_by(Taxa) %>%
+        dplyr::group_modify(~{
+          n_groups <- dplyr::n_distinct(.x$Group)
+          p_val <- tryCatch({
+            if (n_groups == 2) {
+              stats::wilcox.test(AbundancePlot ~ Group, data = .x)$p.value
+            } else if (n_groups > 2) {
+              stats::kruskal.test(AbundancePlot ~ Group, data = .x)$p.value
+            } else {
+              NA_real_
+            }
+          }, error = function(e) NA_real_)
+          dplyr::tibble(
+            p_label = if (is.na(p_val)) "p-value: NA" else paste0("p-value = ", format(p_val, digits = 3))
+          )
+        }) %>%
+        dplyr::ungroup()
+      
+      df <- dplyr::left_join(df, pval_df, by = "Taxa")
+      df$Taxa_with_p <- paste0(as.character(df$Taxa), "\n", df$p_label)
+      
+      ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
+        ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.65) +
+        ggplot2::geom_jitter(width = 0.15, alpha = 0.6, size = 1.5) +
+        ggplot2::scale_y_continuous(breaks = integer_breaks, limits = c(0, NA)) +
+        ggplot2::facet_wrap(~ Taxa_with_p, scales = "free_y") +
+        ggplot2::theme_bw() +
+        ggplot2::labs(title = paste0("Taxa Comparison: ", input$tax_level),
+                      x = input$group_var, y = y_label) +
+        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 25, hjust = 1))
     })
     
-    # 7. Outputs (Plot & Download)
     output$taxa_comparison_plot <- renderPlot({
       taxa_plot_reactive()
     }, height = function() { req(input$plot_height); input$plot_height },
@@ -351,7 +352,13 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
           "SampleID",
           input$group_var,
           "Taxa",
-          if (isTRUE(input$use_relative)) "Relative_Abundance_percent" else "CLR_Abundance"
+          if (input$abundance_mode == "relative") {
+            "Relative_Abundance_percent"
+          } else if (input$abundance_mode == "log_tss") {
+            "Log_TSS_log10_percent_plus1"
+          } else {
+            "CLR_Abundance"
+          }
         )
         readr::write_tsv(out_df, file)
       }

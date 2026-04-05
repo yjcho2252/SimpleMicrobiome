@@ -1,23 +1,34 @@
-# --- UI 함수 ---
+## UI
 mod_fileload_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    h4("Data Input (Raw Counts Required)"),
+    tags$style(HTML(sprintf(
+      "#%s .btn-file, #%s .btn-file, #%s .btn-file { font-size: 11px; }",
+      ns("otu_file"), ns("tax_file"), ns("meta_file")
+    ))),
+    h4(icon("upload"), "Data Input"),
     fileInput(ns("otu_file"),
-              "1. ASV/OTU Abundance Matrix (.csv/.tsv)",
+              "1. ASV/OTU Abundance Matrix",
               accept = c(".csv", ".tsv", ".txt")),
     fileInput(ns("tax_file"),
-              "2. Taxonomy Table (.csv/.tsv)",
+              "2. Taxonomy Table",
               accept = c(".csv", ".tsv", ".txt")),
     fileInput(ns("meta_file"),
-              "3. Metadata File (.csv/.tsv)", 
+              "3. Metadata File", 
               accept = c(".csv", ".tsv", ".txt")),
+    actionButton(
+      ns("reset_all_app"),
+      "Reset All",
+      icon = icon("rotate-left"),
+      class = "btn btn-warning btn-sm",
+      style = "font-size: 12px; padding: 3px 8px; width: 110px; display: inline-block; white-space: nowrap;"
+    ),
     hr(),
     uiOutput(ns("load_status"))
   )
 }
 
-# --- Server 함수 ---
+## Server
 mod_fileload_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     
@@ -61,7 +72,7 @@ mod_fileload_server <- function(id) {
       if(is.null(otu_df) | is.null(tax_df) | is.null(meta_df)) {
         load_completed(FALSE)
         
-        showNotification("🚨 파일 읽기 오류: 파일 형식(csv/tsv), 구분자 또는 데이터 구조를 확인하세요. 모든 파일을 다시 업로드해주세요.",
+        showNotification("File read error: Check file format (csv/tsv), delimiter, and data structure. Please re-upload all files.",
                          type = "error", duration = 10)
         return(NULL)
       }
@@ -76,16 +87,49 @@ mod_fileload_server <- function(id) {
         
         ps <- phyloseq(otu, tax, meta)
         
-        ps <- prune_samples(sample_names(otu) %in% sample_names(meta), ps)
-        ps <- prune_taxa(taxa_names(otu) %in% taxa_names(tax), ps)
+        sample_keep <- sample_names(otu) %in% sample_names(meta)
+        if (length(sample_keep) != nsamples(ps)) {
+          stop(sprintf(
+            paste0(
+              "Length mismatch before prune_samples: ",
+              "length(sample_names(otu) %%in%% sample_names(meta)) = %d, ",
+              "nsamples(ps) = %d, ",
+              "length(sample_names(otu)) = %d, ",
+              "length(sample_names(meta)) = %d"
+            ),
+            length(sample_keep),
+            nsamples(ps),
+            length(sample_names(otu)),
+            length(sample_names(meta))
+          ))
+        }
+        ps <- prune_samples(sample_keep, ps)
+
+        taxa_keep <- taxa_names(otu) %in% taxa_names(tax)
+        if (length(taxa_keep) != ntaxa(ps)) {
+          stop(sprintf(
+            paste0(
+              "Length mismatch before prune_taxa: ",
+              "length(taxa_names(otu) %%in%% taxa_names(tax)) = %d, ",
+              "ntaxa(ps) = %d, ",
+              "length(taxa_names(otu)) = %d, ",
+              "length(taxa_names(tax)) = %d"
+            ),
+            length(taxa_keep),
+            ntaxa(ps),
+            length(taxa_names(otu)),
+            length(taxa_names(tax))
+          ))
+        }
+        ps <- prune_taxa(taxa_keep, ps)
         ps <- prune_taxa(taxa_sums(ps) > 0, ps)
         ps <- prune_samples(sample_sums(ps) > 0, ps)
         
         if (ntaxa(ps) == 0) {
-          stop("Taxa가 유효하지 않습니다. ASV/Taxonomy ID 일치를 확인하세요. (0 taxa)")
+          stop("No valid taxa found. Check ASV/Taxonomy ID matching. (0 taxa)")
         }
         if (nsamples(ps) == 0) {
-          stop("샘플이 유효하지 않습니다. Sample ID 일치를 확인하세요. (0 samples)")
+          stop("No valid samples found. Check Sample ID matching. (0 samples)")
         }
         
         load_completed(TRUE) 
@@ -94,8 +138,8 @@ mod_fileload_server <- function(id) {
         
       }, error = function(e) {
         load_completed(FALSE)
-        showNotification(paste0("❌ 데이터 생성 오류: ", conditionMessage(e),
-                                "\n파일 내용을 확인하고 다시 시도하세요."),
+        showNotification(paste0("Data construction error: ", conditionMessage(e),
+                                "\nPlease verify file contents and try again."),
                          type = "error", duration = 10)
         return(NULL)
       })
@@ -108,7 +152,7 @@ mod_fileload_server <- function(id) {
     
     output$load_status <- renderUI({
       if (load_completed()) {
-        h5(span("✅ Go to Data Preprocessing Tab!", style = "color: green; font-weight: bold;"))
+        h5(span("✅ Go to Preprocessing Tab!", style = "color: green; font-weight: bold;"))
       } else {
         h5(span("Waiting for 3 data files...", style = "color: orange;"))
       }
