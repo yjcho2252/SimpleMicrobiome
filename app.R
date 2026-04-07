@@ -9,9 +9,20 @@ library(ALDEx2)
 library(ggpubr)
 library(shinyWidgets)
 library(Maaslin2)
+library(microbiome)
+library(cluster)
+library(vegan)
+
+app_script_path <- tryCatch({
+  normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)
+}, error = function(e) {
+  ""
+})
+app_root_dir <- if (nzchar(app_script_path)) dirname(app_script_path) else normalizePath(getwd(), winslash = "/", mustWork = FALSE)
+options(simplemicrobiome_app_dir = app_root_dir)
 
 ## Module Loading
-mod_path <- file.path(getwd(), "modules")
+mod_path <- file.path(app_root_dir, "modules")
 if (dir.exists(mod_path)) {
   list.files(mod_path, pattern = "\\.R$", full.names = TRUE) %>% walk(source)
 }
@@ -39,6 +50,52 @@ ui <- page_navbar(
       .btn, .form-control, .form-select, .form-check-label { font-size: 13px; }
       h4 { font-size: 1.15rem; }
       h5 { font-size: 1.02rem; }
+      .sidebar h4 { font-size: 0.98rem; margin-bottom: 0.45rem; }
+      .sidebar h5 { font-size: 0.90rem; }
+      .sidebar .control-label,
+      .sidebar .form-label,
+      .sidebar .form-check-label,
+      .sidebar .help-block,
+      .sidebar details summary,
+      .sidebar .shiny-input-container label {
+        font-size: 12px;
+      }
+      .sidebar .form-control,
+      .sidebar .form-select,
+      .sidebar .btn {
+        font-size: 12px;
+      }
+      .selectize-input,
+      .selectize-dropdown,
+      .selectize-dropdown-content,
+      .selectize-dropdown .option,
+      .selectize-dropdown .optgroup-header,
+      select.form-select,
+      .irs-grid-text {
+        font-size: 12px !important;
+      }
+      .sidebar .shiny-input-container {
+        margin-bottom: 5px;
+      }
+      .sidebar .control-label,
+      .sidebar .form-label {
+        margin-bottom: 2px;
+      }
+      .sidebar .form-group {
+        margin-bottom: 5px;
+      }
+      .sidebar hr {
+        margin-top: 6px;
+        margin-bottom: 6px;
+      }
+      .sidebar details {
+        margin-top: 2px !important;
+        margin-bottom: 2px !important;
+      }
+      .sidebar .help-block {
+        margin-top: 1px;
+        margin-bottom: 2px;
+      }
     "))
   ),
   
@@ -71,13 +128,15 @@ ui <- page_navbar(
     title = "Differential Abundance",
     icon = icon("vial-circle-check"),
     nav_panel("ANCOM-BC2", icon = icon("vial-circle-check"), mod_ancom_ui("mod_ancom")),
-    nav_panel("MaAsLin2", icon = icon("flask"), mod_maaslin2_ui("mod_maaslin2"))
+    nav_panel("MaAsLin2", icon = icon("flask"), mod_maaslin2_ui("mod_maaslin2")),
+    nav_panel("Random Forest", icon = icon("tree"), mod_randomforest_ui("mod_randomforest"))
   ),
   
   nav_menu(
     title = "Network Analysis",
     icon = icon("diagram-project"),
-    nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi"))
+    nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi")),
+    nav_panel("SparCC", icon = icon("share-nodes"), mod_sparcc_ui("mod_sparcc"))
   )
   
 )
@@ -102,15 +161,16 @@ server <- function(input, output, session) {
   preprocessing_data <- mod_preprocessing_server("mod_preprocessing", ps_obj_initial, active_tab)
   
   ps_obj_filtered_raw <- preprocessing_data$ps_filtered_raw
-  ps_obj_normalized <- preprocessing_data$ps_normalized
   
-  mod_barplot_server("mod_barplot", ps_obj_normalized, meta_vars)
+  mod_barplot_server("mod_barplot", ps_obj_filtered_raw, meta_vars)
   mod_taxa_comparison_server("mod_taxa_comparison", ps_obj_filtered_raw, meta_vars)
   mod_alpha_server("mod_alpha", ps_obj_filtered_raw, meta_vars)
-  mod_beta_server("mod_beta", ps_obj_normalized, meta_vars)
+  mod_beta_server("mod_beta", ps_obj_filtered_raw, meta_vars)
   mod_ancom_server("mod_ancom", ps_obj_filtered_raw)
   mod_maaslin2_server("mod_maaslin2", ps_obj_filtered_raw)
+  mod_randomforest_server("mod_randomforest", ps_obj_filtered_raw)
   mod_spieceasi_server("mod_spieceasi", ps_obj_filtered_raw)
+  mod_sparcc_server("mod_sparcc", ps_obj_filtered_raw)
   
   observeEvent(input[["mod_fileload-reset_all_app"]], {
     session$reload()
@@ -119,4 +179,5 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
 

@@ -16,12 +16,28 @@ mod_fileload_ui <- function(id) {
     fileInput(ns("meta_file"),
               "3. Metadata File", 
               accept = c(".csv", ".tsv", ".txt")),
-    actionButton(
-      ns("reset_all_app"),
-      "Reset All",
-      icon = icon("rotate-left"),
-      class = "btn btn-warning btn-sm",
-      style = "font-size: 12px; padding: 3px 8px; width: 110px; display: inline-block; white-space: nowrap;"
+    div(
+      style = "display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; margin-bottom: 4px;",
+      actionButton(
+        ns("load_example"),
+        "Load Example",
+        icon = icon("flask"),
+        class = "btn btn-info btn-sm",
+        style = "font-size: 12px; padding: 3px 8px; width: 110px; white-space: nowrap; flex: 0 0 auto;"
+      ),
+      downloadButton(
+        ns("download_example"),
+        "Download Example",
+        class = "btn btn-secondary btn-sm",
+        style = "font-size: 12px; padding: 3px 8px; width: 130px; white-space: nowrap; flex: 0 0 auto;"
+      ),
+      actionButton(
+        ns("reset_all_app"),
+        "Reset All",
+        icon = icon("rotate-left"),
+        class = "btn btn-warning btn-sm",
+        style = "font-size: 12px; padding: 3px 8px; width: 110px; white-space: nowrap; flex: 0 0 auto;"
+      )
     ),
     hr(),
     uiOutput(ns("load_status"))
@@ -33,6 +49,84 @@ mod_fileload_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     
     load_completed <- reactiveVal(FALSE) 
+    example_files <- reactiveVal(NULL)
+
+    resolve_sample_dir <- function() {
+      file.path(getwd(), "sample")
+    }
+
+    observeEvent(input$load_example, {
+      sample_dir <- resolve_sample_dir()
+      if (!dir.exists(sample_dir)) {
+        showNotification(
+          "Example load failed: sample folder was not found.",
+          type = "error",
+          duration = 8
+        )
+        return(NULL)
+      }
+      otu_path <- file.path(sample_dir, "1_ASV_table.txt")
+      tax_path <- file.path(sample_dir, "2_taxonomy_table.txt")
+      meta_path <- file.path(sample_dir, "3_metadata.txt")
+
+      required_paths <- c(otu_path, tax_path, meta_path)
+      if (!all(file.exists(required_paths))) {
+        showNotification(
+          "Example load failed: required files are missing.",
+          type = "error",
+          duration = 8
+        )
+        return(NULL)
+      }
+
+      example_files(list(
+        otu_file = list(datapath = otu_path, name = basename(otu_path)),
+        tax_file = list(datapath = tax_path, name = basename(tax_path)),
+        meta_file = list(datapath = meta_path, name = basename(meta_path))
+      ))
+
+      showNotification(
+        "Example files loaded!",
+        type = "message",
+        duration = 3
+      )
+    })
+
+    output$download_example <- downloadHandler(
+      filename = function() {
+        "example_data.zip"
+      },
+      content = function(file) {
+        sample_dir <- resolve_sample_dir()
+        if (!dir.exists(sample_dir)) {
+          stop("Example download failed: sample folder was not found.")
+        }
+        required_files <- c(
+          "1_ASV_table.txt",
+          "2_taxonomy_table.txt",
+          "3_metadata.txt"
+        )
+        required_paths <- file.path(sample_dir, required_files)
+
+        if (!all(file.exists(required_paths))) {
+          stop("Example download failed: required files are missing in the sample folder.")
+        }
+
+        temp_export_dir <- file.path(tempdir(), paste0("example_data_", as.integer(Sys.time())))
+        dir.create(temp_export_dir, recursive = TRUE, showWarnings = FALSE)
+        file.copy(required_paths, temp_export_dir, overwrite = TRUE)
+
+        old_wd <- getwd()
+        on.exit(setwd(old_wd), add = TRUE)
+        setwd(temp_export_dir)
+
+        utils::zip(
+          zipfile = file,
+          files = required_files,
+          flags = "-r9Xq"
+        )
+      }
+    )
     
     read_microbiome_file <- function(file_input, is_meta = FALSE) {
       if (is.null(file_input)) return(NULL)
@@ -63,11 +157,17 @@ mod_fileload_server <- function(id) {
     }
     
     ps_obj_initial <- reactive({ 
-      req(input$otu_file, input$tax_file, input$meta_file)
+      selected_files <- example_files()
+
+      otu_input <- if (!is.null(input$otu_file)) input$otu_file else if (!is.null(selected_files)) selected_files$otu_file else NULL
+      tax_input <- if (!is.null(input$tax_file)) input$tax_file else if (!is.null(selected_files)) selected_files$tax_file else NULL
+      meta_input <- if (!is.null(input$meta_file)) input$meta_file else if (!is.null(selected_files)) selected_files$meta_file else NULL
+
+      req(otu_input, tax_input, meta_input)
       
-      otu_df <- read_microbiome_file(input$otu_file)
-      tax_df <- read_microbiome_file(input$tax_file)
-      meta_df <- read_microbiome_file(input$meta_file, is_meta = TRUE) 
+      otu_df <- read_microbiome_file(otu_input)
+      tax_df <- read_microbiome_file(tax_input)
+      meta_df <- read_microbiome_file(meta_input, is_meta = TRUE) 
       
       if(is.null(otu_df) | is.null(tax_df) | is.null(meta_df)) {
         load_completed(FALSE)

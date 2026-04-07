@@ -4,7 +4,7 @@ mod_maaslin2_ui <- function(id) {
   tagList(
     sidebarLayout(
       sidebarPanel(
-        width = 3,
+        width = 2,
         h4(icon("flask"), "MaAsLin2 Analysis"),
         hr(),
 
@@ -23,7 +23,6 @@ mod_maaslin2_ui <- function(id) {
 
         selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
         verbatimTextOutput(ns("group_sample_counts")),
-        hr(),
 
         selectInput(ns("tax_level"), "4. Taxonomic level",
                     choices = c("ASV", "Genus", "Species"), selected = "Genus"),
@@ -55,9 +54,20 @@ mod_maaslin2_ui <- function(id) {
               plugins = list("remove_button")
             )
           ),
+          selectizeInput(
+            ns("fix_interactions"),
+            "8. Interaction terms for fixed effects (optional)",
+            choices = NULL,
+            multiple = TRUE,
+            options = list(
+              placeholder = "Select interaction terms among fixed effects",
+              plugins = list("remove_button")
+            )
+          ),
           verbatimTextOutput(ns("model_formula_preview"))
         ),
-
+        hr(),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_height"), "Plot height (px)", value = 600, min = 300, max = 2000, step = 50),
         numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2000, step = 50),
         actionButton(ns("run_maaslin2_btn"), "Run MaAsLin2", class = "btn-danger", style = "font-size: 12px;"),
@@ -91,6 +101,24 @@ mod_maaslin2_ui <- function(id) {
 mod_maaslin2_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
     taxa_counts <- reactiveVal(list(before = NA_integer_, after = NA_integer_))
+    
+    build_interaction_choices <- function(group_var, fix_covariates) {
+      if (is.null(group_var) || !nzchar(group_var)) {
+        return(character(0))
+      }
+      covariates <- fix_covariates
+      if (is.null(covariates) || length(covariates) == 0) {
+        covariates <- character(0)
+      }
+      covariates <- covariates[nzchar(covariates)]
+      covariates <- unique(setdiff(covariates, group_var))
+      fixed_terms <- unique(c(group_var, covariates))
+      if (length(fixed_terms) < 2) {
+        return(character(0))
+      }
+      comb_mat <- utils::combn(fixed_terms, 2)
+      apply(comb_mat, 2, function(x) paste(x[1], x[2], sep = ":"))
+    }
 
     observeEvent(ps_obj(), {
       req(ps_obj())
@@ -152,6 +180,34 @@ mod_maaslin2_server <- function(id, ps_obj) {
         "fix_covariates",
         choices = covariate_choices,
         selected = intersect(selected_covariates, covariate_choices),
+        server = TRUE
+      )
+
+      interaction_choices <- build_interaction_choices(input$group_var, selected_covariates)
+      selected_interactions <- input$fix_interactions
+      if (is.null(selected_interactions)) {
+        selected_interactions <- character(0)
+      }
+      updateSelectizeInput(
+        session,
+        "fix_interactions",
+        choices = interaction_choices,
+        selected = intersect(selected_interactions, interaction_choices),
+        server = TRUE
+      )
+    }, ignoreNULL = FALSE)
+    
+    observeEvent(list(input$group_var, input$fix_covariates), {
+      interaction_choices <- build_interaction_choices(input$group_var, input$fix_covariates)
+      selected_interactions <- input$fix_interactions
+      if (is.null(selected_interactions)) {
+        selected_interactions <- character(0)
+      }
+      updateSelectizeInput(
+        session,
+        "fix_interactions",
+        choices = interaction_choices,
+        selected = intersect(selected_interactions, interaction_choices),
         server = TRUE
       )
     }, ignoreNULL = FALSE)
@@ -337,19 +393,27 @@ mod_maaslin2_server <- function(id, ps_obj) {
           }
           covariates <- covariates[nzchar(covariates)]
           covariates <- unique(setdiff(covariates, current_group_var))
-          fixed_effects <- c(current_group_var, covariates)
+          interaction_terms <- input$fix_interactions
+          if (is.null(interaction_terms) || length(interaction_terms) == 0) {
+            interaction_terms <- character(0)
+          }
+          interaction_terms <- interaction_terms[nzchar(interaction_terms)]
+          valid_interactions <- build_interaction_choices(current_group_var, covariates)
+          interaction_terms <- intersect(interaction_terms, valid_interactions)
+          main_effects <- c(current_group_var, covariates)
+          fixed_effects <- unique(c(main_effects, interaction_terms))
 
           validate(
-            need(all(fixed_effects %in% colnames(input_metadata)),
+            need(all(main_effects %in% colnames(input_metadata)),
                  "One or more fixed-effect metadata columns are missing.")
           )
 
-          metadata_cols <- unique(c("SampleID", fixed_effects))
+          metadata_cols <- unique(c("SampleID", main_effects))
           input_metadata <- input_metadata[, metadata_cols, drop = FALSE]
           input_metadata <- as.data.frame(input_metadata, stringsAsFactors = FALSE, check.names = FALSE)
           colnames(input_metadata) <- make.unique(colnames(input_metadata))
 
-          for (col in fixed_effects) {
+          for (col in main_effects) {
             if (col %in% colnames(input_metadata)) {
               if (is.data.frame(input_metadata[[col]])) {
                 input_metadata[[col]] <- input_metadata[[col]][, 1, drop = TRUE]
@@ -368,7 +432,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
           reference_terms <- character(0)
           reference_terms <- c(reference_terms, make_reference(current_group_var, input$reference_level))
 
-          for (col in setdiff(fixed_effects, current_group_var)) {
+          for (col in setdiff(main_effects, current_group_var)) {
             if (!col %in% colnames(input_metadata)) {
               next
             }
@@ -525,7 +589,15 @@ mod_maaslin2_server <- function(id, ps_obj) {
       }
       covariates <- covariates[nzchar(covariates)]
       covariates <- unique(setdiff(covariates, input$group_var))
-      paste0("Applied fixed_effects: ", paste(c(input$group_var, covariates), collapse = " + "))
+      interaction_terms <- input$fix_interactions
+      if (is.null(interaction_terms) || length(interaction_terms) == 0) {
+        interaction_terms <- character(0)
+      }
+      interaction_terms <- interaction_terms[nzchar(interaction_terms)]
+      valid_interactions <- build_interaction_choices(input$group_var, covariates)
+      interaction_terms <- intersect(interaction_terms, valid_interactions)
+      fixed_effects <- unique(c(input$group_var, covariates, interaction_terms))
+      paste0("Applied fixed_effects: ", paste(fixed_effects, collapse = " + "))
     })
 
     round_numeric_columns <- function(df, digits = 2, exclude_cols = c("pval", "qval", "p_val", "q_val")) {
@@ -613,7 +685,18 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
     output$maaslin2_table <- renderDT({
       req(maaslin2_table_data())
-      datatable(maaslin2_table_data(), options = list(scrollX = TRUE))
+      res <- maaslin2_table_data()
+      datatable(
+        res,
+        options = list(scrollX = TRUE),
+        class = "compact stripe hover cell-border",
+        style = "bootstrap"
+      ) %>%
+        formatStyle(
+          columns = colnames(res),
+          `font-size` = "11px",
+          `padding` = "4px"
+        )
     })
 
     output$download_maaslin2_table <- downloadHandler(

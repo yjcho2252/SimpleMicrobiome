@@ -9,10 +9,11 @@ mod_taxa_comparison_ui <- function(id) {
   tagList(
     sidebarLayout(
       sidebarPanel(
-        width = 3,
+        width = 2,
         h4(icon("square-poll-vertical"), "Taxa Comparison"),
         hr(),
         uiOutput(ns("group_selector")),
+        uiOutput(ns("secondary_group_selector")),
         selectInput(
           ns("tax_level"),
           "Taxonomic Level:",
@@ -29,9 +30,14 @@ mod_taxa_comparison_ui <- function(id) {
             plugins = list("remove_button")
           )
         ),
+        checkboxInput(
+          ns("show_p_lt_0_05_only"),
+          "Show only taxa with p-value < 0.05",
+          value = FALSE
+        ),
         selectInput(
           ns("abundance_mode"),
-          "Abundance Scale:",
+          "Transformation:",
           choices = c(
             "CLR Abundance" = "clr",
             "Relative Abundance (%)" = "relative",
@@ -40,16 +46,55 @@ mod_taxa_comparison_ui <- function(id) {
           selected = "clr"
         ),
         hr(),
+        h4(icon("sliders"), "P-value Options"),
+        checkboxInput(ns("show_p_val"), "Show P-value Comparison Bars", value = TRUE),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("show_p_val")),
+          checkboxInput(ns("only_sig"), "Show Only Significant (p < 0.05)", value = TRUE)
+        ),
+        selectInput(
+          ns("stat_method"),
+          "Statistical Method:",
+          choices = c(
+            "Wilcoxon (Non-parametric)" = "wilcox.test",
+            "T-test (Parametric)" = "t.test"
+          ),
+          selected = "wilcox.test"
+        ),
+        hr(),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width (px):", value = 400, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height (px):", value = 500, min = 300, step = 50),
         hr(),
         h5(icon("download"), "Download Plot"),
-        downloadButton(ns("download_taxa_plot"), "Download Plot (PNG)", style = "font-size: 12px;"),
-        downloadButton(ns("download_taxa_data"), "Download Data (TSV)", style = "font-size: 12px;"),
+        div(
+          style = "display: flex; gap: 4px; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_taxa_plot"),
+            "Download Plot (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_taxa_data"),
+            "Download Data (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
+        ),
         hr(),
         h5(icon("table"), "Download Full Matrix"),
-        downloadButton(ns("download_raw_matrix"), "Raw Counts Matrix (TSV)", style = "font-size: 12px;"),
-        downloadButton(ns("download_rel_matrix"), "Relative Abundance Matrix (TSV)", style = "font-size: 12px;")
+        div(
+          style = "display: flex; gap: 4px; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_raw_matrix"),
+            "Raw Counts Matrix (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_rel_matrix"),
+            "Relative Abundance Matrix (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
+        )
       ),
       mainPanel(
         width = 9,
@@ -69,9 +114,20 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
       selectInput(
         session$ns("group_var"),
-        "Grouping Variable:",
+        "Primary Grouping Variable:",
         choices = group_choices,
         selected = selected_col
+      )
+    })
+
+    output$secondary_group_selector <- renderUI({
+      req(meta_cols(), input$group_var)
+      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var))
+      selectInput(
+        session$ns("secondary_group_var"),
+        "Secondary Grouping Variable (Optional):",
+        choices = c("(None)" = "none", group_choices),
+        selected = "none"
       )
     })
     
@@ -80,6 +136,9 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       
       ps <- ps_obj()
       tax_level <- input$tax_level
+      primary_col <- input$group_var
+      secondary_col <- input$secondary_group_var
+      is_secondary <- !is.null(secondary_col) && secondary_col != "none"
       
       if (tax_level != "ASV") {
         validate(need(!is.null(phyloseq::tax_table(ps)), "Taxonomy table is missing."))
@@ -142,8 +201,15 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         df$Taxa <- taxa_values
       }
       
-      df$Group <- as.factor(df[[input$group_var]])
-      df <- df[!is.na(df$Group), , drop = FALSE]
+      df$PrimaryGroup <- as.factor(df[[primary_col]])
+      if (is_secondary) {
+        df$SecondaryGroup <- as.factor(df[[secondary_col]])
+        df <- df[!is.na(df$PrimaryGroup) & !is.na(df$SecondaryGroup), , drop = FALSE]
+        df$Group <- df$SecondaryGroup
+      } else {
+        df <- df[!is.na(df$PrimaryGroup), , drop = FALSE]
+        df$Group <- df$PrimaryGroup
+      }
       
       if (abundance_mode == "relative") {
         df$AbundancePlot <- df$Abundance * 100
@@ -155,6 +221,28 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       df <- df[is.finite(df$AbundancePlot), , drop = FALSE]
       
       df
+    })
+
+    taxa_stats <- reactive({
+      req(taxa_long_data(), input$group_var)
+      df <- taxa_long_data()
+
+      df %>%
+        dplyr::group_by(Taxa) %>%
+        dplyr::summarise(
+          mean_abundance = mean(AbundancePlot, na.rm = TRUE),
+          p_value = tryCatch({
+            n_groups <- dplyr::n_distinct(Group)
+            if (n_groups == 2) {
+              stats::wilcox.test(AbundancePlot ~ Group)$p.value
+            } else if (n_groups > 2) {
+              stats::kruskal.test(AbundancePlot ~ Group)$p.value
+            } else {
+              NA_real_
+            }
+          }, error = function(e) NA_real_),
+          .groups = "drop"
+        )
     })
     
     tax_level_ps_raw <- reactive({
@@ -213,12 +301,17 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       list(raw = raw_df, rel = rel_df)
     })
     
-    observeEvent(list(taxa_long_data(), input$tax_level), {
-      df <- taxa_long_data()
-      taxa_summary <- df %>%
-        dplyr::group_by(Taxa) %>%
-        dplyr::summarise(mean_abundance = mean(AbundancePlot, na.rm = TRUE), .groups = "drop") %>%
-        dplyr::arrange(dplyr::desc(mean_abundance))
+    observeEvent(list(taxa_stats(), input$tax_level, input$show_p_lt_0_05_only), {
+      taxa_summary <- taxa_stats()
+
+      if (isTRUE(input$show_p_lt_0_05_only)) {
+        taxa_summary <- taxa_summary %>%
+          dplyr::filter(!is.na(p_value) & p_value < 0.05) %>%
+          dplyr::arrange(p_value, dplyr::desc(mean_abundance))
+      } else {
+        taxa_summary <- taxa_summary %>%
+          dplyr::arrange(dplyr::desc(mean_abundance))
+      }
       
       taxa_choices <- as.character(taxa_summary$Taxa)
       taxa_choices <- taxa_choices[!is.na(taxa_choices) & nzchar(taxa_choices)]
@@ -268,6 +361,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     taxa_plot_reactive <- reactive({
       req(taxa_plot_data())
       df <- taxa_plot_data()
+      secondary_col <- input$secondary_group_var
+      is_secondary <- !is.null(secondary_col) && secondary_col != "none"
       abundance_mode <- input$abundance_mode
       if (is.null(abundance_mode) || !abundance_mode %in% c("clr", "relative", "log_tss")) {
         abundance_mode <- "clr"
@@ -278,6 +373,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         "log_tss" = "Log TSS (log10(% + 1))",
         "CLR Abundance"
       )
+      group_levels <- levels(factor(df$Group))
+      num_groups <- length(group_levels)
       integer_breaks <- function(x) {
         if (length(x) == 0 || all(!is.finite(x))) {
           return(NULL)
@@ -297,38 +394,106 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         step <- max(1, ceiling((hi - lo) / 6))
         seq(lo, hi, by = step)
       }
-      
-      pval_df <- df %>%
-        dplyr::group_by(Taxa) %>%
-        dplyr::group_modify(~{
-          n_groups <- dplyr::n_distinct(.x$Group)
-          p_val <- tryCatch({
-            if (n_groups == 2) {
-              stats::wilcox.test(AbundancePlot ~ Group, data = .x)$p.value
-            } else if (n_groups > 2) {
-              stats::kruskal.test(AbundancePlot ~ Group, data = .x)$p.value
-            } else {
-              NA_real_
-            }
-          }, error = function(e) NA_real_)
-          dplyr::tibble(
-            p_label = if (is.na(p_val)) "p-value: NA" else paste0("p-value = ", format(p_val, digits = 3))
-          )
-        }) %>%
-        dplyr::ungroup()
-      
-      df <- dplyr::left_join(df, pval_df, by = "Taxa")
-      df$Taxa_with_p <- paste0(as.character(df$Taxa), "\n", df$p_label)
-      
-      ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
+
+      p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
         ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.65) +
         ggplot2::geom_jitter(width = 0.15, alpha = 0.6, size = 1.5) +
-        ggplot2::scale_y_continuous(breaks = integer_breaks, limits = c(0, NA)) +
-        ggplot2::facet_wrap(~ Taxa_with_p, scales = "free_y") +
+        ggplot2::scale_y_continuous(
+          breaks = integer_breaks,
+          limits = c(0, NA),
+          expand = ggplot2::expansion(mult = c(0.1, 0.08))
+        ) +
         ggplot2::theme_bw() +
         ggplot2::labs(title = paste0("Taxa Comparison: ", input$tax_level),
-                      x = input$group_var, y = y_label) +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 25, hjust = 1))
+                      x = if (is_secondary) secondary_col else input$group_var, y = y_label) +
+        ggplot2::theme(
+          axis.text.x = ggplot2::element_text(angle = 25, hjust = 1),
+          legend.position = "none",
+          strip.background = ggplot2::element_rect(fill = "white"),
+          plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8)
+        ) +
+        ggplot2::coord_cartesian(clip = "off")
+
+      if (is_secondary) {
+        p <- p + ggplot2::facet_grid(PrimaryGroup ~ Taxa, scales = "free_y")
+      } else {
+        p <- p + ggplot2::facet_wrap(~ Taxa, scales = "free_y")
+      }
+
+      if (isTRUE(input$show_p_val) && num_groups >= 2) {
+        all_comps <- utils::combn(group_levels, 2, simplify = FALSE)
+        current_label <- if (isTRUE(input$only_sig)) "p.signif" else "p.format"
+
+        if (isTRUE(input$only_sig)) {
+          final_comps <- list()
+          for (comp in all_comps) {
+            is_sig_anywhere <- FALSE
+            for (taxa_name in unique(df$Taxa)) {
+              sub_taxa <- df[df$Taxa == taxa_name, , drop = FALSE]
+              if (is_secondary) {
+                for (prim in unique(sub_taxa$PrimaryGroup)) {
+                  sub_data <- sub_taxa[sub_taxa$PrimaryGroup == prim, , drop = FALSE]
+                  d1 <- sub_data$AbundancePlot[sub_data$Group == comp[1]]
+                  d2 <- sub_data$AbundancePlot[sub_data$Group == comp[2]]
+                  if (length(d1) > 1 && length(d2) > 1) {
+                    p_val <- tryCatch({
+                      if (input$stat_method == "wilcox.test") {
+                        stats::wilcox.test(d1, d2)$p.value
+                      } else {
+                        stats::t.test(d1, d2)$p.value
+                      }
+                    }, error = function(e) NA_real_)
+                    if (!is.na(p_val) && p_val < 0.05) {
+                      is_sig_anywhere <- TRUE
+                      break
+                    }
+                  }
+                }
+              } else {
+                d1 <- sub_taxa$AbundancePlot[sub_taxa$Group == comp[1]]
+                d2 <- sub_taxa$AbundancePlot[sub_taxa$Group == comp[2]]
+                if (length(d1) > 1 && length(d2) > 1) {
+                  p_val <- tryCatch({
+                    if (input$stat_method == "wilcox.test") {
+                      stats::wilcox.test(d1, d2)$p.value
+                    } else {
+                      stats::t.test(d1, d2)$p.value
+                    }
+                  }, error = function(e) NA_real_)
+                  if (!is.na(p_val) && p_val < 0.05) {
+                    is_sig_anywhere <- TRUE
+                  }
+                }
+              }
+              if (is_sig_anywhere) break
+            }
+            if (is_sig_anywhere) final_comps[[length(final_comps) + 1]] <- comp
+          }
+        } else {
+          final_comps <- all_comps
+        }
+
+        if (length(final_comps) > 0) {
+          p <- p + ggpubr::stat_compare_means(
+            comparisons = final_comps,
+            method = input$stat_method,
+            label = current_label,
+            step.increase = 0.14,
+            label.y.npc = 1.22,
+            hide.ns = isTRUE(input$only_sig),
+            digits = 3
+          )
+        }
+
+        p <- p + ggpubr::stat_compare_means(
+          method = if (num_groups > 2) "kruskal.test" else input$stat_method,
+          label.x.npc = "center",
+          label.y.npc = 1.34,
+          size = 3
+        )
+      }
+
+      p
     })
     
     output$taxa_comparison_plot <- renderPlot({
@@ -347,19 +512,24 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     output$download_taxa_data <- downloadHandler(
       filename = function() { paste0("taxa_data_", Sys.Date(), ".tsv") },
       content = function(file) {
-        out_df <- taxa_plot_data()[, c("Sample", "Group", "Taxa", "AbundancePlot")]
-        colnames(out_df) <- c(
-          "SampleID",
-          input$group_var,
-          "Taxa",
-          if (input$abundance_mode == "relative") {
-            "Relative_Abundance_percent"
-          } else if (input$abundance_mode == "log_tss") {
-            "Log_TSS_log10_percent_plus1"
-          } else {
-            "CLR_Abundance"
-          }
-        )
+        plot_df <- taxa_plot_data()
+        secondary_col <- input$secondary_group_var
+        is_secondary <- !is.null(secondary_col) && secondary_col != "none"
+        abundance_col <- if (input$abundance_mode == "relative") {
+          "Relative_Abundance_percent"
+        } else if (input$abundance_mode == "log_tss") {
+          "Log_TSS_log10_percent_plus1"
+        } else {
+          "CLR_Abundance"
+        }
+
+        if (is_secondary) {
+          out_df <- plot_df[, c("Sample", "PrimaryGroup", "SecondaryGroup", "Taxa", "AbundancePlot")]
+          colnames(out_df) <- c("SampleID", input$group_var, secondary_col, "Taxa", abundance_col)
+        } else {
+          out_df <- plot_df[, c("Sample", "Group", "Taxa", "AbundancePlot")]
+          colnames(out_df) <- c("SampleID", input$group_var, "Taxa", abundance_col)
+        }
         readr::write_tsv(out_df, file)
       }
     )

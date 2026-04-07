@@ -9,7 +9,7 @@ mod_ancom_ui <- function(id) {
   tagList(
     sidebarLayout(
       sidebarPanel(
-        width = 3,
+        width = 2,
         h4(icon("vial-circle-check"), "ANCOM-BC2 Analysis"),
         hr(),
 
@@ -28,7 +28,6 @@ mod_ancom_ui <- function(id) {
 
         selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
         verbatimTextOutput(ns("group_sample_counts")),
-        hr(),
 
         selectInput(ns("tax_level"), "4. Taxonomic level",
                     choices = c("ASV", "Genus", "Species"), selected = "Genus"),
@@ -70,9 +69,20 @@ mod_ancom_ui <- function(id) {
               plugins = list("remove_button")
             )
           ),
+          selectizeInput(
+            ns("fix_interactions"),
+            "9. Interaction terms for fix_formula (optional)",
+            choices = NULL,
+            multiple = TRUE,
+            options = list(
+              placeholder = "Select interaction terms among fixed effects",
+              plugins = list("remove_button")
+            )
+          ),
           verbatimTextOutput(ns("formula_preview"))
         ),
-
+        hr(),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_height"), "Plot height (px)", value = 600, min = 300, max = 2000, step = 50),
         numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2000, step = 50),
         actionButton(ns("run_ancom_btn"), "Run ANCOM-BC2", class = "btn-danger", style = "font-size: 12px;"),
@@ -106,6 +116,24 @@ mod_ancom_ui <- function(id) {
 mod_ancom_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
     taxa_counts <- reactiveVal(list(before = NA_integer_, after = NA_integer_))
+    
+    build_interaction_choices <- function(group_var, fix_covariates) {
+      if (is.null(group_var) || !nzchar(group_var)) {
+        return(character(0))
+      }
+      covariates <- fix_covariates
+      if (is.null(covariates) || length(covariates) == 0) {
+        covariates <- character(0)
+      }
+      covariates <- covariates[nzchar(covariates)]
+      covariates <- unique(setdiff(covariates, group_var))
+      fixed_terms <- unique(c(group_var, covariates))
+      if (length(fixed_terms) < 2) {
+        return(character(0))
+      }
+      comb_mat <- utils::combn(fixed_terms, 2)
+      apply(comb_mat, 2, function(x) paste(x[1], x[2], sep = ":"))
+    }
 
     observeEvent(ps_obj(), {
       req(ps_obj())
@@ -183,6 +211,34 @@ mod_ancom_server <- function(id, ps_obj) {
         "rand_covariates",
         choices = covariate_choices,
         selected = intersect(selected_rand_covariates, covariate_choices),
+        server = TRUE
+      )
+
+      interaction_choices <- build_interaction_choices(input$group_var, selected_covariates)
+      selected_interactions <- input$fix_interactions
+      if (is.null(selected_interactions)) {
+        selected_interactions <- character(0)
+      }
+      updateSelectizeInput(
+        session,
+        "fix_interactions",
+        choices = interaction_choices,
+        selected = intersect(selected_interactions, interaction_choices),
+        server = TRUE
+      )
+    }, ignoreNULL = FALSE)
+    
+    observeEvent(list(input$group_var, input$fix_covariates), {
+      interaction_choices <- build_interaction_choices(input$group_var, input$fix_covariates)
+      selected_interactions <- input$fix_interactions
+      if (is.null(selected_interactions)) {
+        selected_interactions <- character(0)
+      }
+      updateSelectizeInput(
+        session,
+        "fix_interactions",
+        choices = interaction_choices,
+        selected = intersect(selected_interactions, interaction_choices),
         server = TRUE
       )
     }, ignoreNULL = FALSE)
@@ -357,7 +413,15 @@ mod_ancom_server <- function(id, ps_obj) {
           }
           covariates <- covariates[nzchar(covariates)]
           covariates <- unique(setdiff(covariates, input$group_var))
-          fix_formula_str <- paste(c(input$group_var, covariates), collapse = " + ")
+          interaction_terms <- input$fix_interactions
+          if (is.null(interaction_terms) || length(interaction_terms) == 0) {
+            interaction_terms <- character(0)
+          }
+          interaction_terms <- interaction_terms[nzchar(interaction_terms)]
+          valid_interactions <- build_interaction_choices(input$group_var, covariates)
+          interaction_terms <- intersect(interaction_terms, valid_interactions)
+          fix_formula_terms <- c(input$group_var, covariates, interaction_terms)
+          fix_formula_str <- paste(unique(fix_formula_terms), collapse = " + ")
 
           rand_covariates <- input$rand_covariates
           if (is.null(rand_covariates) || length(rand_covariates) == 0) {
@@ -432,6 +496,13 @@ mod_ancom_server <- function(id, ps_obj) {
       }
       covariates <- covariates[nzchar(covariates)]
       covariates <- unique(setdiff(covariates, input$group_var))
+      interaction_terms <- input$fix_interactions
+      if (is.null(interaction_terms) || length(interaction_terms) == 0) {
+        interaction_terms <- character(0)
+      }
+      interaction_terms <- interaction_terms[nzchar(interaction_terms)]
+      valid_interactions <- build_interaction_choices(input$group_var, covariates)
+      interaction_terms <- intersect(interaction_terms, valid_interactions)
       rand_covariates <- input$rand_covariates
       if (is.null(rand_covariates) || length(rand_covariates) == 0) {
         rand_covariates <- character(0)
@@ -439,7 +510,8 @@ mod_ancom_server <- function(id, ps_obj) {
       rand_covariates <- rand_covariates[nzchar(rand_covariates)]
       rand_covariates <- unique(setdiff(rand_covariates, input$group_var))
 
-      fix_formula_str <- paste(c(input$group_var, covariates), collapse = " + ")
+      fix_formula_terms <- c(input$group_var, covariates, interaction_terms)
+      fix_formula_str <- paste(unique(fix_formula_terms), collapse = " + ")
       rand_formula_str <- if (length(rand_covariates) > 0) {
         paste0("(1|", rand_covariates, ")", collapse = " + ")
       } else {
@@ -609,7 +681,17 @@ mod_ancom_server <- function(id, ps_obj) {
       remaining_cols <- setdiff(colnames(res), existing_leading)
       res <- res[, c(existing_leading, remaining_cols), drop = FALSE]
       res <- round_numeric_columns(res, digits = 2)
-      datatable(res, options = list(scrollX = TRUE))
+      datatable(
+        res,
+        options = list(scrollX = TRUE),
+        class = "compact stripe hover cell-border",
+        style = "bootstrap"
+      ) %>%
+        formatStyle(
+          columns = colnames(res),
+          `font-size` = "11px",
+          `padding` = "4px"
+        )
     })
 
     output$download_ancom_table <- downloadHandler(
@@ -796,4 +878,3 @@ mod_ancom_server <- function(id, ps_obj) {
     )
   })
 }
-

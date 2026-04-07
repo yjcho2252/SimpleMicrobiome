@@ -18,7 +18,7 @@ mod_barplot_ui <- function(id) {
   tagList(
     sidebarLayout(
       sidebarPanel(
-        width = 3,
+        width = 2,
         h4(icon("chart-bar"), "Taxa Barplot"),
         hr(),
         
@@ -26,28 +26,29 @@ mod_barplot_ui <- function(id) {
         
         uiOutput(ns("secondary_group_selector")),
         hr(),
-        
+        h4(icon("sliders"), "Plot Settings"),
         selectInput(ns("plot_mode"), "Plot Display Mode:",
                     choices = c("Sample Level" = "Sample",
                                 "Group Mean" = "Group_Mean"),
-                    selected = "Sample"),
-        hr(),
+                    selected = "Sample"),        
         
         selectInput(ns("tax_level"), "Taxonomic Level:",
                     choices = tax_ranks,
-                    selected = "Genus"),
-        
+                    selected = "Genus"),        
         numericInput(ns("top_n_taxa"), "Number of Top Taxa to Display:",
-                     value = 10, min = 1, max = 50, step = 1),
-        
-        selectInput(ns("color_palette"), "Color Palette Selection:",
-                    choices = palette_choices,
-                    selected = "Paired"),
-        
+                     value = 10, min = 1, max = 50, step = 1),        
         selectInput(ns("name_display_mode"), "Taxa Name Display:",
                     choices = c("Full Hierarchy" = "full",
                                 "Current Rank Only" = "current"),
                     selected = "full"),
+        selectInput(ns("color_palette"), "Color Palette Selection:",
+                    choices = palette_choices,
+                    selected = "Paired"),
+        numericInput(ns("plot_width"), "Plot Width (px):",
+                     value = 1000, min = 300, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px):",
+                     value = 600, min = 300, step = 50),
+
         
         hr(),
         h4(icon("sort"), "Sample Sorting"),
@@ -76,18 +77,22 @@ mod_barplot_ui <- function(id) {
                         selected = "taxa_top1")
           )
         ),
-        
-        hr(),
-        numericInput(ns("plot_width"), "Plot Width (px):",
-                     value = 1000, min = 300, step = 50),
-        numericInput(ns("plot_height"), "Plot Height (px):",
-                     value = 600, min = 300, step = 50),
+                
+
         hr(),
         h5(icon("download"), "Download"),
         tags$div(
-          style = "display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
-          downloadButton(ns("download_barplot"), "Download Plot (PNG)", style = "font-size: 12px;"),
-          downloadButton(ns("download_barplot_matrix"), "Download Matrix (TSV)", style = "font-size: 12px;")
+          style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_barplot"),
+            "Download Plot (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_barplot_matrix"),
+            "Download Matrix (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
         )
       ),
       mainPanel(
@@ -105,7 +110,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       req(meta_cols())
       group_choices <- setdiff(meta_cols(), "SampleID")
       selected_col <- if (length(group_choices) > 0) group_choices[1] else meta_cols()[1]
-      selectInput(session$ns("group_var"), "1. Select Primary Grouping Variable (Facet):",
+      selectInput(session$ns("group_var"), "Primary Grouping Variable (Facet):",
                   choices = group_choices, selected = selected_col)
     })
     
@@ -113,7 +118,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       req(meta_cols(), input$group_var)
       group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var))
       selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
-      selectInput(session$ns("secondary_var"), "2. Select Secondary Grouping Variable (Sub-Group):",
+      selectInput(session$ns("secondary_var"), "Secondary Grouping Variable (Sub-Group):",
                   choices = c("None" = "None", group_choices), 
                   selected = "None")
     })

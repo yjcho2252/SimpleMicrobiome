@@ -9,10 +9,11 @@ mod_preprocessing_ui <- function(id) {
   tagList(
     fluidRow(
       column(
-        width = 3,
+        width = 2,
         wellPanel(
           h4(icon("filter"), "Sample Selection Overview"),
-          p("All samples over 2000 reads are selected by default."),
+          p("Select samples by minimum read count."),
+          uiOutput(ns("read_count_filter_ui")),
           p("Unselect rows in the table to EXCLUDE samples.", style = "margin-top: -8px;"),
           hr(),
           div(style = "background: #f8f9fa; padding: 10px; border-radius: 5px;",
@@ -41,7 +42,16 @@ mod_preprocessing_ui <- function(id) {
           ),
           hr(),
           actionButton(ns("reset_selection"), "Reset: Select All Samples", 
-                       icon = icon("sync"), class = "btn-secondary btn-sm", style = "font-size: 12px;", width = "100%")
+                       icon = icon("sync"), class = "btn-secondary btn-sm", style = "font-size: 12px;", width = "100%"),
+          br(),
+          actionButton(
+            ns("unselect_all"),
+            "Unselect All Samples",
+            icon = icon("ban"),
+            class = "btn-secondary btn-sm",
+            style = "font-size: 12px;",
+            width = "100%"
+          )
         )
       ),
       column(
@@ -62,8 +72,9 @@ mod_preprocessing_ui <- function(id) {
 mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
   moduleServer(id, function(input, output, session) {
     
-    ps_filtered <- reactiveVal(NULL) 
-    ps_normalized <- reactiveVal(NULL) 
+    ps_filtered <- reactiveVal(NULL)
+    selection_initialized <- reactiveVal(FALSE)
+    default_min_reads <- 2000
     
     meta_df_for_dt <- reactive({
       req(ps_obj_initial())
@@ -89,7 +100,9 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     output$sample_table <- renderDT({
       df <- meta_df_for_dt()
       req(df)
-      initial_selected_rows <- which(df$`Read Count` >= 2000)
+      min_reads <- input$min_read_count
+      if (is.null(min_reads)) min_reads <- default_min_reads
+      initial_selected_rows <- which(df$`Read Count` >= min_reads)
       
       datatable(
         df,
@@ -125,6 +138,33 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     }, server = TRUE)
     
     proxy <- DT::dataTableProxy('sample_table')
+
+    output$read_count_filter_ui <- renderUI({
+      req(meta_df_for_dt())
+      df <- meta_df_for_dt()
+      max_reads <- max(df$`Read Count`, na.rm = TRUE)
+      if (!is.finite(max_reads)) max_reads <- default_min_reads
+      sliderInput(
+        session$ns("min_read_count"),
+        "Minimum reads",
+        min = 0,
+        max = ceiling(max_reads),
+        value = min(default_min_reads, ceiling(max_reads)),
+        step = 100
+      )
+    })
+
+    observeEvent(ps_obj_initial(), {
+      selection_initialized(FALSE)
+    }, ignoreInit = FALSE)
+
+    observeEvent(input$min_read_count, {
+      req(meta_df_for_dt())
+      selection_initialized(TRUE)
+      df <- meta_df_for_dt()
+      selected_rows <- which(df$`Read Count` >= input$min_read_count)
+      DT::selectRows(proxy, selected_rows)
+    }, ignoreInit = TRUE)
     
     observe({
       req(meta_df_for_dt())
@@ -160,11 +200,19 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     
     observeEvent(input$reset_selection, {
       req(meta_df_for_dt())
+      selection_initialized(TRUE)
       DT::selectRows(proxy, seq_len(nrow(meta_df_for_dt())))
+    })
+
+    observeEvent(input$unselect_all, {
+      req(meta_df_for_dt())
+      selection_initialized(TRUE)
+      DT::selectRows(proxy, integer(0))
     })
     
     observeEvent(input$toggle_selection_all, {
       req(meta_df_for_dt())
+      selection_initialized(TRUE)
       target_rows <- input$sample_table_rows_all
       if (is.null(target_rows) || length(target_rows) == 0) {
         return()
@@ -184,6 +232,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     
     observeEvent(input$toggle_group_selection, {
       req(meta_df_for_dt(), input$toggle_group_var)
+      selection_initialized(TRUE)
       selected_level <- input$toggle_group_levels
       validate(need(!is.null(selected_level) && nzchar(selected_level),
                     "Select one group level to toggle."))
@@ -213,70 +262,42 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       
       selected_indices <- input$sample_table_rows_selected
       
-      if (is.null(selected_indices)) {
+      if (is.null(selected_indices) && !isTRUE(selection_initialized())) {
         ps_new <- ps_obj_initial()
-      } else if (length(selected_indices) == 0) {
-        ps_new <- phyloseq::prune_samples(character(0), ps_obj_initial())
+      } else if (is.null(selected_indices) || length(selected_indices) == 0) {
+        ps_new <- NULL
       } else {
         selected_samples <- meta_df_for_dt()$SampleID[selected_indices]
         ps_new <- phyloseq::prune_samples(selected_samples, ps_obj_initial())
       }
       
-      if (phyloseq::nsamples(ps_new) > 0) {
+      if (!is.null(ps_new) && phyloseq::nsamples(ps_new) > 0) {
         ps_new <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps_new) > 0, ps_new)
       }
       
       ps_filtered(ps_new)
     })
     
-    observe({
-      ps_obj <- ps_filtered()
-      req(ps_obj)
-      
-      if (phyloseq::nsamples(ps_obj) == 0) {
-        ps_normalized(ps_obj)
-        return()
-      }
-      if (phyloseq::ntaxa(ps_obj) == 0) {
-        ps_normalized(ps_obj)
-        return()
-      }
-      
-      ps_res <- tryCatch({
-        phyloseq::transform_sample_counts(ps_obj, function(x) (x / sum(x)) * 100)
-      }, error = function(e) {
-        showNotification(
-          paste0(
-            "Transformation Error: ", e$message,
-            " [method=tss",
-            ", nsamples=", phyloseq::nsamples(ps_obj),
-            ", ntaxa=", phyloseq::ntaxa(ps_obj), "]"
-          ),
-          type = "error"
-        )
-        ps_obj
-      })
-      
-      ps_normalized(ps_res)
-    })
-
     output$sample_count_info <- renderText({
       req(ps_obj_initial())
-      ps_now <- ps_normalized()
+      ps_now <- ps_filtered()
       
       res <- sprintf("Initial Total: %d samples\n", phyloseq::nsamples(ps_obj_initial()))
       if (!is.null(ps_now)) {
         res <- paste0(res, sprintf("Currently Selected: %d samples\n", phyloseq::nsamples(ps_now)))
         res <- paste0(res, sprintf("Active Taxa (ASVs): %d", phyloseq::ntaxa(ps_now)))
       } else {
-        res <- paste0(res, "Initializing selection...")
+        if (isTRUE(selection_initialized())) {
+          res <- paste0(res, "Currently Selected: 0 samples\nActive Taxa (ASVs): 0")
+        } else {
+          res <- paste0(res, "Initializing selection...")
+        }
       }
       res
     })
     
     return(list(
-      ps_filtered_raw = ps_filtered,
-      ps_normalized = ps_normalized
+      ps_filtered_raw = ps_filtered
     ))
   })
 }

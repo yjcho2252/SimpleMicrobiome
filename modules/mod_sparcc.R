@@ -4,13 +4,13 @@ library(DT)
 library(igraph)
 
 ## UI
-mod_spieceasi_ui <- function(id) {
+mod_sparcc_ui <- function(id) {
   ns <- NS(id)
   tagList(
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("diagram-project"), "SpiecEasi Network"),
+        h4(icon("diagram-project"), "SparCC Network"),
         hr(),
         selectInput(ns("tax_level"), "1. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
         numericInput(ns("prevalence_filter_pct"), "2. Prevalence filter cutoff (%)", value = 10, min = 0, max = 100, step = 1),
@@ -18,9 +18,9 @@ mod_spieceasi_ui <- function(id) {
         numericInput(ns("seed"), "4. Seed", value = 1001, min = 1, step = 1),
         numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 700, min = 300, max = 2400, step = 50),
-        actionButton(ns("run_network_btn"), "Run SpiecEasi", class = "btn-danger", style = "font-size: 12px;"),
+        actionButton(ns("run_network_btn"), "Run SparCC", class = "btn-danger", style = "font-size: 12px;"),
         tags$script(HTML(
-          "Shiny.addCustomMessageHandler('toggle-spieceasi-run-btn', function(msg) {
+          "Shiny.addCustomMessageHandler('toggle-sparcc-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);
              if (!btn) return;
              btn.disabled = !!msg.disabled;
@@ -48,7 +48,7 @@ mod_spieceasi_ui <- function(id) {
 }
 
 ## Server
-mod_spieceasi_server <- function(id, ps_obj) {
+mod_sparcc_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
 
     build_network_inputs <- reactive({
@@ -101,20 +101,20 @@ mod_spieceasi_server <- function(id, ps_obj) {
         need(requireNamespace("igraph", quietly = TRUE), "igraph package is not installed. Please install 'igraph'.")
       )
 
-      session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, label = "Running..."))
+      session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, label = "Running..."))
       on.exit({
-        session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, label = "Run SpiecEasi"))
+        session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, label = "Run SparCC"))
       }, add = TRUE)
 
       set.seed(as.integer(input$seed))
       otu_mat <- build_network_inputs()$otu_mat
 
       result <- tryCatch({
-        withProgress(message = "Running NetCoMi SpiecEasi...", value = 0, {
-          net_obj <- NetCoMi::netConstruct(data = t(otu_mat), dataType = "counts", measure = "spieceasi", verbose = 0)
+        withProgress(message = "Running NetCoMi SparCC...", value = 0, {
+          net_obj <- NetCoMi::netConstruct(data = t(otu_mat), dataType = "counts", measure = "sparcc", verbose = 0)
           adja <- net_obj$adjaMat1
           if (is.null(adja)) adja <- net_obj$adjaMat
-          validate(need(!is.null(adja), "NetCoMi returned no adjacency matrix for SpiecEasi."))
+          validate(need(!is.null(adja), "NetCoMi returned no adjacency matrix for SparCC."))
           graph <- igraph::graph_from_adjacency_matrix(as.matrix(adja), mode = "undirected", weighted = TRUE, diag = FALSE)
           edge_df <- igraph::as_data_frame(graph, what = "edges")
           if (nrow(edge_df) > 0 && "weight" %in% colnames(edge_df)) {
@@ -127,7 +127,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
           list(graph = graph, edge_table = edge_df, n_taxa = nrow(otu_mat), n_samples = ncol(otu_mat))
         })
       }, error = function(e) {
-        showNotification(paste("SpiecEasi execution failed:", e$message), type = "error", duration = NULL)
+        showNotification(paste("SparCC execution failed:", e$message), type = "error", duration = NULL)
         NULL
       })
 
@@ -139,7 +139,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       req(network_result())
       g <- network_result()$graph
       paste(c(
-        "SpiecEasi Network Summary",
+        "SparCC Network Summary",
         paste0("Samples used: ", network_result()$n_samples),
         paste0("Taxa used: ", network_result()$n_taxa),
         paste0("Nodes: ", igraph::vcount(g)),
@@ -158,14 +158,14 @@ mod_spieceasi_server <- function(id, ps_obj) {
       edge_weight <- igraph::E(g)$weight
       edge_col <- ifelse(edge_weight >= 0, "#D73027", "#4575B4")
       edge_col[is.na(edge_col)] <- "#999999"
-      plot(g, layout = igraph::layout_with_fr(g), vertex.size = 5, vertex.label.cex = 0.7, vertex.label.color = "#222222", vertex.color = "#F1C40F", edge.width = 1.2, edge.color = edge_col, main = "NetCoMi SpiecEasi Network")
+      plot(g, layout = igraph::layout_with_fr(g), vertex.size = 5, vertex.label.cex = 0.7, vertex.label.color = "#222222", vertex.color = "#F1C40F", edge.width = 1.2, edge.color = edge_col, main = "NetCoMi SparCC Network")
     })
 
     output$network_plot <- renderPlot({ network_plot_reactive() }, height = function() input$plot_height, width = function() input$plot_width)
     output$edge_table <- renderDT({ datatable(network_result()$edge_table, options = list(scrollX = TRUE)) })
 
     output$download_network_plot <- downloadHandler(
-      filename = function() paste0("spieceasi_network_", Sys.Date(), ".png"),
+      filename = function() paste0("sparcc_network_", Sys.Date(), ".png"),
       content = function(file) {
         grDevices::png(file, width = input$plot_width, height = input$plot_height, res = 120)
         network_plot_reactive()
@@ -174,7 +174,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     )
 
     output$download_edge_table <- downloadHandler(
-      filename = function() paste0("spieceasi_edges_", Sys.Date(), ".tsv"),
+      filename = function() paste0("sparcc_edges_", Sys.Date(), ".tsv"),
       content = function(file) readr::write_tsv(network_result()$edge_table, file)
     )
   })

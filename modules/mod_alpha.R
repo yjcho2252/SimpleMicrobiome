@@ -4,7 +4,7 @@ mod_alpha_ui <- function(id) {
   tagList(
     sidebarLayout(
       sidebarPanel(
-        width = 3,
+        width = 2,
         h4(icon("circle-nodes"), "Alpha Diversity"),
         hr(),
         uiOutput(ns("local_group_selector")),
@@ -12,12 +12,20 @@ mod_alpha_ui <- function(id) {
         hr(),
         
         h4(icon("list-check"), "Index Selection"),
-        checkboxGroupInput(ns("alpha_methods"), "Indices:",
+        tags$style(HTML(sprintf(
+          "#%s > label.control-label { display: none; margin: 0; } #%s { margin-bottom: 4px; }",
+          ns("alpha_methods"), ns("alpha_methods")
+        ))),
+        checkboxGroupInput(ns("alpha_methods"), "",
                            choices = c("Observed", "Chao1", "Shannon", "Simpson"),
                            selected = c("Chao1", "Shannon")),
         
         hr(),
-        h4(icon("sliders"), "Visualization Options"),
+        h4(icon("sliders"), "P-value Options"),
+        tags$style(HTML(sprintf(
+          "#%s { margin-bottom: 2px; } #%s { margin-top: 0; margin-bottom: 4px; }",
+          ns("show_p_val"), ns("only_sig")
+        ))),
         checkboxInput(ns("show_p_val"), "Show P-value Comparison Bars", value = TRUE),
         
         conditionalPanel(
@@ -31,14 +39,25 @@ mod_alpha_ui <- function(id) {
                     selected = "wilcox.test"),
         
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions (px)"),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width:", value = 800, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height:", value = 600, min = 300, step = 50),
         
         hr(),
         h5(icon("download"), "Download"),
-        downloadButton(ns("download_alpha_plot"), "Download Plot (PNG)", style = "font-size: 12px;"),
-        downloadButton(ns("download_alpha_data"), "Download Data (TSV)", style = "font-size: 12px;")
+        div(
+          style = "display: flex; gap: 4px; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_alpha_plot"),
+            "Download Plot (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_alpha_data"),
+            "Download Data (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
+        )
       ),
       mainPanel(
         plotOutput(ns("alpha_plot_out"), height = "auto"), 
