@@ -5,13 +5,17 @@ library(ANCOMBC)
 library(DT)
 library(bslib)
 library(ggplot2)
-library(ALDEx2)
 library(ggpubr)
 library(shinyWidgets)
 library(Maaslin2)
 library(microbiome)
 library(cluster)
 library(vegan)
+library(dplyr)
+library(randomForest)
+library(ComplexHeatmap)
+library(NetCoMi)
+library(igraph)
 
 app_script_path <- tryCatch({
   normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)
@@ -20,6 +24,24 @@ app_script_path <- tryCatch({
 })
 app_root_dir <- if (nzchar(app_script_path)) dirname(app_script_path) else normalizePath(getwd(), winslash = "/", mustWork = FALSE)
 options(simplemicrobiome_app_dir = app_root_dir)
+options(shiny.error = function(...) {
+  args <- list(...)
+  msg <- if (length(args) >= 1 && inherits(args[[1]], "condition")) {
+    conditionMessage(args[[1]])
+  } else if (length(args) >= 1) {
+    as.character(args[[1]])
+  } else {
+    geterrmessage()
+  }
+  cat(
+    sprintf(
+      "[%s] [SHINY-ERROR] %s\n",
+      format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+      msg
+    ),
+    file = stderr()
+  )
+})
 
 ## Module Loading
 mod_path <- file.path(app_root_dir, "modules")
@@ -137,6 +159,11 @@ ui <- page_navbar(
     icon = icon("diagram-project"),
     nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi")),
     nav_panel("SparCC", icon = icon("share-nodes"), mod_sparcc_ui("mod_sparcc"))
+  ),
+  nav_panel(
+    title = "Citation",
+    icon = icon("book"),
+    mod_citation_ui("mod_citation")
   )
   
 )
@@ -171,6 +198,7 @@ server <- function(input, output, session) {
   mod_randomforest_server("mod_randomforest", ps_obj_filtered_raw)
   mod_spieceasi_server("mod_spieceasi", ps_obj_filtered_raw)
   mod_sparcc_server("mod_sparcc", ps_obj_filtered_raw)
+  mod_citation_server("mod_citation")
   
   observeEvent(input[["mod_fileload-reset_all_app"]], {
     session$reload()
@@ -179,5 +207,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
 

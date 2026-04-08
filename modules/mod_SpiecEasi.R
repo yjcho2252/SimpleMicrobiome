@@ -1,8 +1,3 @@
-library(shiny)
-library(phyloseq)
-library(DT)
-library(igraph)
-
 ## UI
 mod_spieceasi_ui <- function(id) {
   ns <- NS(id)
@@ -156,9 +151,44 @@ mod_spieceasi_server <- function(id, ps_obj) {
         need(igraph::ecount(g) > 0, "No edges were inferred. Try changing parameters or filtering settings.")
       )
       edge_weight <- igraph::E(g)$weight
-      edge_col <- ifelse(edge_weight >= 0, "#D73027", "#4575B4")
+      edge_col <- ifelse(edge_weight >= 0, "#4575B4", "#D73027")
       edge_col[is.na(edge_col)] <- "#999999"
-      plot(g, layout = igraph::layout_with_fr(g), vertex.size = 5, vertex.label.cex = 0.7, vertex.label.color = "#222222", vertex.color = "#F1C40F", edge.width = 1.2, edge.color = edge_col, main = "NetCoMi SpiecEasi Network")
+      edge_abs <- abs(edge_weight)
+      edge_abs[!is.finite(edge_abs)] <- 0
+      ew_rng <- range(edge_abs, na.rm = TRUE)
+      if (!all(is.finite(ew_rng)) || diff(ew_rng) == 0) {
+        edge_width <- rep(2.2, length(edge_abs))
+      } else {
+        edge_width <- 1 + 5 * (edge_abs - ew_rng[1]) / (ew_rng[2] - ew_rng[1])
+      }
+      plot(g, layout = igraph::layout_with_fr(g), vertex.size = 5, vertex.label.cex = 0.7, vertex.label.color = "#222222", vertex.color = "#F1C40F", edge.width = edge_width, edge.color = edge_col, main = "NetCoMi SpiecEasi Network")
+      graphics::legend(
+        "topleft",
+        legend = c("Positive", "Negative"),
+        col = c("#4575B4", "#D73027"),
+        lty = 1,
+        lwd = 3,
+        bty = "n",
+        cex = 0.9,
+        title = "Edge sign"
+      )
+      width_levels <- c(ew_rng[1], mean(ew_rng), ew_rng[2])
+      if (!all(is.finite(width_levels))) width_levels <- c(0, 0, 0)
+      if (!all(is.finite(ew_rng)) || diff(ew_rng) == 0) {
+        width_legend <- rep(2.2, 3)
+      } else {
+        width_legend <- 1 + 5 * (width_levels - ew_rng[1]) / (ew_rng[2] - ew_rng[1])
+      }
+      graphics::legend(
+        "bottomleft",
+        legend = paste0(c("Low", "Mid", "High"), " |w|=", sprintf("%.2f", width_levels)),
+        col = "#4D4D4D",
+        lty = 1,
+        lwd = width_legend,
+        bty = "n",
+        cex = 0.85,
+        title = "Edge strength"
+      )
     })
 
     output$network_plot <- renderPlot({ network_plot_reactive() }, height = function() input$plot_height, width = function() input$plot_width)
