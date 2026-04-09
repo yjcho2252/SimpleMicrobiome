@@ -36,13 +36,18 @@ mod_randomforest_ui <- function(id) {
           choices = c("TSS", "CLR", "log"),
           selected = "TSS"
         ),
-        numericInput(ns("prevalence_filter_pct"), "6. Feature prevalence cutoff (%)", value = 5, min = 0, max = 100, step = 1),
+        numericInput(ns("prevalence_filter_pct"), "6. Feature prevalence cutoff (0-20%)", value = 5, min = 0, max = 20, step = 1),
         numericInput(ns("top_n_features"), "7. Top N features by mean abundance", value = 100, min = 10, max = 5000, step = 10),
         sliderInput(ns("train_ratio"), "8. Train ratio", min = 0.6, max = 0.9, value = 0.8, step = 0.05),
-        numericInput(ns("ntree"), "9. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
-        numericInput(ns("mtry"), "10. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
-        numericInput(ns("seed"), "11. Random seed", value = 1234, min = 1, max = 999999, step = 1),
-        actionButton(ns("run_rf"), "Run Random Forest", class = "btn-danger", style = "font-size: 12px;"),
+        tags$details(
+          style = "margin-bottom: 10px;",
+          tags$summary("Advanced Options"),
+          br(),
+          numericInput(ns("ntree"), "9. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
+          numericInput(ns("mtry"), "10. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
+          numericInput(ns("seed"), "11. Random seed", value = 1234, min = 1, max = 999999, step = 1)
+        ),
+        actionButton(ns("run_rf"), "Run Random Forest", class = "btn-danger", style = "font-size: 12px;"),        
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-rf-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);

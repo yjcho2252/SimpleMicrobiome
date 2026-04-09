@@ -249,7 +249,11 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }
 
       if (plot_mode == "Group_Mean") {
-        df_plot <- df_sample %>%
+        df_sample_grouped <- df_sample %>%
+          dplyr::group_by(Sample, Combined_Group, .data[[primary_var]], Taxa_Group) %>%
+          dplyr::summarise(Abundance = sum(Abundance, na.rm = TRUE), .groups = "drop")
+
+        df_plot <- df_sample_grouped %>%
           dplyr::group_by(Combined_Group, .data[[primary_var]], Taxa_Group) %>%
           dplyr::summarise(Abundance = mean(Abundance, na.rm = TRUE), .groups = "drop")
       } else {
@@ -381,13 +385,17 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }      
       
       if (plot_mode == "Group_Mean") {
-        df_plot <- df_sample %>%
+        df_sample_grouped <- df_sample %>%
+          dplyr::group_by(Sample, Combined_Group, .data[[primary_var]], Taxa_Group) %>%
+          dplyr::summarise(Abundance = sum(Abundance, na.rm = TRUE), .groups = "drop")
+
+        df_plot <- df_sample_grouped %>%
           dplyr::group_by(Combined_Group, .data[[primary_var]], Taxa_Group) %>% 
           dplyr::summarise(Abundance = mean(Abundance, na.rm = TRUE), .groups = 'drop')
         
         x_var <- "Combined_Group"
         x_label <- paste(primary_var, if (!is.null(secondary_var_val)) secondary_var_val else "")
-        plot_title <- paste("Mean Relative Abundance of Top", topN, current_rank, "Taxa", combined_title_suffix)
+        plot_title <- paste("Mean Relative Abundance of Top", topN, current_rank, "Taxa + Others", combined_title_suffix)
         
         df_plot[[x_var]] <- factor(df_plot[[x_var]])
         

@@ -7,13 +7,40 @@ mod_spieceasi_ui <- function(id) {
         width = 2,
         h4(icon("diagram-project"), "SpiecEasi Network"),
         hr(),
-        selectInput(ns("tax_level"), "1. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
-        numericInput(ns("prevalence_filter_pct"), "2. Prevalence filter cutoff (%)", value = 10, min = 0, max = 100, step = 1),
-        numericInput(ns("max_taxa"), "3. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
-        numericInput(ns("seed"), "4. Seed", value = 1001, min = 1, step = 1),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2400, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 700, min = 300, max = 2400, step = 50),
-        actionButton(ns("run_network_btn"), "Run SpiecEasi", class = "btn-danger", style = "font-size: 12px;"),
+        selectInput(ns("group_var"), "1. Group panel", choices = c("All"), selected = "All"),
+        selectizeInput(
+          ns("group_levels"),
+          "2. Group levels",
+          choices = NULL,
+          selected = NULL,
+          multiple = TRUE,
+          options = list(
+            placeholder = "Select one or more levels",
+            plugins = list("remove_button")
+          )
+        ),
+        tags$hr(),
+        tags$small(strong("Current Comparison")),
+        verbatimTextOutput(ns("comparison_status"), placeholder = TRUE),
+        selectInput(ns("tax_level"), "3. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
+        numericInput(ns("prevalence_filter_pct"), "4. Prevalence filter cutoff (%)", value = 10, min = 0, max = 100, step = 1),
+        selectInput(ns("node_size_by"), "5. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
+        selectInput(ns("node_color_by"), "6. Node color", choices = c("None"), selected = "None"),
+        tags$details(
+          style = "margin-bottom: 8px;",
+          tags$summary("Advanced Options"),
+          numericInput(ns("max_taxa"), "7. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
+          numericInput(ns("seed"), "8. Seed", value = 1001, min = 1, step = 1)
+        ),
+        hr(),
+        h5(icon("expand-arrows-alt"), "Plot Dimensions"),
+        numericInput(ns("plot_width"), "Plot width (px)", value = 800, min = 400, max = 2400, step = 50),
+        numericInput(ns("plot_height"), "Plot height (px)", value = 550, min = 300, max = 2400, step = 50),
+        tags$div(
+          style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;",
+          actionButton(ns("run_network_btn"), "Run SpiecEasi", class = "btn-danger", style = "font-size: 12px;"),
+          tags$span("May take a long time.", style = "font-size: 11px; color: #b94a48;")
+        ),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-spieceasi-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);
@@ -26,14 +53,19 @@ mod_spieceasi_ui <- function(id) {
       mainPanel(
         tabsetPanel(
           tabPanel(
-            "Network Plot",
-            downloadButton(ns("download_network_plot"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-            plotOutput(ns("network_plot"), height = "auto")
+            "Network Plot (All)",
+            downloadButton(ns("download_network_plot_all"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+            plotOutput(ns("network_plot_all"), height = "auto")
+          ),
+          tabPanel(
+            "Network Plot (Connected)",
+            downloadButton(ns("download_network_plot_connected"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+            plotOutput(ns("network_plot_connected"), height = "auto")
           ),
           tabPanel(
             "Edge Table",
-            downloadButton(ns("download_edge_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-            DTOutput(ns("edge_table"))
+            downloadButton(ns("download_edge_table_all"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+            DTOutput(ns("edge_table_all"))
           ),
           tabPanel("Summary", verbatimTextOutput(ns("network_summary")))
         )
@@ -45,6 +77,59 @@ mod_spieceasi_ui <- function(id) {
 ## Server
 mod_spieceasi_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
+    group_levels_choices_cache <- reactiveVal(character(0))
+    observeEvent(list(ps_obj(), input$group_var), {
+      req(ps_obj())
+      ps <- ps_obj()
+
+      group_choices <- "All"
+      if (!is.null(phyloseq::sample_data(ps, errorIfNULL = FALSE))) {
+        group_choices <- c("All", colnames(as.data.frame(phyloseq::sample_data(ps))))
+      }
+      selected_group <- if (!is.null(input$group_var) && input$group_var %in% group_choices) input$group_var else "All"
+      updateSelectInput(session, "group_var", choices = group_choices, selected = selected_group)
+
+      level_choices <- character(0)
+      if (selected_group != "All" && !is.null(phyloseq::sample_data(ps, errorIfNULL = FALSE))) {
+        sd_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+        if (selected_group %in% colnames(sd_df)) {
+          level_choices <- unique(as.character(sd_df[[selected_group]]))
+          level_choices <- sort(level_choices[!is.na(level_choices) & level_choices != ""])
+        }
+      }
+      selected_levels <- input$group_levels
+      if (is.null(selected_levels)) selected_levels <- character(0)
+      selected_levels <- intersect(selected_levels, level_choices)
+
+      old_choices <- group_levels_choices_cache()
+      old_selected <- input$group_levels
+      if (is.null(old_selected)) old_selected <- character(0)
+      choices_changed <- !identical(old_choices, level_choices)
+      selection_changed <- !setequal(selected_levels, old_selected)
+      if (choices_changed || selection_changed) {
+        freezeReactiveValue(input, "group_levels")
+        updateSelectizeInput(session, "group_levels", choices = level_choices, selected = selected_levels, server = TRUE)
+        group_levels_choices_cache(level_choices)
+      }
+    }, ignoreInit = FALSE)
+
+    observe({
+      req(ps_obj())
+      ps <- ps_obj()
+      color_choices <- "None"
+      tt <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      if (!is.null(tt)) {
+        tax_ranks <- setdiff(colnames(tt), "Kingdom")
+        if (!is.null(tax_ranks) && length(tax_ranks) > 0) {
+          color_choices <- c("None", tax_ranks)
+        }
+      }
+      selected_color <- input$node_color_by
+      if (is.null(selected_color) || !selected_color %in% color_choices) {
+        selected_color <- "None"
+      }
+      updateSelectInput(session, "node_color_by", choices = color_choices, selected = selected_color)
+    })
 
     build_network_inputs <- reactive({
       req(ps_obj())
@@ -57,14 +142,14 @@ mod_spieceasi_server <- function(id, ps_obj) {
       ps_use <- ps
       if (input$tax_level != "ASV") {
         validate(
-          need(!is.null(phyloseq::tax_table(ps_use)), "Taxonomy table is required to aggregate by taxonomic level.")
+          need(!is.null(phyloseq::tax_table(ps_use, errorIfNULL = FALSE)), "Taxonomy table is required to aggregate by taxonomic level.")
         )
         tax_cols <- colnames(phyloseq::tax_table(ps_use))
         validate(
           need(input$tax_level %in% tax_cols, paste("Taxonomic rank", input$tax_level, "not found in taxonomy table."))
         )
         ps_use <- phyloseq::tax_glom(ps_use, taxrank = input$tax_level, NArm = TRUE)
-        tax_df <- as.data.frame(phyloseq::tax_table(ps_use))
+        tax_df <- as.data.frame(phyloseq::tax_table(ps_use), stringsAsFactors = FALSE)
         rank_values <- as.character(tax_df[[input$tax_level]])
         rank_values[is.na(rank_values) | rank_values == ""] <- phyloseq::taxa_names(ps_use)[is.na(rank_values) | rank_values == ""]
         phyloseq::taxa_names(ps_use) <- make.unique(rank_values)
@@ -86,7 +171,26 @@ mod_spieceasi_server <- function(id, ps_obj) {
         otu_mat <- otu_mat[order(rowSums(otu_mat), decreasing = TRUE)[seq_len(max_taxa)], , drop = FALSE]
       }
 
-      list(otu_mat = otu_mat)
+      sample_ids <- colnames(otu_mat)
+      sd <- phyloseq::sample_data(ps_use, errorIfNULL = FALSE)
+      if (is.null(sd)) {
+        sample_df <- data.frame(sample_id = sample_ids, stringsAsFactors = FALSE)
+        rownames(sample_df) <- sample_ids
+      } else {
+        sample_df <- as.data.frame(sd, stringsAsFactors = FALSE)
+        sample_df$sample_id <- rownames(sample_df)
+        sample_df <- sample_df[sample_ids, , drop = FALSE]
+      }
+
+      taxa_annotation <- data.frame(node_name = rownames(otu_mat), stringsAsFactors = FALSE)
+      tt_use <- phyloseq::tax_table(ps_use, errorIfNULL = FALSE)
+      if (!is.null(tt_use)) {
+        tax_df <- as.data.frame(tt_use, stringsAsFactors = FALSE)
+        tax_df$node_name <- rownames(tax_df)
+        taxa_annotation <- dplyr::left_join(taxa_annotation, tax_df, by = "node_name")
+      }
+
+      list(otu_mat = otu_mat, sample_df = sample_df, taxa_annotation = taxa_annotation)
     })
 
     network_result <- eventReactive(input$run_network_btn, {
@@ -102,24 +206,195 @@ mod_spieceasi_server <- function(id, ps_obj) {
       }, add = TRUE)
 
       set.seed(as.integer(input$seed))
-      otu_mat <- build_network_inputs()$otu_mat
+      built <- build_network_inputs()
+      otu_mat <- built$otu_mat
+      sample_df <- built$sample_df
+      group_var <- input$group_var
+      group_var_resolved <- group_var
+      if (!is.null(group_var) && group_var != "All" && !group_var %in% colnames(sample_df)) {
+        matched_col <- colnames(sample_df)[make.names(colnames(sample_df)) == make.names(group_var)]
+        if (length(matched_col) >= 1) {
+          group_var_resolved <- matched_col[1]
+        } else {
+          group_var_resolved <- "All"
+        }
+      }
 
       result <- tryCatch({
         withProgress(message = "Running NetCoMi SpiecEasi...", value = 0, {
-          net_obj <- NetCoMi::netConstruct(data = t(otu_mat), dataType = "counts", measure = "spieceasi", verbose = 0)
-          adja <- net_obj$adjaMat1
-          if (is.null(adja)) adja <- net_obj$adjaMat
-          validate(need(!is.null(adja), "NetCoMi returned no adjacency matrix for SpiecEasi."))
-          graph <- igraph::graph_from_adjacency_matrix(as.matrix(adja), mode = "undirected", weighted = TRUE, diag = FALSE)
-          edge_df <- igraph::as_data_frame(graph, what = "edges")
-          if (nrow(edge_df) > 0 && "weight" %in% colnames(edge_df)) {
-            edge_df$weight <- as.numeric(edge_df$weight)
-            edge_df$sign <- ifelse(edge_df$weight >= 0, "Positive", "Negative")
+          sample_ids <- colnames(otu_mat)
+          if (!is.null(group_var_resolved) && group_var_resolved != "All" && group_var_resolved %in% colnames(sample_df)) {
+            group_values <- as.character(sample_df[[group_var_resolved]])
+            names(group_values) <- rownames(sample_df)
+            group_values <- group_values[sample_ids]
+            group_values <- trimws(group_values)
+            group_values[is.na(group_values) | group_values == ""] <- "(Missing)"
+            group_samples <- split(sample_ids, group_values)
           } else {
-            edge_df$weight <- NA_real_
-            edge_df$sign <- NA_character_
+            group_samples <- list(All = sample_ids)
           }
-          list(graph = graph, edge_table = edge_df, n_taxa = nrow(otu_mat), n_samples = ncol(otu_mat))
+
+          selected_levels <- input$group_levels
+          if (!is.null(group_var_resolved) && group_var_resolved != "All") {
+            if (is.null(selected_levels)) selected_levels <- character(0)
+            selected_levels <- trimws(as.character(selected_levels))
+            selected_levels <- selected_levels[nzchar(selected_levels)]
+            validate(need(length(selected_levels) > 0, "Select one or more group levels."))
+            available_levels <- names(group_samples)
+            available_levels_key <- trimws(as.character(available_levels))
+            selected_levels_key <- trimws(as.character(selected_levels))
+            matched_levels <- available_levels[available_levels_key %in% selected_levels_key]
+            debug_msg <- paste0(
+              "No selected group levels are available for network estimation.\n",
+              "Selected (raw): ", paste(selected_levels, collapse = ", "), "\n",
+              "Available (raw): ", paste(available_levels, collapse = ", "), "\n",
+              "Selected (normalized): ", paste(selected_levels_key, collapse = ", "), "\n",
+              "Available (normalized): ", paste(available_levels_key, collapse = ", "), "\n",
+              "Group variable (input/resolved): ", as.character(group_var), " / ", as.character(group_var_resolved)
+            )
+            validate(need(length(matched_levels) > 0, debug_msg))
+            group_samples <- group_samples[matched_levels]
+          }
+          validate(need(length(group_samples) > 0, "No group level is available for network estimation."))
+
+          get_association_matrix <- function(x) {
+            if (is.null(x)) return(NULL)
+            if (is.list(x) && !is.data.frame(x)) {
+              if (!is.null(x$refit)) return(as.matrix(x$refit))
+              if (length(x) >= 1) return(as.matrix(x[[1]]))
+            }
+            as.matrix(x)
+          }
+
+          build_group_network <- function(group_name, ids) {
+            sub_otu <- otu_mat[, ids, drop = FALSE]
+            run_spieceasi <- function(ncores) {
+              NetCoMi::netConstruct(
+                data = t(sub_otu),
+                dataType = "counts",
+                measure = "spieceasi",
+                measurePar = list(
+                  pulsar.params = list(ncores = ncores)
+                ),
+                verbose = 0
+              )
+            }
+
+            default_ncores <- if (.Platform$OS.type == "windows") 1L else 4L
+            net_obj <- tryCatch(
+              run_spieceasi(default_ncores),
+              error = function(e) {
+                msg <- conditionMessage(e)
+                is_parallel_worker_error <- grepl("jobs failed", msg, ignore.case = TRUE) && grepl("sparseiCov", msg, ignore.case = TRUE)
+                if (!is_parallel_worker_error) stop(e)
+                showNotification("SpiecEasi parallel run failed due to worker export issue. Retrying with 1 core.", type = "warning", duration = 8)
+                run_spieceasi(1)
+              }
+            )
+
+            adja <- net_obj$adjaMat1
+            if (is.null(adja)) adja <- net_obj$adjaMat
+            validate(need(!is.null(adja), paste("NetCoMi returned no adjacency matrix for SpiecEasi group:", group_name)))
+            adja_mat <- as.matrix(adja)
+
+            assoc <- get_association_matrix(net_obj$assoMat1)
+            if (is.null(assoc)) assoc <- get_association_matrix(net_obj$assoMat)
+            if (is.null(assoc)) assoc <- get_association_matrix(net_obj$assoEst1)
+            if (is.null(assoc)) assoc <- get_association_matrix(net_obj$assoEst)
+
+            weight_mat <- adja_mat
+            if (!is.null(assoc) &&
+                is.matrix(assoc) &&
+                nrow(assoc) == nrow(adja_mat) &&
+                ncol(assoc) == ncol(adja_mat)) {
+              if (!is.null(rownames(adja_mat)) &&
+                  !is.null(colnames(adja_mat)) &&
+                  !is.null(rownames(assoc)) &&
+                  !is.null(colnames(assoc)) &&
+                  all(rownames(adja_mat) %in% rownames(assoc)) &&
+                  all(colnames(adja_mat) %in% colnames(assoc))) {
+                assoc <- assoc[rownames(adja_mat), colnames(adja_mat), drop = FALSE]
+              }
+              weight_mat[adja_mat != 0] <- assoc[adja_mat != 0]
+            }
+
+            graph <- igraph::graph_from_adjacency_matrix(weight_mat, mode = "undirected", weighted = TRUE, diag = FALSE)
+            edge_df <- igraph::as_data_frame(graph, what = "edges")
+            if (nrow(edge_df) > 0 && "weight" %in% colnames(edge_df)) {
+              edge_df$weight <- as.numeric(edge_df$weight)
+              edge_df$sign <- ifelse(edge_df$weight > 0, "Positive", ifelse(edge_df$weight < 0, "Negative", "Zero"))
+            } else {
+              edge_df$weight <- NA_real_
+              edge_df$sign <- NA_character_
+            }
+            edge_df$group <- group_name
+            sample_totals <- colSums(sub_otu, na.rm = TRUE)
+            sample_totals[sample_totals <= 0 | is.na(sample_totals)] <- 1
+            sub_otu_rel <- sweep(sub_otu, 2, sample_totals, "/")
+            abundance <- rowMeans(sub_otu_rel, na.rm = TRUE)
+            list(graph = graph, edge_table = edge_df, abundance = abundance)
+          }
+
+          networks <- list()
+          group_status <- list()
+          for (gname in names(group_samples)) {
+            n_samp <- length(group_samples[[gname]])
+            if (n_samp < 3) {
+              group_status[[gname]] <- data.frame(
+                group = gname,
+                n_samples = n_samp,
+                status = "Skipped (<3 samples)",
+                nodes = NA_integer_,
+                edges = NA_integer_,
+                message = "At least 3 samples are required.",
+                stringsAsFactors = FALSE
+              )
+              next
+            }
+
+            g_res <- tryCatch(
+              build_group_network(gname, group_samples[[gname]]),
+              error = function(e) e
+            )
+            if (inherits(g_res, "error")) {
+              group_status[[gname]] <- data.frame(
+                group = gname,
+                n_samples = n_samp,
+                status = "Failed",
+                nodes = NA_integer_,
+                edges = NA_integer_,
+                message = conditionMessage(g_res),
+                stringsAsFactors = FALSE
+              )
+            } else {
+              networks[[gname]] <- g_res
+              group_status[[gname]] <- data.frame(
+                group = gname,
+                n_samples = n_samp,
+                status = "Success",
+                nodes = igraph::vcount(g_res$graph),
+                edges = igraph::ecount(g_res$graph),
+                message = "",
+                stringsAsFactors = FALSE
+              )
+            }
+          }
+
+          validate(need(length(networks) > 0, "No group network was successfully estimated."))
+          edge_table <- do.call(rbind, lapply(networks, `[[`, "edge_table"))
+          if (is.null(edge_table)) edge_table <- data.frame()
+          status_df <- do.call(rbind, group_status)
+          if (is.null(status_df)) status_df <- data.frame()
+
+          list(
+            networks = networks,
+            edge_table = edge_table,
+            n_taxa = nrow(otu_mat),
+            n_samples = ncol(otu_mat),
+            group_var = if (is.null(group_var) || group_var == "All") "All" else group_var,
+            group_status = status_df,
+            taxa_annotation = built$taxa_annotation
+          )
         })
       }, error = function(e) {
         showNotification(paste("SpiecEasi execution failed:", e$message), type = "error", duration = NULL)
@@ -130,82 +405,290 @@ mod_spieceasi_server <- function(id, ps_obj) {
       result
     })
 
+    get_connected_graph <- function(g) {
+      connected_nodes <- which(igraph::degree(g) > 0)
+      igraph::induced_subgraph(g, vids = connected_nodes)
+    }
+
+    get_current_eligible_groups <- function(built, group_var_value, group_levels_value) {
+      if (is.null(built)) return(character(0))
+      if (is.null(group_var_value) || group_var_value == "All" || !group_var_value %in% colnames(built$sample_df)) {
+        return("All")
+      }
+      gvals <- as.character(built$sample_df[[group_var_value]])
+      gvals <- trimws(gvals)
+      gvals[is.na(gvals) | gvals == ""] <- "(Missing)"
+      cnt <- table(gvals)
+      groups <- names(cnt[cnt >= 3])
+      if (!is.null(group_levels_value) && length(group_levels_value) > 0) {
+        groups <- intersect(groups, trimws(as.character(group_levels_value)))
+      }
+      groups
+    }
+
+    output$comparison_status <- renderText({
+      selected_group_var <- if (is.null(input$group_var)) "All" else input$group_var
+      built <- tryCatch(build_network_inputs(), error = function(e) NULL)
+      sample_count_line <- "Sample counts by level: (run data not ready)"
+      if (!is.null(built) && selected_group_var != "All" && selected_group_var %in% colnames(built$sample_df)) {
+        gvals <- as.character(built$sample_df[[selected_group_var]])
+        gvals[is.na(gvals) | gvals == ""] <- "(Missing)"
+        cnt <- sort(table(gvals), decreasing = TRUE)
+        selected_levels <- input$group_levels
+        if (!is.null(selected_levels) && length(selected_levels) > 0) {
+          cnt <- cnt[names(cnt) %in% selected_levels]
+        }
+        if (length(cnt) == 0) {
+          sample_count_line <- "Sample counts by level: None matched selection"
+        } else {
+          count_labels <- paste0(names(cnt), "=", as.integer(cnt), ifelse(as.integer(cnt) >= 3, " (ok)", " (<3)"))
+          sample_count_line <- paste("Sample counts by level:", paste(count_labels, collapse = ", "))
+        }
+      } else if (!is.null(built) && selected_group_var == "All") {
+        sample_count_line <- paste0("Sample counts by level: All=", ncol(built$otu_mat), " (ok)")
+      }
+
+      res <- tryCatch(network_result(), error = function(e) NULL)
+
+      if (is.null(res)) {
+        return(paste(
+          paste0("Group variable: ", selected_group_var),
+          sample_count_line,
+          "Status: Run network to compute available groups.",
+          sep = "\n"
+        ))
+      }
+
+      groups <- get_current_eligible_groups(built, selected_group_var, input$group_levels)
+      run_groups <- names(res$networks)
+      lines <- c(
+        paste0("Group variable: ", selected_group_var),
+        paste0("Available groups (n=", length(groups), "): ", if (length(groups) == 0) "None" else paste(groups, collapse = ", ")),
+        paste0("Selected levels: ", if (is.null(input$group_levels) || length(input$group_levels) == 0) "All" else paste(input$group_levels, collapse = ", ")),
+        sample_count_line
+      )
+
+      if (!is.null(res$group_status) && nrow(res$group_status) > 0) {
+        lines <- c(lines, "Run status by group:")
+        for (i in seq_len(nrow(res$group_status))) {
+          st <- res$group_status[i, , drop = FALSE]
+          lines <- c(
+            lines,
+            paste0(
+              "- ", st$group,
+              " | samples=", st$n_samples,
+              " | status=", st$status,
+              ifelse(is.na(st$nodes), "", paste0(" | nodes=", st$nodes)),
+              ifelse(is.na(st$edges), "", paste0(" | edges=", st$edges)),
+              ifelse(is.na(st$message) || st$message == "", "", paste0(" | msg=", st$message))
+            )
+          )
+        }
+      }
+      lines <- c(lines, "Status: Facet by available groups.")
+
+      paste(lines, collapse = "\n")
+    })
+
     output$network_summary <- renderText({
       req(network_result())
-      g <- network_result()$graph
-      paste(c(
+      res <- network_result()
+      lines <- c(
         "SpiecEasi Network Summary",
-        paste0("Samples used: ", network_result()$n_samples),
-        paste0("Taxa used: ", network_result()$n_taxa),
-        paste0("Nodes: ", igraph::vcount(g)),
-        paste0("Edges: ", igraph::ecount(g)),
-        paste0("Connected components: ", igraph::components(g)$no)
-      ), collapse = "\n")
+        paste0("Samples used: ", res$n_samples),
+        paste0("Taxa used: ", res$n_taxa),
+        paste0("Group variable: ", res$group_var),
+        ""
+      )
+
+      for (gname in names(res$networks)) {
+        g_all <- res$networks[[gname]]$graph
+        g_connected <- get_connected_graph(g_all)
+        lines <- c(
+          lines,
+          paste0("[", gname, "] All"),
+          paste0("Nodes: ", igraph::vcount(g_all)),
+          paste0("Edges: ", igraph::ecount(g_all)),
+          paste0("Connected components: ", if (igraph::vcount(g_all) == 0) 0 else igraph::components(g_all)$no),
+          paste0("[", gname, "] Connected"),
+          paste0("Nodes: ", igraph::vcount(g_connected)),
+          paste0("Edges: ", igraph::ecount(g_connected)),
+          paste0("Connected components: ", if (igraph::vcount(g_connected) == 0) 0 else igraph::components(g_connected)$no),
+          ""
+        )
+      }
+      paste(lines, collapse = "\n")
     })
 
-    network_plot_reactive <- reactive({
-      req(network_result())
-      g <- network_result()$graph
+    draw_network_plot <- function(res, connected_only = FALSE) {
       validate(
-        need(igraph::vcount(g) > 0, "No nodes available for plotting."),
-        need(igraph::ecount(g) > 0, "No edges were inferred. Try changing parameters or filtering settings.")
+        need(requireNamespace("ggplot2", quietly = TRUE), "ggplot2 package is required for network plotting."),
+        need(requireNamespace("ggrepel", quietly = TRUE), "ggrepel package is required for network label repulsion."),
+        need(length(res$networks) > 0, "No group network is available for plotting.")
       )
-      edge_weight <- igraph::E(g)$weight
-      edge_col <- ifelse(edge_weight >= 0, "#4575B4", "#D73027")
-      edge_col[is.na(edge_col)] <- "#999999"
-      edge_abs <- abs(edge_weight)
-      edge_abs[!is.finite(edge_abs)] <- 0
-      ew_rng <- range(edge_abs, na.rm = TRUE)
-      if (!all(is.finite(ew_rng)) || diff(ew_rng) == 0) {
-        edge_width <- rep(2.2, length(edge_abs))
-      } else {
-        edge_width <- 1 + 5 * (edge_abs - ew_rng[1]) / (ew_rng[2] - ew_rng[1])
+
+      size_var <- input$node_size_by
+      color_var <- input$node_color_by
+      if (is.null(color_var)) color_var <- "None"
+      node_rows <- list()
+      edge_rows <- list()
+      idx <- 1L
+
+      for (gname in names(res$networks)) {
+        g <- res$networks[[gname]]$graph
+        if (connected_only) g <- get_connected_graph(g)
+        if (igraph::vcount(g) == 0 || igraph::ecount(g) == 0) next
+
+        edge_weight <- igraph::E(g)$weight
+        edge_abs <- abs(edge_weight)
+        edge_abs[!is.finite(edge_abs)] <- 0
+
+        layout_mat <- igraph::layout_with_fr(g, weights = pmax(edge_abs, .Machine$double.eps)) * 0.65
+        node_df <- data.frame(
+          name = igraph::V(g)$name,
+          x = layout_mat[, 1],
+          y = layout_mat[, 2],
+          group = gname,
+          degree = igraph::degree(g),
+          abundance = as.numeric(res$networks[[gname]]$abundance[igraph::V(g)$name]),
+          stringsAsFactors = FALSE
+        )
+        node_df$abundance[is.na(node_df$abundance)] <- 0
+        node_df$node_size <- if (identical(size_var, "Abundance")) node_df$abundance else as.numeric(node_df$degree)
+
+        edge_df <- igraph::as_data_frame(g, what = "edges")
+        edge_df$edge_sign <- ifelse(edge_df$weight > 0, "Positive", ifelse(edge_df$weight < 0, "Negative", "Zero"))
+        edge_df$edge_strength <- abs(edge_df$weight)
+        edge_df$group <- gname
+
+        node_rows[[idx]] <- node_df
+        edge_rows[[idx]] <- edge_df
+        idx <- idx + 1L
       }
-      plot(g, layout = igraph::layout_with_fr(g), vertex.size = 5, vertex.label.cex = 0.7, vertex.label.color = "#222222", vertex.color = "#F1C40F", edge.width = edge_width, edge.color = edge_col, main = "NetCoMi SpiecEasi Network")
-      graphics::legend(
-        "topleft",
-        legend = c("Positive", "Negative"),
-        col = c("#4575B4", "#D73027"),
-        lty = 1,
-        lwd = 3,
-        bty = "n",
-        cex = 0.9,
-        title = "Edge sign"
-      )
-      width_levels <- c(ew_rng[1], mean(ew_rng), ew_rng[2])
-      if (!all(is.finite(width_levels))) width_levels <- c(0, 0, 0)
-      if (!all(is.finite(ew_rng)) || diff(ew_rng) == 0) {
-        width_legend <- rep(2.2, 3)
-      } else {
-        width_legend <- 1 + 5 * (width_levels - ew_rng[1]) / (ew_rng[2] - ew_rng[1])
+
+      validate(need(length(node_rows) > 0, "No network panels available after filtering."))
+      node_plot_df <- do.call(rbind, node_rows)
+      edge_plot_df <- do.call(rbind, edge_rows)
+      node_plot_df$node_color_group <- "All Nodes"
+      if (!identical(color_var, "None") && !is.null(res$taxa_annotation) && color_var %in% colnames(res$taxa_annotation)) {
+        color_map <- res$taxa_annotation[, c("node_name", color_var), drop = FALSE]
+        color_map[[color_var]] <- as.character(color_map[[color_var]])
+        color_map[[color_var]][is.na(color_map[[color_var]]) | !nzchar(color_map[[color_var]])] <- paste0(color_var, "__Unassigned")
+        color_map <- color_map[!duplicated(color_map$node_name), , drop = FALSE]
+        node_plot_df <- dplyr::left_join(node_plot_df, color_map, by = c("name" = "node_name"))
+        node_plot_df$node_color_group <- as.character(node_plot_df[[color_var]])
+        node_plot_df$node_color_group[is.na(node_plot_df$node_color_group) | !nzchar(node_plot_df$node_color_group)] <- paste0(color_var, "__Unassigned")
       }
-      graphics::legend(
-        "bottomleft",
-        legend = paste0(c("Low", "Mid", "High"), " |w|=", sprintf("%.2f", width_levels)),
-        col = "#4D4D4D",
-        lty = 1,
-        lwd = width_legend,
-        bty = "n",
-        cex = 0.85,
-        title = "Edge strength"
-      )
+      node_plot_df$group <- factor(node_plot_df$group, levels = names(res$networks))
+      edge_plot_df$group <- factor(edge_plot_df$group, levels = names(res$networks))
+
+      edge_plot_df <- merge(edge_plot_df, node_plot_df[, c("name", "x", "y", "group")], by.x = c("from", "group"), by.y = c("name", "group"), all.x = TRUE, sort = FALSE)
+      edge_plot_df <- merge(edge_plot_df, node_plot_df[, c("name", "x", "y", "group")], by.x = c("to", "group"), by.y = c("name", "group"), all.x = TRUE, sort = FALSE, suffixes = c("", "_end"))
+      names(edge_plot_df)[names(edge_plot_df) == "x"] <- "x"
+      names(edge_plot_df)[names(edge_plot_df) == "y"] <- "y"
+      names(edge_plot_df)[names(edge_plot_df) == "x_end"] <- "xend"
+      names(edge_plot_df)[names(edge_plot_df) == "y_end"] <- "yend"
+
+      p <- ggplot2::ggplot() +
+        ggplot2::geom_segment(
+          data = edge_plot_df,
+          ggplot2::aes(x = x, y = y, xend = xend, yend = yend, color = edge_sign, linewidth = edge_strength),
+          alpha = 0.7
+        ) +
+        ggplot2::geom_point(
+          data = node_plot_df,
+          ggplot2::aes(x = x, y = y, size = node_size, fill = node_color_group),
+          shape = 21,
+          color = "#222222",
+          stroke = 0.2
+        ) +
+        ggrepel::geom_text_repel(
+          data = node_plot_df,
+          ggplot2::aes(x = x, y = y, label = name),
+          size = 2.8,
+          max.overlaps = Inf,
+          seed = as.integer(input$seed)
+        ) +
+        ggplot2::facet_wrap(~group, scales = "free") +
+        ggplot2::scale_color_manual(values = c("Positive" = "#4575B4", "Negative" = "#D73027", "Zero" = "#999999"), drop = FALSE, name = "Edge sign") +
+        ggplot2::scale_linewidth(name = "Edge strength (|w|)", range = c(0.2, 1.6)) +
+        ggplot2::scale_size(name = if (identical(size_var, "Abundance")) "Node size: Relative Abundance" else "Node size: Connectivity", range = c(2.4, 7.2)) +
+        ggplot2::theme_void() +
+        ggplot2::theme(
+          strip.text = ggplot2::element_text(face = "bold", size = 10, margin = ggplot2::margin(t = 4, b = 4)),
+          strip.background = ggplot2::element_rect(fill = "grey95", color = "grey65", linewidth = 0.4),
+          panel.spacing = grid::unit(6, "mm"),
+          panel.border = ggplot2::element_rect(color = "grey70", fill = NA, linewidth = 0.4),
+          plot.title = ggplot2::element_text(hjust = 0.5, face = "bold", size = 12, margin = ggplot2::margin(b = 10)),
+          legend.title = ggplot2::element_text(size = 9),
+          legend.text = ggplot2::element_text(size = 8)
+        ) +
+        ggplot2::ggtitle(if (connected_only) "NetCoMi SpiecEasi Network (Connected)" else "NetCoMi SpiecEasi Network (All)")
+
+      if (identical(color_var, "None")) {
+        p <- p + ggplot2::scale_fill_manual(values = c("All Nodes" = "#F1C40F"), guide = "none")
+      } else {
+        color_levels <- sort(unique(node_plot_df$node_color_group))
+        palette <- stats::setNames(grDevices::hcl.colors(length(color_levels), "Dark 3"), color_levels)
+        p <- p + ggplot2::scale_fill_manual(
+          name = paste0("Node color: ", color_var),
+          values = palette,
+          drop = FALSE
+        )
+      }
+
+      print(p)
+    }
+
+    edge_table_all <- reactive({
+      req(network_result())
+      network_result()$edge_table
     })
 
-    output$network_plot <- renderPlot({ network_plot_reactive() }, height = function() input$plot_height, width = function() input$plot_width)
-    output$edge_table <- renderDT({ datatable(network_result()$edge_table, options = list(scrollX = TRUE)) })
+    output$network_plot_all <- renderPlot({
+      req(network_result())
+      draw_network_plot(network_result(), connected_only = FALSE)
+    }, height = function() input$plot_height, width = function() input$plot_width)
 
-    output$download_network_plot <- downloadHandler(
-      filename = function() paste0("spieceasi_network_", Sys.Date(), ".png"),
+    output$network_plot_connected <- renderPlot({
+      req(network_result())
+      draw_network_plot(network_result(), connected_only = TRUE)
+    }, height = function() input$plot_height, width = function() input$plot_width)
+    output$edge_table_all <- renderDT({ datatable(edge_table_all(), options = list(scrollX = TRUE)) })
+
+    output$download_network_plot_all <- downloadHandler(
+      filename = function() paste0("spieceasi_network_all_", Sys.Date(), ".png"),
       content = function(file) {
-        grDevices::png(file, width = input$plot_width, height = input$plot_height, res = 120)
-        network_plot_reactive()
-        grDevices::dev.off()
+        req(network_result())
+        plot_width <- as.integer(input$plot_width)
+        plot_height <- as.integer(input$plot_height)
+        if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
+        if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
+
+        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        on.exit(grDevices::dev.off(), add = TRUE)
+        draw_network_plot(network_result(), connected_only = FALSE)
       }
     )
 
-    output$download_edge_table <- downloadHandler(
-      filename = function() paste0("spieceasi_edges_", Sys.Date(), ".tsv"),
-      content = function(file) readr::write_tsv(network_result()$edge_table, file)
+    output$download_network_plot_connected <- downloadHandler(
+      filename = function() paste0("spieceasi_network_connected_", Sys.Date(), ".png"),
+      content = function(file) {
+        req(network_result())
+        plot_width <- as.integer(input$plot_width)
+        plot_height <- as.integer(input$plot_height)
+        if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
+        if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
+
+        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        on.exit(grDevices::dev.off(), add = TRUE)
+        draw_network_plot(network_result(), connected_only = TRUE)
+      }
+    )
+
+    output$download_edge_table_all <- downloadHandler(
+      filename = function() paste0("spieceasi_edges_all_", Sys.Date(), ".tsv"),
+      content = function(file) readr::write_tsv(edge_table_all(), file)
     )
   })
 }

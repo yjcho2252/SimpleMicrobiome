@@ -16,6 +16,8 @@ library(randomForest)
 library(ComplexHeatmap)
 library(NetCoMi)
 library(igraph)
+library(ggraph)
+library(ggrepel)
 
 app_script_path <- tryCatch({
   normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)
@@ -157,8 +159,8 @@ ui <- page_navbar(
   nav_menu(
     title = "Network Analysis",
     icon = icon("diagram-project"),
-    nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi")),
-    nav_panel("SparCC", icon = icon("share-nodes"), mod_sparcc_ui("mod_sparcc"))
+    nav_panel("SparCC", icon = icon("share-nodes"), mod_sparcc_ui("mod_sparcc")),
+    nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi"))
   ),
   nav_panel(
     title = "Citation",
