@@ -18,6 +18,7 @@ library(NetCoMi)
 library(igraph)
 library(ggraph)
 library(ggrepel)
+library(shapr)
 
 app_script_path <- tryCatch({
   normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)

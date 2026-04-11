@@ -71,6 +71,19 @@ mod_preprocessing_ui <- function(id) {
 ## Server
 mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
   moduleServer(id, function(input, output, session) {
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
     
     ps_filtered <- reactiveVal(NULL)
     selection_initialized <- reactiveVal(FALSE)
@@ -179,9 +192,10 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     
     observeEvent(list(meta_df_for_dt(), input$toggle_group_var), {
       df <- meta_df_for_dt()
-      validate(need(input$toggle_group_var %in% colnames(df), "Selected group variable is not available."))
+      toggle_group_var <- resolve_meta_colname(input$toggle_group_var, colnames(df))
+      validate(need(toggle_group_var %in% colnames(df), "Selected group variable is not available."))
       
-      level_choices <- sort(unique(as.character(df[[input$toggle_group_var]])))
+      level_choices <- sort(unique(as.character(df[[toggle_group_var]])))
       level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       selected_levels <- isolate(input$toggle_group_levels)
       if (is.null(selected_levels) || !nzchar(selected_levels)) selected_levels <- character(0)
@@ -238,9 +252,10 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
                     "Select one group level to toggle."))
       
       df <- meta_df_for_dt()
-      validate(need(input$toggle_group_var %in% colnames(df), "Selected group variable is not available."))
+      toggle_group_var <- resolve_meta_colname(input$toggle_group_var, colnames(df))
+      validate(need(toggle_group_var %in% colnames(df), "Selected group variable is not available."))
       
-      group_values <- as.character(df[[input$toggle_group_var]])
+      group_values <- as.character(df[[toggle_group_var]])
       target_rows <- which(group_values == selected_level)
       validate(need(length(target_rows) > 0, "No rows match the selected group level."))
       

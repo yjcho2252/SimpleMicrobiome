@@ -50,10 +50,12 @@ mod_citation_server <- function(id) {
         "Lin, H., & Peddada, S. D. (2020). Analysis of compositions of microbiomes with bias correction. Nature Communications, 11, Article 3514. https://doi.org/10.1038/s41467-020-17041-7"
       ),
       "MaAsLin2" = c(
-        "Mallick, H., Rahnavard, A., McIver, L. J., Ma, S., Zhang, Y., Tickle, T. L., Weingart, G., Ren, B., Schwager, E. H., Thompson, K. N., Lu, Y., Waldron, L., Huttenhower, C. et al. (2021). Multivariable association discovery in population-scale meta-omics studies. PLOS Computational Biology, 17(11), e1009442. https://doi.org/10.1371/journal.pcbi.1009442"
+        "Mallick, H., Rahnavard, A., McIver, L. J., Ma, S., Zhang, Y., Tickle, T. L., Weingart, G., Ren, B., Schwager, E. H., Thompson, K. N., Lu, Y., Waldron, L., Huttenhower, C., et al. (2021). Multivariable association discovery in population-scale meta-omics studies. PLOS Computational Biology, 17(11), e1009442. https://doi.org/10.1371/journal.pcbi.1009442"
       ),
       "Random Forest" = c(
         "Breiman, L. (2001). Random forests. Machine Learning, 45(1), 5-32. https://doi.org/10.1023/A:1010933404324",
+        "Moe, Y. M., Jullum, M., & Loland, A. (2021). Explaining predictive models with dependent features using Shapley values and conditional inference. Artificial Intelligence, 298, 103502. https://doi.org/10.1016/j.artint.2021.103502",
+        "Moe, Y. M., Jullum, M., & Loland, A. (2024). shapr: Explaining machine learning models with dependence-aware Shapley values (R package). https://CRAN.R-project.org/package=shapr",
         "Gu, Z., Eils, R., & Schlesner, M. (2016). Complex heatmaps reveal patterns and correlations in multidimensional genomic data. Bioinformatics, 32(18), 2847-2849. https://doi.org/10.1093/bioinformatics/btw313"
       ),
       "SpiecEasi" = c(

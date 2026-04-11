@@ -56,13 +56,23 @@ mod_beta_ui <- function(id) {
         numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 600, min = 300, max = 1500, step = 50),
         numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 450, min = 300, max = 1500, step = 50),
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
+        checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
         checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
         uiOutput(ns("primary_color_controls")),
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("Axis Limits")),
+          br(),
+          helpText("Leave blank to use automatic limits."),
+          numericInput(ns("x_min"), "X-axis minimum:", value = NA),
+          numericInput(ns("x_max"), "X-axis maximum:", value = NA),
+          numericInput(ns("y_min"), "Y-axis minimum:", value = NA),
+          numericInput(ns("y_max"), "Y-axis maximum:", value = NA)
+        ),
         hr(),
 
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
-          tags$summary(strong("Advanced Options: Clustering")),
+          tags$summary(strong("Clustering")),
           br(),
           selectInput(
             ns("cluster_mode"),
@@ -95,7 +105,7 @@ mod_beta_ui <- function(id) {
           ))
         ),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
-          tags$summary(strong("Advanced Options: EnvFit")),
+          tags$summary(strong("EnvFit")),
           br(),
           uiOutput(ns("envfit_var_selector")),
           uiOutput(ns("envfit_taxa_selector")),
@@ -111,16 +121,6 @@ mod_beta_ui <- function(id) {
                if (msg.label) btn.textContent = msg.label;
              });"
           ))
-        ),
-        
-        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
-          tags$summary(strong("Advanced Options: Axis Limits")),
-          br(),
-          helpText("Leave blank to use automatic limits."),
-          numericInput(ns("x_min"), "X-axis minimum:", value = NA),
-          numericInput(ns("x_max"), "X-axis maximum:", value = NA),
-          numericInput(ns("y_min"), "Y-axis minimum:", value = NA),
-          numericInput(ns("y_max"), "Y-axis maximum:", value = NA)
         )
       ),
       
@@ -181,6 +181,19 @@ mod_beta_ui <- function(id) {
 ## Server
 mod_beta_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
     
     output$primary_group_selector <- renderUI({
       req(meta_cols())
@@ -191,15 +204,27 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     })
     
     output$secondary_group_selector <- renderUI({
-      req(meta_cols())
-      group_choices <- c("None", setdiff(meta_cols(), "SampleID"))
+      req(meta_cols(), input$primary_group_var)
+      resolved_primary <- resolve_meta_colname(input$primary_group_var, meta_cols())
+      group_choices <- c("None", setdiff(meta_cols(), c("SampleID", input$primary_group_var, resolved_primary)))
       selected_col <- if (length(group_choices) > 1) group_choices[2] else group_choices[1]
       selectInput(session$ns("secondary_group_var"), "Select Secondary Variable (Shape):",
                   choices = group_choices, selected = "None")
     })
     
-    primary_group_var <- reactive({ req(input$primary_group_var); input$primary_group_var })
-    secondary_group_var <- reactive({ input$secondary_group_var })
+    primary_group_var <- reactive({
+      req(input$primary_group_var, ps_obj())
+      metadata <- as(phyloseq::sample_data(ps_obj()), "data.frame")
+      resolve_meta_colname(input$primary_group_var, colnames(metadata))
+    })
+    secondary_group_var <- reactive({
+      req(ps_obj())
+      if (is.null(input$secondary_group_var) || identical(input$secondary_group_var, "None")) {
+        return("None")
+      }
+      metadata <- as(phyloseq::sample_data(ps_obj()), "data.frame")
+      resolve_meta_colname(input$secondary_group_var, colnames(metadata))
+    })
     
     default_group_colors <- reactive({
       req(ps_obj(), primary_group_var())
@@ -247,7 +272,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       tags$div(        
         tags$details(
           style = "margin-top: 6px; margin-bottom: 6px;",
-          tags$summary(strong(tagList(icon("palette"), "Primary Group Colors"))),
+          tags$summary(strong("Primary Group Colors")),
           br(),
           do.call(tagList, controls)
         )        
@@ -853,12 +878,19 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       
       if (is.null(plot_shape_var())) {
-        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var()) +
-          ggplot2::geom_point(size = input$dot_size)
+        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var())
       } else {
-        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var(), shape = plot_shape_var()) +
-          ggplot2::geom_point(size = input$dot_size)
+        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var(), shape = plot_shape_var())
       }
+      if (isTRUE(input$show_dot_outline)) {
+        outline_size <- input$dot_size + 0.4
+        p <- p + ggplot2::geom_point(
+          color = "black",
+          size = outline_size,
+          show.legend = FALSE
+        )
+      }
+      p <- p + ggplot2::geom_point(size = input$dot_size)
       p <- p + ggplot2::scale_color_manual(values = primary_color_map())
       
       if (input$show_ellipses) {
@@ -1024,12 +1056,19 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       ps_data_for_plot <- ps_plot_obj()
       
       if (is.null(plot_shape_var())) {
-        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var()) +
-          ggplot2::geom_point(size = input$dot_size)
+        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var())
       } else {
-        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var(), shape = plot_shape_var()) +
-          ggplot2::geom_point(size = input$dot_size)
+        p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var(), shape = plot_shape_var())
       }
+      if (isTRUE(input$show_dot_outline)) {
+        outline_size <- input$dot_size + 0.4
+        p <- p + ggplot2::geom_point(
+          color = "black",
+          size = outline_size,
+          show.legend = FALSE
+        )
+      }
+      p <- p + ggplot2::geom_point(size = input$dot_size)
       p <- p + ggplot2::scale_color_manual(values = primary_color_map())
       
       if (input$show_ellipses) {

@@ -12,17 +12,11 @@ mod_randomforest_ui <- function(id) {
           ns("outcome_type"),
           "2. Outcome type",
           choices = c("Auto", "Classification", "Regression"),
-          selected = "Auto"
-        ),
-        selectInput(
-          ns("tax_level"),
-          "3. Taxonomic level",
-          choices = c("ASV", "Genus", "Species"),
-          selected = "Genus"
+          selected = "Classification"
         ),
         selectizeInput(
           ns("outcome_levels"),
-          "4. Levels to include (optional)",
+          "3. Levels to include (optional)",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -30,24 +24,39 @@ mod_randomforest_ui <- function(id) {
             plugins = list("remove_button")
           )
         ),
+        selectInput(ns("shap_target_class"), "4. SHAP target class", choices = NULL),
+        selectInput(
+          ns("tax_level"),
+          "5. Taxonomic level",
+          choices = c("ASV", "Genus", "Species"),
+          selected = "Genus"
+        ),
         selectInput(
           ns("transform_method"),
-          "5. Feature transform",
-          choices = c("TSS", "CLR", "log"),
+          "6. Feature transform",
+          choices = c("TSS", "CLR", "Presence/Absence", "log"),
           selected = "TSS"
         ),
-        numericInput(ns("prevalence_filter_pct"), "6. Feature prevalence cutoff (0-20%)", value = 5, min = 0, max = 20, step = 1),
-        numericInput(ns("top_n_features"), "7. Top N features by mean abundance", value = 100, min = 10, max = 5000, step = 10),
+        numericInput(ns("prevalence_filter_pct"), "7. Feature prevalence cutoff (0-20%)", value = 5, min = 0, max = 20, step = 1),
         sliderInput(ns("train_ratio"), "8. Train ratio", min = 0.6, max = 0.9, value = 0.8, step = 0.05),
         tags$details(
           style = "margin-bottom: 10px;",
           tags$summary("Advanced Options"),
           br(),
-          numericInput(ns("ntree"), "9. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
-          numericInput(ns("mtry"), "10. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
-          numericInput(ns("seed"), "11. Random seed", value = 1234, min = 1, max = 999999, step = 1)
+          numericInput(ns("top_n_features"), "9. Top N features by mean abundance", value = 100, min = 10, max = 5000, step = 10),
+          numericInput(ns("ntree"), "10. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
+          numericInput(ns("mtry"), "11. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
+          numericInput(ns("seed"), "12. Random seed", value = 1234, min = 1, max = 999999, step = 1)
         ),
-        actionButton(ns("run_rf"), "Run Random Forest", class = "btn-danger", style = "font-size: 12px;"),        
+        hr(),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+        numericInput(ns("plot_width"), "Plot width (px)", value = 1160, min = 600, max = 3200, step = 50),
+        numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
+        tags$div(
+          style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;",
+          actionButton(ns("run_rf"), "Run Random Forest", class = "btn-danger", style = "font-size: 12px;"),
+          tags$span("May take a long time.", style = "font-size: 11px; color: #b94a48;")
+        ),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-rf-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);
@@ -61,7 +70,7 @@ mod_randomforest_ui <- function(id) {
         width = 10,
         tabsetPanel(
           tabPanel(
-            "Table",
+            "RF Table",
             downloadButton(
               ns("download_rf_table"),
               "Download Table (TSV)",
@@ -70,7 +79,7 @@ mod_randomforest_ui <- function(id) {
             DTOutput(ns("importance_table"))
           ),
           tabPanel(
-            "Bar Plot",
+            "RF Barplot",
             downloadButton(
               ns("download_rf_barplot"),
               "Download Plot (PNG)",
@@ -78,7 +87,7 @@ mod_randomforest_ui <- function(id) {
             ),
             div(
               style = "display: flex; justify-content: center;",
-              plotOutput(ns("importance_plot"), width = "1160px", height = "500px")
+              uiOutput(ns("importance_plot_ui"))
             )
           ),
           tabPanel(
@@ -93,6 +102,27 @@ mod_randomforest_ui <- function(id) {
               plotOutput(ns("roc_plot"), width = "1160px", height = "500px")
             ),
             verbatimTextOutput(ns("roc_auc_text"))
+          ),
+          tabPanel(
+            "SHAP Table",
+            downloadButton(
+              ns("download_rf_shap_summary"),
+              "Download SHAP Summary (TSV)",
+              style = "width: 220px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+            ),
+            DTOutput(ns("shap_summary_table"))
+          ),
+          tabPanel(
+            "SHAP Barplot",
+            downloadButton(
+              ns("download_rf_shap_plot"),
+              "Download SHAP Plot (PNG)",
+              style = "width: 210px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+            ),
+            div(
+              style = "display: flex; justify-content: center;",
+              uiOutput(ns("shap_summary_plot_ui"))
+            )
           )
         ),
         hr(),
@@ -108,6 +138,24 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
   moduleServer(id, function(input, output, session) {
     model_result <- reactiveVal(NULL)
     status_text <- reactiveVal("Waiting for model run.")
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
+    outcome_var_resolved <- reactive({
+      req(ps_obj_filtered_raw(), input$outcome_var)
+      md <- data.frame(phyloseq::sample_data(ps_obj_filtered_raw()))
+      resolve_meta_colname(input$outcome_var, colnames(md))
+    })
     log_rf <- function(msg) {
       cat(
         sprintf(
@@ -136,9 +184,10 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       req(ps_obj_filtered_raw(), input$outcome_var, input$outcome_type)
       ps <- ps_obj_filtered_raw()
       md <- data.frame(phyloseq::sample_data(ps))
-      validate(need(input$outcome_var %in% colnames(md), "Selected outcome is not available."))
+      outcome_var <- outcome_var_resolved()
+      validate(need(outcome_var %in% colnames(md), "Selected outcome is not available."))
 
-      v <- md[[input$outcome_var]]
+      v <- md[[outcome_var]]
       mode_selected <- input$outcome_type
       is_classification_mode <- if (identical(mode_selected, "Auto")) {
         is.factor(v) || is.character(v)
@@ -155,6 +204,11 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       if (is.null(selected)) selected <- character(0)
       selected <- selected[selected %in% choices]
       updateSelectizeInput(session, "outcome_levels", choices = choices, selected = selected, server = TRUE)
+      shap_selected <- isolate(input$shap_target_class)
+      if (is.null(shap_selected) || !shap_selected %in% choices) {
+        shap_selected <- if (length(choices) >= 2) choices[2] else if (length(choices) == 1) choices[1] else character(0)
+      }
+      updateSelectInput(session, "shap_target_class", choices = choices, selected = shap_selected)
     }, ignoreInit = FALSE)
 
     observeEvent(input$run_rf, {
@@ -179,9 +233,10 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         withCallingHandlers({
           ps <- ps_obj_filtered_raw()
           md <- data.frame(phyloseq::sample_data(ps))
-          validate(need(input$outcome_var %in% colnames(md), "Outcome variable is not available."))
+          outcome_var <- outcome_var_resolved()
+          validate(need(outcome_var %in% colnames(md), "Outcome variable is not available."))
 
-          y_raw <- md[[input$outcome_var]]
+          y_raw <- md[[outcome_var]]
           taxonomy_info <- NULL
           feature_map <- NULL
 
@@ -219,7 +274,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
 
           md <- md[common_samples, , drop = FALSE]
           x <- x[common_samples, , drop = FALSE]
-          y_raw <- md[[input$outcome_var]]
+          y_raw <- md[[outcome_var]]
 
           keep_non_na <- !is.na(y_raw)
           y_raw <- y_raw[keep_non_na]
@@ -261,6 +316,9 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
               gm <- exp(rowMeans(log_x, na.rm = TRUE))
               gm[gm <= 0 | is.na(gm)] <- 1
               log_x - log(gm)
+            },
+            "Presence/Absence" = {
+              (x_counts > 0) * 1
             },
             "log" = {
               log1p(x_counts)
@@ -309,6 +367,18 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             mtry_val <- floor(sqrt(ncol(x_train)))
           }
           mtry_val <- max(1, min(mtry_val, ncol(x_train)))
+          rf_options_text <- paste0(
+            "RF options:",
+            "\n- package: randomForest",
+            "\n- split strategy: ", if (is_classification) "stratified by class" else "random split",
+            "\n- train ratio: ", sprintf("%.2f", as.numeric(input$train_ratio)),
+            "\n- seed: ", as.integer(input$seed),
+            "\n- prevalence cutoff (%): ", as.numeric(input$prevalence_filter_pct),
+            "\n- top_n_features before transform: ", as.integer(input$top_n_features),
+            "\n- ntree: ", as.integer(input$ntree),
+            "\n- mtry used: ", as.integer(mtry_val),
+            "\n- selected outcome levels: ", if (length(input$outcome_levels) > 0) paste(input$outcome_levels, collapse = ", ") else "All"
+          )
 
           log_rf(sprintf("fit start: ntree=%d, mtry=%d", as.integer(input$ntree), mtry_val))
           rf_fit <- randomForest::randomForest(
@@ -574,11 +644,278 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         imp_tbl$taxa_label <- imp_tbl$FeatureID
       }
 
+      shap_values_long <- NULL
+      shap_summary_tbl <- NULL
+      shap_class_summary <- NULL
+      shap_local_default <- NULL
+      shap_target_class_used <- NULL
+      shap_baseline <- NA_real_
+      shap_status <- "SHAP is available for classification only."
+      shap_approach_used <- NA_character_
+      shap_iterative_used <- TRUE
+      shap_max_n_coalitions_used <- 256L
+      shap_fallback_used <- FALSE
+      shap_model_scope <- "Full RF model features"
+      shap_boot_n <- 100L
+      shap_perm_n <- 200L
+
+      if (is_classification) {
+        if (!requireNamespace("shapr", quietly = TRUE)) {
+          shap_status <- "Package 'shapr' is not installed. Install it to see SHAP results."
+        } else {
+          shap_target_class_used <- input$shap_target_class
+          if (is.null(shap_target_class_used) || !shap_target_class_used %in% levels(y)) {
+            shap_target_class_used <- if (nlevels(y) >= 2) levels(y)[2] else levels(y)[1]
+          }
+
+          build_predict_target_prob <- function(feature_frame) {
+            function(model, newdata) {
+              nd <- as.data.frame(newdata, check.names = FALSE)
+              missing_cols <- setdiff(colnames(feature_frame), colnames(nd))
+              if (length(missing_cols) > 0) {
+                fill_vals <- colMeans(feature_frame, na.rm = TRUE)
+                for (cc in missing_cols) nd[[cc]] <- as.numeric(fill_vals[[cc]])
+              }
+              nd <- nd[, colnames(feature_frame), drop = FALSE]
+              prob <- stats::predict(model, newdata = nd, type = "prob")
+              prob <- as.data.frame(prob, check.names = FALSE)
+              as.numeric(prob[[shap_target_class_used]])
+            }
+          }
+          build_model_specs <- function(feature_frame) {
+            function(model) {
+              feature_labels <- colnames(feature_frame)
+              feature_classes <- vapply(feature_frame, function(col) class(col)[1], character(1))
+              factor_levels <- lapply(feature_frame, function(col) if (is.factor(col)) levels(col) else character(0))
+              list(labels = feature_labels, classes = feature_classes[feature_labels], factor_levels = factor_levels[feature_labels])
+            }
+          }
+          run_shapr_explain <- function(model_obj, x_train_df, x_test_df) {
+            predict_target_prob <- build_predict_target_prob(x_train_df)
+            get_model_specs_rf <- build_model_specs(x_train_df)
+            shap_baseline <<- mean(predict_target_prob(model_obj, x_train_df), na.rm = TRUE)
+            shapr_ns <- asNamespace("shapr")
+            explain_fn <- get("explain", envir = shapr_ns)
+            call_candidates <- list(
+              list(x_explain = x_test_df, model = model_obj, x_train = x_train_df, predict_model = predict_target_prob),
+              list(x_explain = x_test_df, model = model_obj, x = x_train_df, predict_model = predict_target_prob)
+            )
+            approaches <- c("empirical", "independence")
+            explanation <- NULL
+            explain_errors <- character(0)
+            for (args_i in call_candidates) {
+              for (ap in approaches) {
+                args_now <- args_i
+                args_now$approach <- ap
+                args_now$iterative <- TRUE
+                args_now$max_n_coalitions <- 256
+                args_now$get_model_specs <- get_model_specs_rf
+                args_now$phi0 <- shap_baseline
+                args_now$prediction_zero <- shap_baseline
+                call_res <- tryCatch(do.call(explain_fn, args_now), error = function(e) e)
+                if (!inherits(call_res, "error")) {
+                  explanation <- call_res
+                  shap_approach_used <<- ap
+                  break
+                }
+                msg <- gsub("\u001b\\[[0-9;]*m", "", conditionMessage(call_res))
+                explain_errors <- c(explain_errors, paste0("[", ap, "] ", msg))
+              }
+              if (!is.null(explanation)) break
+            }
+            if (is.null(explanation)) {
+              stop(paste("No compatible shapr::explain() signature found.", paste(unique(explain_errors), collapse = " | ")))
+            }
+            explanation
+          }
+          parse_shap_output <- function(explanation, x_test_df, class_vec) {
+            shap_matrix <- NULL
+            if (!is.null(explanation$shapley_values)) {
+              shap_matrix <- as.data.frame(explanation$shapley_values, check.names = FALSE)
+            } else if (!is.null(explanation$dt) && is.data.frame(explanation$dt)) {
+              dt_df <- as.data.frame(explanation$dt, check.names = FALSE)
+              maybe_cols <- intersect(colnames(x_test_df), colnames(dt_df))
+              if (length(maybe_cols) == ncol(x_test_df)) {
+                shap_matrix <- dt_df[, maybe_cols, drop = FALSE]
+              }
+            }
+            if (is.null(shap_matrix) && is.data.frame(explanation)) {
+              exp_df <- as.data.frame(explanation, check.names = FALSE)
+              maybe_cols <- intersect(colnames(x_test_df), colnames(exp_df))
+              if (length(maybe_cols) == ncol(x_test_df)) {
+                shap_matrix <- exp_df[, maybe_cols, drop = FALSE]
+              }
+            }
+            if (is.null(shap_matrix) && is.list(explanation)) {
+              for (nm in names(explanation)) {
+                obj <- explanation[[nm]]
+                if (is.null(obj) || !is.data.frame(obj)) next
+                obj_df <- as.data.frame(obj, check.names = FALSE)
+                maybe_cols <- intersect(colnames(x_test_df), colnames(obj_df))
+                if (length(maybe_cols) == ncol(x_test_df)) {
+                  shap_matrix <- obj_df[, maybe_cols, drop = FALSE]
+                  break
+                }
+              }
+            }
+            if (is.null(shap_matrix) && is.list(explanation) && !is.null(explanation$dt) && is.data.frame(explanation$dt)) {
+              dt <- as.data.frame(explanation$dt, check.names = FALSE)
+              long_candidates <- c("feature", "Feature", "variable", "name")
+              value_candidates <- c("phi", "Phi", "shapley_value", "value", "contribution")
+              feat_col <- long_candidates[long_candidates %in% colnames(dt)]
+              val_col <- value_candidates[value_candidates %in% colnames(dt)]
+              if (length(feat_col) > 0 && length(val_col) > 0) {
+                feat_col <- feat_col[1]
+                val_col <- val_col[1]
+                id_candidates <- c("id", "index", "row_id", "sample_id", "SampleID")
+                id_col <- id_candidates[id_candidates %in% colnames(dt)]
+                if (length(id_col) > 0) {
+                  id_col <- id_col[1]
+                  dt_sub <- dt[, c(id_col, feat_col, val_col), drop = FALSE]
+                  colnames(dt_sub) <- c("SampleID", "Feature", "SHAP")
+                  dt_sub$SampleID <- as.character(dt_sub$SampleID)
+                  wide <- tryCatch(
+                    tidyr::pivot_wider(dt_sub, names_from = Feature, values_from = SHAP),
+                    error = function(e) NULL
+                  )
+                  if (!is.null(wide)) {
+                    wide <- as.data.frame(wide, check.names = FALSE)
+                    rn <- as.character(wide$SampleID)
+                    wide$SampleID <- NULL
+                    maybe_cols <- intersect(colnames(x_test_df), colnames(wide))
+                    if (length(maybe_cols) > 0) {
+                      shap_matrix <- wide[, maybe_cols, drop = FALSE]
+                      rownames(shap_matrix) <- rn
+                    }
+                  }
+                }
+              }
+            }
+            if (is.null(shap_matrix)) {
+              top_names <- if (is.list(explanation)) paste(names(explanation), collapse = ", ") else class(explanation)[1]
+              stop(paste0("Could not parse SHAP values from shapr output. Available fields: ", top_names))
+            }
+            shap_matrix$SampleID <- rownames(x_test_df)
+            if (is.null(shap_matrix$SampleID)) shap_matrix$SampleID <- paste0("Sample_", seq_len(nrow(shap_matrix)))
+            shap_values_long <- shap_matrix %>%
+              tidyr::pivot_longer(cols = -SampleID, names_to = "Feature", values_to = "SHAP") %>%
+              dplyr::left_join(data.frame(SampleID = rownames(x_test_df), ActualClass = as.character(class_vec), stringsAsFactors = FALSE), by = "SampleID")
+            list(shap_values_long = shap_values_long)
+          }
+          shap_try <- tryCatch({
+            x_train_df <- as.data.frame(x_train, check.names = FALSE)
+            x_test_df <- as.data.frame(x_test, check.names = FALSE)
+            explanation <- run_shapr_explain(rf_fit, x_train_df, x_test_df)
+            parsed <- parse_shap_output(explanation, x_test_df, y_test)
+            shap_values_long <- parsed$shap_values_long
+            shap_summary_tbl <- build_shap_summary_metrics(
+              shap_values_long = shap_values_long,
+              feature_map = feature_map,
+              imp_tbl = imp_tbl,
+              seed_val = as.integer(input$seed),
+              n_boot = shap_boot_n,
+              n_perm = shap_perm_n
+            )
+            shap_class_summary <- shap_values_long %>%
+              dplyr::group_by(ActualClass, Feature) %>%
+              dplyr::summarise(MeanAbsSHAP = mean(abs(SHAP), na.rm = TRUE), MeanSHAP = mean(SHAP, na.rm = TRUE), .groups = "drop") %>%
+              dplyr::arrange(ActualClass, dplyr::desc(MeanAbsSHAP))
+            first_sample <- shap_values_long$SampleID[1]
+            shap_local_default <- shap_values_long %>%
+              dplyr::filter(SampleID == first_sample) %>%
+              dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel")) %>%
+              dplyr::arrange(dplyr::desc(abs(SHAP)))
+            NULL
+          }, error = function(e) conditionMessage(e))
+          if (!is.null(shap_try) && grepl("solve\\(\\): solution not found", shap_try)) {
+            shap_try <- tryCatch({
+              shap_fallback_used <- TRUE
+              top_n <- min(30L, ncol(x_train))
+              shap_model_scope <- paste0("Fallback RF model (top ", top_n, " features)")
+              top_feats <- imp_tbl %>% dplyr::slice_max(order_by = PermutationImportance, n = top_n, with_ties = FALSE) %>% dplyr::pull(Feature)
+              x_train_small <- as.data.frame(x_train[, top_feats, drop = FALSE], check.names = FALSE)
+              x_test_small <- as.data.frame(x_test[, top_feats, drop = FALSE], check.names = FALSE)
+              rf_shap <- randomForest::randomForest(
+                x = x_train_small, y = y_train,
+                ntree = max(200L, floor(as.integer(input$ntree) / 2)),
+                mtry = max(1L, floor(sqrt(ncol(x_train_small)))),
+                importance = FALSE
+              )
+              explanation <- run_shapr_explain(rf_shap, x_train_small, x_test_small)
+              parsed <- parse_shap_output(explanation, x_test_small, y_test)
+              shap_values_long <- parsed$shap_values_long
+              shap_summary_tbl <- build_shap_summary_metrics(
+                shap_values_long = shap_values_long,
+                feature_map = feature_map,
+                imp_tbl = imp_tbl,
+                seed_val = as.integer(input$seed),
+                n_boot = shap_boot_n,
+                n_perm = shap_perm_n
+              )
+              shap_class_summary <- shap_values_long %>%
+                dplyr::group_by(ActualClass, Feature) %>%
+                dplyr::summarise(MeanAbsSHAP = mean(abs(SHAP), na.rm = TRUE), MeanSHAP = mean(SHAP, na.rm = TRUE), .groups = "drop") %>%
+                dplyr::arrange(ActualClass, dplyr::desc(MeanAbsSHAP))
+              first_sample <- shap_values_long$SampleID[1]
+              shap_local_default <- shap_values_long %>%
+                dplyr::filter(SampleID == first_sample) %>%
+                dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel")) %>%
+                dplyr::arrange(dplyr::desc(abs(SHAP)))
+              shap_status <<- paste0("SHAP computed with fallback model (top ", top_n, " features).")
+              NULL
+            }, error = function(e) conditionMessage(e))
+          }
+
+          if (is.null(shap_try)) {
+            shap_status <- paste0("SHAP computed on test samples: ", length(unique(shap_values_long$SampleID)))
+          } else {
+            shap_status <- paste0("SHAP calculation failed: ", shap_try)
+          }
+        }
+      }
+
+      shap_section_text <- paste0(
+        "SHAP status: ", shap_status,
+        if (!is.null(shap_target_class_used) && nzchar(shap_target_class_used)) {
+          paste0("\nSHAP target class: ", shap_target_class_used)
+        } else "",
+        if (is.finite(shap_baseline)) {
+          paste0("\nSHAP baseline probability: ", sprintf("%.6f", shap_baseline))
+        } else "",
+        if (is_classification) {
+          paste0(
+            "\nSHAP options:",
+            "\n- package: shapr",
+            "\n- approach used: ", ifelse(is.na(shap_approach_used), "NA", shap_approach_used),
+            "\n- iterative: ", ifelse(isTRUE(shap_iterative_used), "TRUE", "FALSE"),
+            "\n- max_n_coalitions: ", as.integer(shap_max_n_coalitions_used),
+            "\n- model scope: ", shap_model_scope,
+            "\n- fallback used: ", ifelse(isTRUE(shap_fallback_used), "TRUE", "FALSE"),
+            "\n- stability bootstrap reps: ", as.integer(shap_boot_n),
+            "\n- empirical p-value permutations: ", as.integer(shap_perm_n)
+          )
+        } else ""
+      )
+
+      metrics_text <- paste0(
+        metrics_text,
+        "\n\n--------------------\n[RF]\n",
+        rf_options_text,
+        "\n\n--------------------\n[SHAP]\n",
+        shap_section_text
+      )
+
           model_result(list(
             metrics = metrics_text,
             importance = imp_tbl,
             score_col = "PermutationImportance",
-            roc = roc_payload
+            roc = roc_payload,
+            shap_values = shap_values_long,
+            shap_summary = shap_summary_tbl,
+            shap_class_summary = shap_class_summary,
+            shap_local_default = shap_local_default,
+            shap_target_class = shap_target_class_used,
+            shap_baseline = shap_baseline
           ))
 
           status_text("Model completed.")
@@ -634,7 +971,379 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       }
     )
 
-    build_importance_plot <- function(res, taxa_fontsize = 8) {
+    output$importance_plot_ui <- renderUI({
+      w <- as.integer(input$plot_width)
+      h <- as.integer(input$plot_height)
+      w <- ifelse(is.na(w) || w < 100, 1160L, w)
+      h <- ifelse(is.na(h) || h < 100, 500L, h)
+      plotOutput(
+        session$ns("importance_plot"),
+        width = paste0(w, "px"),
+        height = paste0(h, "px")
+      )
+    })
+
+    output$shap_summary_plot_ui <- renderUI({
+      w <- as.integer(input$plot_width)
+      h <- as.integer(input$plot_height)
+      w <- ifelse(is.na(w) || w < 100, 1160L, w)
+      h <- ifelse(is.na(h) || h < 100, 500L, h)
+      plotOutput(
+        session$ns("shap_summary_plot"),
+        width = paste0(w, "px"),
+        height = paste0(h, "px")
+      )
+    })
+
+    derive_shap_summary <- function(res) {
+      if (!is.null(res$shap_summary) && nrow(res$shap_summary) > 0) {
+        return(res$shap_summary)
+      }
+      if (is.null(res$shap_values) || nrow(res$shap_values) == 0) {
+        return(NULL)
+      }
+      res$shap_values %>%
+        dplyr::group_by(Feature) %>%
+        dplyr::summarise(
+          MeanAbsSHAP = mean(abs(SHAP), na.rm = TRUE),
+          MeanSHAP = mean(SHAP, na.rm = TRUE),
+          .groups = "drop"
+        ) %>%
+        dplyr::left_join(
+          res$importance %>%
+            dplyr::select(
+              Feature,
+              dplyr::any_of(c("FeatureID", "taxa_label", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"))
+            ),
+          by = "Feature"
+        ) %>%
+        dplyr::arrange(dplyr::desc(MeanAbsSHAP))
+    }
+    build_shap_summary_metrics <- function(shap_values_long, feature_map, imp_tbl, seed_val = 1234L, n_boot = 50L, n_perm = 200L) {
+      if (is.null(shap_values_long) || nrow(shap_values_long) == 0) return(NULL)
+      set.seed(as.integer(seed_val))
+      by_feature <- split(shap_values_long$SHAP, shap_values_long$Feature)
+      feats <- names(by_feature)
+      metric_list <- lapply(feats, function(ft) {
+        v <- as.numeric(by_feature[[ft]])
+        v <- v[is.finite(v)]
+        if (length(v) == 0) {
+          return(data.frame(
+            Feature = ft, N = 0L, MeanAbsSHAP = NA_real_, MeanSHAP = NA_real_,
+            ImpactScore = NA_real_, DirectionScore = NA_real_,
+            StabilityCV = NA_real_, StabilityScore = NA_real_,
+            BootMeanAbs_LCL = NA_real_, BootMeanAbs_UCL = NA_real_,
+            EmpiricalP_MeanSHAP = NA_real_, WilcoxonP_MeanSHAP = NA_real_,
+            stringsAsFactors = FALSE
+          ))
+        }
+        mean_abs <- mean(abs(v), na.rm = TRUE)
+        mean_raw <- mean(v, na.rm = TRUE)
+        direction_score <- if (is.na(mean_abs) || mean_abs <= 0) NA_real_ else mean_raw / mean_abs
+        boot_means <- replicate(as.integer(n_boot), {
+          idx <- sample.int(length(v), size = length(v), replace = TRUE)
+          mean(abs(v[idx]), na.rm = TRUE)
+        })
+        boot_means <- as.numeric(boot_means)
+        st_cv <- if (is.na(mean(boot_means)) || mean(boot_means) == 0) NA_real_ else stats::sd(boot_means) / mean(boot_means)
+        st_score <- if (is.na(st_cv)) NA_real_ else 1 / (1 + st_cv)
+        boot_lcl <- stats::quantile(boot_means, probs = 0.025, na.rm = TRUE, names = FALSE)
+        boot_ucl <- stats::quantile(boot_means, probs = 0.975, na.rm = TRUE, names = FALSE)
+        obs <- abs(mean_raw)
+        perm_vals <- replicate(as.integer(n_perm), {
+          sgn <- sample(c(-1, 1), size = length(v), replace = TRUE)
+          abs(mean(v * sgn, na.rm = TRUE))
+        })
+        perm_vals <- as.numeric(perm_vals)
+        emp_p <- (1 + sum(perm_vals >= obs, na.rm = TRUE)) / (as.integer(n_perm) + 1)
+        wil_p <- suppressWarnings(tryCatch(stats::wilcox.test(v, mu = 0)$p.value, error = function(e) NA_real_))
+        data.frame(
+          Feature = ft,
+          N = length(v),
+          MeanAbsSHAP = mean_abs,
+          MeanSHAP = mean_raw,
+          ImpactScore = mean_abs,
+          DirectionScore = direction_score,
+          StabilityCV = st_cv,
+          StabilityScore = st_score,
+          BootMeanAbs_LCL = as.numeric(boot_lcl),
+          BootMeanAbs_UCL = as.numeric(boot_ucl),
+          EmpiricalP_MeanSHAP = as.numeric(emp_p),
+          WilcoxonP_MeanSHAP = as.numeric(wil_p),
+          stringsAsFactors = FALSE
+        )
+      })
+      summary_df <- dplyr::bind_rows(metric_list)
+      summary_df$EmpiricalFDR_MeanSHAP <- stats::p.adjust(summary_df$EmpiricalP_MeanSHAP, method = "BH")
+      summary_df$WilcoxonFDR_MeanSHAP <- stats::p.adjust(summary_df$WilcoxonP_MeanSHAP, method = "BH")
+      summary_df %>%
+        dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel")) %>%
+        dplyr::left_join(
+          imp_tbl %>% dplyr::select(
+            Feature,
+            dplyr::any_of(c("taxa_label", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"))
+          ),
+          by = "Feature"
+        ) %>%
+        dplyr::arrange(dplyr::desc(ImpactScore))
+    }
+
+    output$shap_summary_table <- renderDT({
+      res <- model_result()
+      req(res)
+      ss <- derive_shap_summary(res)
+      validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
+      display <- ss %>%
+        dplyr::mutate(
+          TargetClass = res$shap_target_class,
+          BaselineProbability = res$shap_baseline
+        )
+      front_cols <- c(
+        "Feature", "taxa_label",
+        "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species",
+        "TargetClass"
+      )
+      # Hide FeatureID from SHAP table display while keeping it in underlying data objects.
+      display <- display %>%
+        dplyr::select(-dplyr::any_of("FeatureID"))
+      ordered_cols <- c(front_cols[front_cols %in% colnames(display)], setdiff(colnames(display), front_cols))
+      display <- display[, ordered_cols, drop = FALSE]
+
+      datatable(
+        display,
+        rownames = FALSE,
+        options = list(pageLength = 10, scrollX = TRUE),
+        class = "compact stripe hover cell-border",
+        style = "bootstrap"
+      ) %>%
+        formatStyle(columns = colnames(display), `font-size` = "11px", `padding` = "4px")
+    })
+
+    compute_plot_geom <- function(plot_w, plot_h, n_rows) {
+      w <- as.integer(plot_w)
+      h <- as.integer(plot_h)
+      if (is.na(w) || w < 100) w <- 1160L
+      if (is.na(h) || h < 100) h <- 500L
+      nr <- max(1L, as.integer(n_rows))
+      cell_mm <- max(3, min(14, (h * 0.72) / (nr * 3.78)))
+      bar_width_pt <- max(90, min(360, w * 0.16 * 0.75))
+      list(cell_mm = cell_mm, bar_width_pt = bar_width_pt)
+    }
+
+    build_shap_plot <- function(res, top_n = 20, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120) {
+      ss <- derive_shap_summary(res)
+      validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
+      ss <- as.data.frame(ss, check.names = FALSE)
+      if (!"taxa_label" %in% colnames(ss)) {
+        ss <- ss %>%
+          dplyr::left_join(
+            res$importance %>% dplyr::select(Feature, taxa_label),
+            by = "Feature"
+          )
+      }
+      if (!"taxa_label" %in% colnames(ss)) ss$taxa_label <- NA_character_
+
+      top_shap <- ss %>%
+        dplyr::mutate(
+          Feature = as.character(Feature),
+          taxa_label = as.character(taxa_label),
+          taxa_label_plot = dplyr::if_else(is.na(taxa_label) | !nzchar(taxa_label), Feature, taxa_label),
+          MeanAbsSHAP = as.numeric(MeanAbsSHAP)
+        ) %>%
+        dplyr::arrange(dplyr::desc(MeanAbsSHAP)) %>%
+        utils::head(top_n)
+
+      dup_label <- duplicated(top_shap$taxa_label_plot) | duplicated(top_shap$taxa_label_plot, fromLast = TRUE)
+      if (any(dup_label)) {
+        top_shap$taxa_label_plot[dup_label] <- paste0(
+          top_shap$taxa_label_plot[dup_label],
+          " [",
+          top_shap$FeatureID[dup_label],
+          "]"
+        )
+      }
+
+      max_imp <- suppressWarnings(max(top_shap$MeanAbsSHAP, na.rm = TRUE))
+      if (!is.finite(max_imp) || max_imp <= 0) max_imp <- 1
+      bar_x_max <- max(0.1, ceiling(max_imp * 10) / 10)
+      feat_levels <- rev(top_shap$taxa_label_plot[order(top_shap$MeanAbsSHAP)])
+      top_shap <- top_shap[match(feat_levels, top_shap$taxa_label_plot), , drop = FALSE]
+
+      if (!is.null(res$shap_class_summary) && nrow(res$shap_class_summary) > 0) {
+        class_df <- res$shap_class_summary %>%
+          dplyr::filter(Feature %in% top_shap$Feature) %>%
+          dplyr::group_by(Feature, ActualClass) %>%
+          dplyr::summarise(MeanAbsSHAP = mean(MeanAbsSHAP, na.rm = TRUE), .groups = "drop")
+        class_wide <- class_df %>%
+          tidyr::pivot_wider(names_from = ActualClass, values_from = MeanAbsSHAP, values_fill = 0)
+        class_wide <- as.data.frame(class_wide, check.names = FALSE)
+        rownames(class_wide) <- class_wide$Feature
+        class_wide$Feature <- NULL
+        class_wide <- class_wide[top_shap$Feature, , drop = FALSE]
+        if (ncol(class_wide) > 0) {
+          class_names <- colnames(class_wide)
+          fill_key <- sapply(seq_len(nrow(class_wide)), function(i) {
+            row_vals <- as.numeric(class_wide[i, ])
+            if (all(!is.finite(row_vals))) return(rep("NA", length(class_names)))
+            winner_idx <- which(row_vals == max(row_vals, na.rm = TRUE))
+            if (length(winner_idx) == 0) return(rep("Not dominant", length(class_names)))
+            out <- rep("Not dominant", length(class_names))
+            out[winner_idx[1]] <- class_names[winner_idx[1]]
+            out
+          })
+          hm_mat <- t(fill_key)
+          rownames(hm_mat) <- top_shap$taxa_label_plot
+          colnames(hm_mat) <- class_names
+          dom_classes <- sort(unique(as.vector(hm_mat)))
+          dom_classes <- dom_classes[!dom_classes %in% c("Not dominant", "NA")]
+          hm_col <- setNames(
+            grDevices::hcl.colors(max(1, length(dom_classes)), palette = "Dark 3")[seq_along(dom_classes)],
+            dom_classes
+          )
+          hm_col <- c(hm_col, "Not dominant" = "grey92", "NA" = "grey70")
+        } else {
+          hm_mat <- matrix("Not available", nrow = nrow(top_shap), ncol = 1)
+          rownames(hm_mat) <- top_shap$taxa_label_plot
+          colnames(hm_mat) <- "Class"
+          hm_col <- c("Not available" = "grey92")
+        }
+      } else {
+        hm_mat <- matrix("Not available", nrow = nrow(top_shap), ncol = 1)
+        rownames(hm_mat) <- top_shap$taxa_label_plot
+        colnames(hm_mat) <- "Class"
+        hm_col <- c("Not available" = "grey92")
+      }
+
+      row_label_width <- ComplexHeatmap::max_text_width(
+        rownames(hm_mat),
+        gp = grid::gpar(fontsize = taxa_fontsize)
+      ) + grid::unit(3, "mm")
+
+      hm <- ComplexHeatmap::Heatmap(
+        hm_mat,
+        name = "Class",
+        col = hm_col,
+        rect_gp = grid::gpar(type = "none"),
+        cell_fun = function(j, i, x, y, w, h, fill) {
+          side_mm <- min(
+            grid::convertWidth(w, "mm", valueOnly = TRUE),
+            grid::convertHeight(h, "mm", valueOnly = TRUE)
+          ) * 0.84
+          side <- grid::unit(side_mm, "mm")
+          grid::grid.rect(
+            x = x, y = y, width = side, height = side,
+            gp = grid::gpar(fill = fill, col = "#1a1a1a", lwd = 0.5)
+          )
+        },
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        show_heatmap_legend = FALSE,
+        row_names_side = "left",
+        row_names_gp = grid::gpar(fontsize = taxa_fontsize),
+        row_names_max_width = row_label_width,
+        column_names_gp = grid::gpar(fontsize = 9),
+        column_names_rot = 90,
+        width = grid::unit(cell_mm * ncol(hm_mat), "mm"),
+        height = grid::unit(cell_mm * nrow(hm_mat), "mm")
+      )
+
+      bar_anno <- ComplexHeatmap::rowAnnotation(
+        `Mean(|SHAP|)` = ComplexHeatmap::anno_barplot(
+          top_shap$MeanAbsSHAP,
+          gp = grid::gpar(fill = "#1f78b4", col = NA),
+          border = FALSE,
+          axis_param = list(
+            at = c(0, bar_x_max / 2, bar_x_max),
+            labels = sprintf("%.2f", c(0, bar_x_max / 2, bar_x_max)),
+            side = "bottom",
+            gp = grid::gpar(fontsize = 8)
+          ),
+          ylim = c(0, bar_x_max),
+          bar_width = 0.7,
+          width = grid::unit(bar_width_pt, "pt")
+        )
+      )
+      hm + bar_anno
+    }
+
+    output$shap_summary_plot <- renderPlot(
+      {
+        res <- model_result()
+        req(res)
+        ss <- derive_shap_summary(res)
+        validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP plot is not available."))
+        geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
+        p <- build_shap_plot(
+          res,
+          top_n = 20,
+          taxa_fontsize = 8,
+          cell_mm = geom$cell_mm,
+          bar_width_pt = geom$bar_width_pt
+        )
+        ComplexHeatmap::draw(
+          p,
+          merge_legend = TRUE,
+          padding = grid::unit(c(6, 2, 6, 130), "mm")
+        )
+      },
+      width = function() {
+        req(input$plot_width)
+        as.integer(input$plot_width)
+      },
+      height = function() {
+        req(input$plot_height)
+        as.integer(input$plot_height)
+      }
+    )
+
+    output$download_rf_shap_summary <- downloadHandler(
+      filename = function() {
+        paste0("random_forest_shap_summary_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".tsv")
+      },
+      content = function(file) {
+        res <- model_result()
+        req(res)
+        ss <- derive_shap_summary(res)
+        validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
+        ss_out <- ss %>% dplyr::select(-dplyr::any_of("FeatureID"))
+        utils::write.table(ss_out, file = file, sep = "\t", row.names = FALSE, quote = FALSE, na = "")
+      }
+    )
+
+    output$download_rf_shap_plot <- downloadHandler(
+      filename = function() {
+        paste0("random_forest_shap_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
+      },
+      content = function(file) {
+        res <- model_result()
+        req(res)
+        ss <- derive_shap_summary(res)
+        validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP plot is not available."))
+        w <- as.integer(input$plot_width)
+        h <- as.integer(input$plot_height)
+        w <- ifelse(is.na(w) || w < 100, 1160L, w)
+        h <- ifelse(is.na(h) || h < 100, 500L, h)
+        grDevices::png(filename = file, width = w, height = h, res = 72)
+        geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 25L)
+        p <- build_shap_plot(
+          res,
+          top_n = 25,
+          taxa_fontsize = 7,
+          cell_mm = geom$cell_mm,
+          bar_width_pt = geom$bar_width_pt
+        )
+        ComplexHeatmap::draw(
+          p,
+          merge_legend = TRUE,
+          padding = grid::unit(c(6, 2, 6, 130), "mm")
+        )
+        grDevices::dev.off()
+      }
+    )
+
+    build_importance_plot <- function(res, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120) {
       top_imp <- head(res$importance, 20)
       top_imp$taxa_label_plot <- as.character(top_imp$taxa_label)
       dup_label <- duplicated(top_imp$taxa_label_plot) | duplicated(top_imp$taxa_label_plot, fromLast = TRUE)
@@ -723,8 +1432,8 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         row_names_max_width = row_label_width,
         column_names_gp = grid::gpar(fontsize = 9),
         column_names_rot = 90,
-        width = grid::unit(4.4 * ncol(hm_mat), "mm"),
-        height = grid::unit(4.4 * nrow(hm_mat), "mm")
+        width = grid::unit(cell_mm * ncol(hm_mat), "mm"),
+        height = grid::unit(cell_mm * nrow(hm_mat), "mm")
       )
 
       bar_anno <- ComplexHeatmap::rowAnnotation(
@@ -740,7 +1449,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           ),
           ylim = c(0, bar_x_max),
           bar_width = 0.7,
-          width = grid::unit(120, "pt")
+          width = grid::unit(bar_width_pt, "pt")
         )
       )
 
@@ -751,15 +1460,27 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       {
         res <- model_result()
         req(res)
-        p <- build_importance_plot(res, taxa_fontsize = 8)
+        geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
+        p <- build_importance_plot(
+          res,
+          taxa_fontsize = 8,
+          cell_mm = geom$cell_mm,
+          bar_width_pt = geom$bar_width_pt
+        )
         ComplexHeatmap::draw(
           p,
           merge_legend = TRUE,
           padding = grid::unit(c(6, 2, 6, 130), "mm")
         )
       },
-      width = 1160,
-      height = 500
+      width = function() {
+        req(input$plot_width)
+        as.integer(input$plot_width)
+      },
+      height = function() {
+        req(input$plot_height)
+        as.integer(input$plot_height)
+      }
     )
 
     output$download_rf_barplot <- downloadHandler(
@@ -769,12 +1490,22 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       content = function(file) {
         res <- model_result()
         req(res)
-        grDevices::png(filename = file, width = 3600, height = 1800, res = 300)
-        p <- build_importance_plot(res, taxa_fontsize = 7)
+        w <- as.integer(input$plot_width)
+        h <- as.integer(input$plot_height)
+        w <- ifelse(is.na(w) || w < 100, 1160L, w)
+        h <- ifelse(is.na(h) || h < 100, 500L, h)
+        grDevices::png(filename = file, width = w, height = h, res = 72)
+        geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
+        p <- build_importance_plot(
+          res,
+          taxa_fontsize = 7,
+          cell_mm = geom$cell_mm,
+          bar_width_pt = geom$bar_width_pt
+        )
         ComplexHeatmap::draw(
           p,
           merge_legend = TRUE,
-          padding = grid::unit(c(6, 2, 6, 70), "mm")
+          padding = grid::unit(c(6, 2, 6, 130), "mm")
         )
         grDevices::dev.off()
       }

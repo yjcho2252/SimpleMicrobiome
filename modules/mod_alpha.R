@@ -71,6 +71,19 @@ mod_alpha_ui <- function(id) {
 ## Server
 mod_alpha_server <- function(id, ps_obj, meta_cols) { 
   moduleServer(id, function(input, output, session) {
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
     
     output$local_group_selector <- renderUI({
       req(meta_cols())
@@ -81,7 +94,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
     
     output$secondary_group_selector <- renderUI({
       req(input$group_var)
-      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var))
+      resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
+      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, resolved_primary))
       selectInput(session$ns("secondary_group_var"), "Secondary Grouping Variable (Optional):",
                   choices = c("(None)" = "none", group_choices), selected = "none")
     })
@@ -96,10 +110,14 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
       physeq_rarefied <- phyloseq::rarefy_even_depth(
         ps_obj(), sample.size = rarefaction_size(), rngseed = 42, replace = FALSE, verbose = FALSE
       )
-      primary_col <- input$group_var
-      secondary_col <- input$secondary_group_var
-      is_secondary <- !is.null(secondary_col) && secondary_col != "none"
       meta_data <- as(phyloseq::sample_data(physeq_rarefied), "data.frame")
+      primary_col <- resolve_meta_colname(input$group_var, colnames(meta_data))
+      secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(meta_data))
+      is_secondary <- !is.null(secondary_col) && secondary_col != "none"
+      validate(need(primary_col %in% colnames(meta_data), paste0("Primary grouping variable '", input$group_var, "' was not found in metadata.")))
+      if (is_secondary) {
+        validate(need(secondary_col %in% colnames(meta_data), paste0("Secondary grouping variable '", input$secondary_group_var, "' was not found in metadata.")))
+      }
       valid_cols <- if(is_secondary) c(primary_col, secondary_col) else primary_col
       valid_samples <- complete.cases(meta_data[, valid_cols, drop=FALSE])
       physeq_filtered <- phyloseq::prune_samples(valid_samples, physeq_rarefied)
@@ -114,8 +132,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
     
     alpha_plot_reactive <- reactive({
       req(alpha_long <- alpha_long_reactive())
-      primary_col <- input$group_var
-      secondary_col <- input$secondary_group_var
+      primary_col <- resolve_meta_colname(input$group_var, colnames(alpha_long))
+      secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(alpha_long))
       is_secondary <- !is.null(secondary_col) && secondary_col != "none"
       x_axis_col <- if (is_secondary) secondary_col else primary_col
       group_levels <- levels(factor(alpha_long[[x_axis_col]]))

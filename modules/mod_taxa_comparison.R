@@ -107,6 +107,19 @@ mod_taxa_comparison_ui <- function(id) {
 ## Server
 mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
     
     output$group_selector <- renderUI({
       req(meta_cols())
@@ -122,7 +135,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
 
     output$secondary_group_selector <- renderUI({
       req(meta_cols(), input$group_var)
-      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var))
+      resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
+      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, resolved_primary))
       selectInput(
         session$ns("secondary_group_var"),
         "Secondary Grouping Variable (Optional):",
@@ -136,8 +150,9 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       
       ps <- ps_obj()
       tax_level <- input$tax_level
-      primary_col <- input$group_var
-      secondary_col <- input$secondary_group_var
+      sample_cols <- colnames(as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE))
+      primary_col <- resolve_meta_colname(input$group_var, sample_cols)
+      secondary_col <- resolve_meta_colname(input$secondary_group_var, sample_cols)
       is_secondary <- !is.null(secondary_col) && secondary_col != "none"
       
       if (tax_level != "ASV") {
@@ -191,6 +206,12 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         if (!meta_col %in% names(df) && syntactic_col %in% names(df)) {
           names(df)[names(df) == syntactic_col] <- meta_col
         }
+      }
+      primary_col <- resolve_meta_colname(primary_col, names(df))
+      secondary_col <- resolve_meta_colname(secondary_col, names(df))
+      validate(need(primary_col %in% names(df), paste0("Primary grouping variable '", input$group_var, "' is not available.")))
+      if (is_secondary) {
+        validate(need(secondary_col %in% names(df), paste0("Secondary grouping variable '", input$secondary_group_var, "' is not available.")))
       }
       
       if (tax_level == "ASV") {

@@ -83,8 +83,8 @@ mod_ancom_ui <- function(id) {
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 600, min = 300, max = 2000, step = 50),
         numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2000, step = 50),
+        numericInput(ns("plot_height"), "Plot height (px)", value = 600, min = 300, max = 2000, step = 50),
         actionButton(ns("run_ancom_btn"), "Run ANCOM-BC2", class = "btn-danger", style = "font-size: 12px;"),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-ancom-run-btn', function(msg) {
@@ -116,6 +116,24 @@ mod_ancom_ui <- function(id) {
 mod_ancom_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
     taxa_counts <- reactiveVal(list(before = NA_integer_, after = NA_integer_))
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
+    group_var_resolved <- reactive({
+      req(ps_obj(), input$group_var)
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      resolve_meta_colname(input$group_var, colnames(meta_df))
+    })
     
     build_interaction_choices <- function(group_var, fix_covariates) {
       if (is.null(group_var) || !nzchar(group_var)) {
@@ -155,11 +173,12 @@ mod_ancom_server <- function(id, ps_obj) {
     observeEvent(list(ps_obj(), input$group_var), {
       req(ps_obj(), input$group_var)
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      group_var <- group_var_resolved()
       validate(
-        need(input$group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
+        need(group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
       )
 
-      level_choices <- sort(unique(as.character(meta_df[[input$group_var]])))
+      level_choices <- sort(unique(as.character(meta_df[[group_var]])))
       level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
 
       selected_levels <- isolate(input$group_levels)
@@ -189,7 +208,7 @@ mod_ancom_server <- function(id, ps_obj) {
       }
       updateSelectInput(session, "reference_level", choices = selected_levels, selected = reference_level)
 
-      covariate_choices <- setdiff(colnames(meta_df), c("SampleID", input$group_var))
+      covariate_choices <- setdiff(colnames(meta_df), c("SampleID", group_var))
       selected_covariates <- input$fix_covariates
       if (is.null(selected_covariates)) {
         selected_covariates <- character(0)
@@ -214,7 +233,7 @@ mod_ancom_server <- function(id, ps_obj) {
         server = TRUE
       )
 
-      interaction_choices <- build_interaction_choices(input$group_var, selected_covariates)
+      interaction_choices <- build_interaction_choices(group_var, selected_covariates)
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -229,7 +248,7 @@ mod_ancom_server <- function(id, ps_obj) {
     }, ignoreNULL = FALSE)
     
     observeEvent(list(input$group_var, input$fix_covariates), {
-      interaction_choices <- build_interaction_choices(input$group_var, input$fix_covariates)
+      interaction_choices <- build_interaction_choices(group_var_resolved(), input$fix_covariates)
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -247,8 +266,9 @@ mod_ancom_server <- function(id, ps_obj) {
       req(ps_obj(), input$group_var)
       ps <- ps_obj()
       meta_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      group_var <- group_var_resolved()
       validate(
-        need(input$group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found in sample_data."))
+        need(group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found in sample_data."))
       )
 
       selected_levels <- input$group_levels
@@ -257,7 +277,7 @@ mod_ancom_server <- function(id, ps_obj) {
       }
       selected_levels <- selected_levels[nzchar(selected_levels)]
 
-      group_values <- as.character(meta_df[[input$group_var]])
+      group_values <- as.character(meta_df[[group_var]])
       sample_ids <- rownames(meta_df)
       selected_ids <- sample_ids[group_values %in% selected_levels]
 
@@ -266,6 +286,7 @@ mod_ancom_server <- function(id, ps_obj) {
       }, numeric(1))
 
       list(
+        group_var = group_var,
         selected_levels = selected_levels,
         selected_ids = selected_ids,
         counts_by_level = counts_by_level
@@ -323,8 +344,9 @@ mod_ancom_server <- function(id, ps_obj) {
       ref_level <- input$reference_level
       non_ref_levels <- setdiff(selected_levels, ref_level)
       ordered_levels <- c(ref_level, non_ref_levels)
-      group_vals <- as.character(phyloseq::sample_data(ps_sub)[[input$group_var]])
-      phyloseq::sample_data(ps_sub)[[input$group_var]] <- factor(group_vals, levels = ordered_levels)
+      group_var <- info$group_var
+      group_vals <- as.character(phyloseq::sample_data(ps_sub)[[group_var]])
+      phyloseq::sample_data(ps_sub)[[group_var]] <- factor(group_vals, levels = ordered_levels)
 
       if (input$tax_level != "ASV") {
         tax_rank <- input$tax_level
@@ -386,6 +408,7 @@ mod_ancom_server <- function(id, ps_obj) {
 
     ancom_res <- eventReactive(input$run_ancom_btn, {
       req(ps_filtered(), input$group_var, input$reference_level)
+      current_group_var <- group_var_resolved()
 
       session$sendCustomMessage("toggle-ancom-run-btn", list(
         id = session$ns("run_ancom_btn"),
@@ -412,15 +435,15 @@ mod_ancom_server <- function(id, ps_obj) {
             covariates <- character(0)
           }
           covariates <- covariates[nzchar(covariates)]
-          covariates <- unique(setdiff(covariates, input$group_var))
+          covariates <- unique(setdiff(covariates, current_group_var))
           interaction_terms <- input$fix_interactions
           if (is.null(interaction_terms) || length(interaction_terms) == 0) {
             interaction_terms <- character(0)
           }
           interaction_terms <- interaction_terms[nzchar(interaction_terms)]
-          valid_interactions <- build_interaction_choices(input$group_var, covariates)
+          valid_interactions <- build_interaction_choices(current_group_var, covariates)
           interaction_terms <- intersect(interaction_terms, valid_interactions)
-          fix_formula_terms <- c(input$group_var, covariates, interaction_terms)
+          fix_formula_terms <- c(current_group_var, covariates, interaction_terms)
           fix_formula_str <- paste(unique(fix_formula_terms), collapse = " + ")
 
           rand_covariates <- input$rand_covariates
@@ -428,7 +451,7 @@ mod_ancom_server <- function(id, ps_obj) {
             rand_covariates <- character(0)
           }
           rand_covariates <- rand_covariates[nzchar(rand_covariates)]
-          rand_covariates <- unique(setdiff(rand_covariates, input$group_var))
+          rand_covariates <- unique(setdiff(rand_covariates, current_group_var))
           rand_covariates <- setdiff(rand_covariates, covariates)
           rand_formula_str <- if (length(rand_covariates) > 0) {
             paste0("(1|", rand_covariates, ")", collapse = " + ")
@@ -441,7 +464,7 @@ mod_ancom_server <- function(id, ps_obj) {
             tax_level = tax_level_arg,
             fix_formula = fix_formula_str,
             rand_formula = rand_formula_str,
-            group = input$group_var,
+            group = current_group_var,
             struc_zero = TRUE,
             neg_lb = TRUE,
             global = use_multi_group_tests,
@@ -490,27 +513,28 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$formula_preview <- renderText({
       req(input$group_var)
+      group_var <- group_var_resolved()
       covariates <- input$fix_covariates
       if (is.null(covariates) || length(covariates) == 0) {
         covariates <- character(0)
       }
       covariates <- covariates[nzchar(covariates)]
-      covariates <- unique(setdiff(covariates, input$group_var))
+      covariates <- unique(setdiff(covariates, group_var))
       interaction_terms <- input$fix_interactions
       if (is.null(interaction_terms) || length(interaction_terms) == 0) {
         interaction_terms <- character(0)
       }
       interaction_terms <- interaction_terms[nzchar(interaction_terms)]
-      valid_interactions <- build_interaction_choices(input$group_var, covariates)
+      valid_interactions <- build_interaction_choices(group_var, covariates)
       interaction_terms <- intersect(interaction_terms, valid_interactions)
       rand_covariates <- input$rand_covariates
       if (is.null(rand_covariates) || length(rand_covariates) == 0) {
         rand_covariates <- character(0)
       }
       rand_covariates <- rand_covariates[nzchar(rand_covariates)]
-      rand_covariates <- unique(setdiff(rand_covariates, input$group_var))
+      rand_covariates <- unique(setdiff(rand_covariates, group_var))
 
-      fix_formula_terms <- c(input$group_var, covariates, interaction_terms)
+      fix_formula_terms <- c(group_var, covariates, interaction_terms)
       fix_formula_str <- paste(unique(fix_formula_terms), collapse = " + ")
       rand_formula_str <- if (length(rand_covariates) > 0) {
         paste0("(1|", rand_covariates, ")", collapse = " + ")
@@ -537,6 +561,7 @@ mod_ancom_server <- function(id, ps_obj) {
     ancom_processed <- reactive({
       req(ancom_res(), input$group_var, input$reference_level)
       res <- ancom_res()
+      current_group_var <- group_var_resolved()
 
       selected_levels <- group_selection_info()$selected_levels
       ref_level <- input$reference_level
@@ -559,17 +584,17 @@ mod_ancom_server <- function(id, ps_obj) {
         tolower(x)
       }
 
-      group_norm <- normalize_token(input$group_var)
+      group_norm <- normalize_token(current_group_var)
 
       build_suffix_candidates <- function(level_name) {
         level_raw <- as.character(level_name)
         level_clean <- gsub("[^A-Za-z0-9]", "", level_raw)
         level_norm <- normalize_token(level_raw)
         unique(c(
-          paste0(input$group_var, level_raw),
-          paste0(input$group_var, "_", level_raw),
-          paste0(input$group_var, level_clean),
-          paste0(input$group_var, "_", level_clean),
+          paste0(current_group_var, level_raw),
+          paste0(current_group_var, "_", level_raw),
+          paste0(current_group_var, level_clean),
+          paste0(current_group_var, "_", level_clean),
           paste0(group_norm, level_norm),
           paste0(group_norm, "_", level_norm),
           level_raw,
@@ -627,7 +652,8 @@ mod_ancom_server <- function(id, ps_obj) {
           return(NULL)
         }
 
-        lfc_values <- to_numeric(res[[lfc_col]])
+        lfc_values_raw <- to_numeric(res[[lfc_col]])
+        lfc_values <- -lfc_values_raw
         se_values <- if (!is.na(se_col)) to_numeric(res[[se_col]]) else rep(NA_real_, nrow(res))
         w_values <- if (!is.na(w_col)) to_numeric(res[[w_col]]) else rep(NA_real_, nrow(res))
         p_values <- if (!is.na(p_col)) to_numeric(res[[p_col]]) else rep(NA_real_, nrow(res))
@@ -669,7 +695,13 @@ mod_ancom_server <- function(id, ps_obj) {
 
       base_df <- dplyr::bind_rows(contrast_results)
       base_df$contrast <- factor(base_df$contrast, levels = contrast_levels)
-      base_df$direction <- ifelse(base_df$lfc > 0, "Increase vs reference", "Decrease vs reference")
+      contrast_label <- as.character(base_df$contrast)
+      contrast_label[is.na(contrast_label) | !nzchar(contrast_label)] <- "selected comparison levels"
+      base_df$direction <- ifelse(
+        base_df$lfc > 0,
+        paste0("Increase in ", contrast_label),
+        paste0("Decrease in ", contrast_label)
+      )
       base_df
     })
 
@@ -710,6 +742,9 @@ mod_ancom_server <- function(id, ps_obj) {
     volcano_plot_reactive <- reactive({
       req(ancom_processed(), input$volcano_y_axis)
       res <- ancom_processed()
+      selected_levels <- group_selection_info()$selected_levels
+      target_levels <- setdiff(selected_levels, input$reference_level)
+      target_label <- if (length(target_levels) == 1) target_levels[1] else "selected comparison levels"
 
       y_col_name <- input$volcano_y_axis
       y_axis_label <- if (y_col_name == "q_val") expression("-log"[10]*"(FDR-adjusted p-value)") else expression("-log"[10]*"(p-value)")
@@ -768,7 +803,7 @@ mod_ancom_server <- function(id, ps_obj) {
              x = expression("log"[2]*"FC"),
              y = y_axis_label,
              color = "Direction",
-             subtitle = "Positive log2FC = increased vs reference") +
+             subtitle = paste0("Positive log2FC = increased in ", target_label, " (vs ", input$reference_level, ")")) +
         theme_minimal(base_size = 14) +
         theme(
           plot.title = element_text(size = 16, face = "bold"),
@@ -793,8 +828,12 @@ mod_ancom_server <- function(id, ps_obj) {
     })
 
     bar_plot_reactive <- reactive({
-      req(ancom_processed())
+      req(ancom_processed(), input$volcano_y_axis)
       res <- ancom_processed()
+      selected_levels <- group_selection_info()$selected_levels
+      target_levels <- setdiff(selected_levels, input$reference_level)
+      target_label <- if (length(target_levels) == 1) target_levels[1] else "selected comparison levels"
+      sig_col <- input$volcano_y_axis
       plot_df <- res[res$diff & !is.na(res$lfc), , drop = FALSE]
       if (nrow(plot_df) == 0) {
         plot_df <- res[!is.na(res$lfc), , drop = FALSE]
@@ -815,23 +854,45 @@ mod_ancom_server <- function(id, ps_obj) {
         res_top <- res_top[seq_len(min(top_n, nrow(res_top))), , drop = FALSE]
       }
 
+      sig_values <- suppressWarnings(as.numeric(res_top[[sig_col]]))
+      res_top$stat_value_label <- ifelse(
+        is.na(sig_values),
+        "NA",
+        formatC(sig_values, format = "e", digits = 2)
+      )
+
       res_top$direction_flag <- res_top$lfc > 0
+      y_abs_max <- max(abs(res_top$lfc), na.rm = TRUE)
+      if (!is.finite(y_abs_max) || y_abs_max <= 0) {
+        y_abs_max <- 1
+      }
+      label_offset <- y_abs_max * 0.08
+      label_right <- max(0, max(res_top$lfc, na.rm = TRUE)) + label_offset
+      res_top$label_y <- label_right
+      res_top$label_hjust <- 0
+      y_limits <- c(min(res_top$lfc, na.rm = TRUE), label_right + (label_offset * 4))
 
       p <- ggplot(res_top, aes(x = reorder(taxa_label, lfc), y = lfc, fill = direction_flag)) +
         geom_col(color = "black") +
-        coord_flip() +
+        geom_text(
+          aes(y = label_y, label = stat_value_label, hjust = label_hjust),
+          size = 3
+        ) +
+        coord_flip(clip = "off") +
+        scale_y_continuous(limits = y_limits) +
         scale_fill_manual(
           values = c("TRUE" = "red", "FALSE" = "blue"),
           labels = c(
-            "TRUE" = "Increase vs reference",
-            "FALSE" = "Decrease vs reference"
+            "TRUE" = paste0("Increase in ", target_label),
+            "FALSE" = paste0("Decrease in ", target_label)
           )
         ) +
         labs(title = paste("Top", top_n, "Differential Taxa by LFC (reference:", input$reference_level, ")"),
              x = input$tax_level,
              y = expression("log"[2]*"FC"),
              fill = "Direction") +
-        theme_bw()
+        theme_bw() +
+        theme(plot.margin = ggplot2::margin(6, 90, 6, 90))
 
       if ("contrast" %in% colnames(res_top)) {
         p <- p + facet_wrap(~ contrast, scales = "free_y", drop = FALSE)

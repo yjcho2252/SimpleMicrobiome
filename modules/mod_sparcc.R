@@ -33,7 +33,7 @@ mod_sparcc_ui <- function(id) {
           numericInput(ns("seed"), "8. Seed", value = 1001, min = 1, step = 1)
         ),
         hr(),
-        h5(icon("expand-arrows-alt"), "Plot Dimensions"),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 800, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 550, min = 300, max = 2400, step = 50),
         tags$div(

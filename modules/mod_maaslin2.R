@@ -68,8 +68,8 @@ mod_maaslin2_ui <- function(id) {
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 600, min = 300, max = 2000, step = 50),
         numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2000, step = 50),
+        numericInput(ns("plot_height"), "Plot height (px)", value = 600, min = 300, max = 2000, step = 50),
         actionButton(ns("run_maaslin2_btn"), "Run MaAsLin2", class = "btn-danger", style = "font-size: 12px;"),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-maaslin2-run-btn', function(msg) {
@@ -101,6 +101,24 @@ mod_maaslin2_ui <- function(id) {
 mod_maaslin2_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
     taxa_counts <- reactiveVal(list(before = NA_integer_, after = NA_integer_))
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
+    group_var_resolved <- reactive({
+      req(ps_obj(), input$group_var)
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      resolve_meta_colname(input$group_var, colnames(meta_df))
+    })
     
     build_interaction_choices <- function(group_var, fix_covariates) {
       if (is.null(group_var) || !nzchar(group_var)) {
@@ -140,11 +158,12 @@ mod_maaslin2_server <- function(id, ps_obj) {
     observeEvent(list(ps_obj(), input$group_var), {
       req(ps_obj(), input$group_var)
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      group_var <- group_var_resolved()
       validate(
-        need(input$group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
+        need(group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
       )
 
-      level_choices <- sort(unique(as.character(meta_df[[input$group_var]])))
+      level_choices <- sort(unique(as.character(meta_df[[group_var]])))
       level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
 
       selected_levels <- isolate(input$group_levels)
@@ -170,7 +189,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       }
       updateSelectInput(session, "reference_level", choices = selected_levels, selected = reference_level)
 
-      covariate_choices <- setdiff(colnames(meta_df), c("SampleID", input$group_var))
+      covariate_choices <- setdiff(colnames(meta_df), c("SampleID", group_var))
       selected_covariates <- input$fix_covariates
       if (is.null(selected_covariates)) {
         selected_covariates <- character(0)
@@ -183,7 +202,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
         server = TRUE
       )
 
-      interaction_choices <- build_interaction_choices(input$group_var, selected_covariates)
+      interaction_choices <- build_interaction_choices(group_var, selected_covariates)
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -198,7 +217,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
     }, ignoreNULL = FALSE)
     
     observeEvent(list(input$group_var, input$fix_covariates), {
-      interaction_choices <- build_interaction_choices(input$group_var, input$fix_covariates)
+      interaction_choices <- build_interaction_choices(group_var_resolved(), input$fix_covariates)
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -216,8 +235,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
       req(ps_obj(), input$group_var)
       ps <- ps_obj()
       meta_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      group_var <- group_var_resolved()
       validate(
-        need(input$group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found in sample_data."))
+        need(group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found in sample_data."))
       )
 
       selected_levels <- input$group_levels
@@ -226,7 +246,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       }
       selected_levels <- selected_levels[nzchar(selected_levels)]
 
-      group_values <- as.character(meta_df[[input$group_var]])
+      group_values <- as.character(meta_df[[group_var]])
       sample_ids <- rownames(meta_df)
       selected_ids <- sample_ids[group_values %in% selected_levels]
 
@@ -235,6 +255,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       }, numeric(1))
 
       list(
+        group_var = group_var,
         selected_levels = selected_levels,
         selected_ids = selected_ids,
         counts_by_level = counts_by_level
@@ -355,7 +376,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
              "MaAsLin2 package is not installed. Please install 'Maaslin2' first.")
       )
 
-      current_group_var <- input$group_var
+      current_group_var <- group_var_resolved()
 
       session$sendCustomMessage("toggle-maaslin2-run-btn", list(
         id = session$ns("run_maaslin2_btn"),
@@ -583,20 +604,21 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
     output$model_formula_preview <- renderText({
       req(input$group_var)
+      group_var <- group_var_resolved()
       covariates <- input$fix_covariates
       if (is.null(covariates) || length(covariates) == 0) {
         covariates <- character(0)
       }
       covariates <- covariates[nzchar(covariates)]
-      covariates <- unique(setdiff(covariates, input$group_var))
+      covariates <- unique(setdiff(covariates, group_var))
       interaction_terms <- input$fix_interactions
       if (is.null(interaction_terms) || length(interaction_terms) == 0) {
         interaction_terms <- character(0)
       }
       interaction_terms <- interaction_terms[nzchar(interaction_terms)]
-      valid_interactions <- build_interaction_choices(input$group_var, covariates)
+      valid_interactions <- build_interaction_choices(group_var, covariates)
       interaction_terms <- intersect(interaction_terms, valid_interactions)
-      fixed_effects <- unique(c(input$group_var, covariates, interaction_terms))
+      fixed_effects <- unique(c(group_var, covariates, interaction_terms))
       paste0("Applied fixed_effects: ", paste(fixed_effects, collapse = " + "))
     })
 
@@ -615,7 +637,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
         res$feature <- res$feature_id
       }
       if ("coef" %in% colnames(res)) {
-        coef_num <- suppressWarnings(as.numeric(res$coef))
+        coef_num_raw <- suppressWarnings(as.numeric(res$coef))
+        coef_num <- -coef_num_raw
+        res$coef <- coef_num
         res$exp_coef <- exp(coef_num)
         res$lfc <- log2(res$exp_coef)
       } else {
@@ -639,7 +663,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
       selected_levels <- group_selection_info()$selected_levels
       ref_level <- input$reference_level
 
-      coef_values <- suppressWarnings(as.numeric(res$coef))
+      coef_values_raw <- suppressWarnings(as.numeric(res$coef))
+      coef_values <- -coef_values_raw
       lfc_values <- log2(exp(coef_values))
       se_values <- if ("stderr" %in% colnames(res)) suppressWarnings(as.numeric(res$stderr)) else rep(NA_real_, nrow(res))
       p_values <- if ("pval" %in% colnames(res)) suppressWarnings(as.numeric(res$pval)) else rep(NA_real_, nrow(res))
@@ -672,9 +697,13 @@ mod_maaslin2_server <- function(id, ps_obj) {
         base_df$contrast <- factor(base_df$contrast)
       }
 
-      base_df$direction <- ifelse(base_df$lfc > 0,
-                                  "Increase vs reference",
-                                  "Decrease vs reference")
+      contrast_label <- as.character(base_df$contrast)
+      contrast_label[is.na(contrast_label) | !nzchar(contrast_label)] <- "selected comparison levels"
+      base_df$direction <- ifelse(
+        base_df$lfc > 0,
+        paste0("Increase in ", contrast_label),
+        paste0("Decrease in ", contrast_label)
+      )
       base_df
     })
 
@@ -714,6 +743,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
     volcano_plot_reactive <- reactive({
       req(selected_plot_data(), input$volcano_y_axis)
       res <- selected_plot_data()
+      selected_levels <- group_selection_info()$selected_levels
+      target_levels <- setdiff(selected_levels, input$reference_level)
+      target_label <- if (length(target_levels) == 1) target_levels[1] else "selected comparison levels"
 
       y_col_name <- input$volcano_y_axis
       y_axis_label <- if (y_col_name == "q_val") expression("-log"[10]*"(FDR-adjusted p-value)") else expression("-log"[10]*"(p-value)")
@@ -759,7 +791,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
              x = expression("log"[2]*"FC"),
              y = y_axis_label,
              color = "Direction",
-             subtitle = "Positive log2FC = increased vs reference") +
+             subtitle = paste0("Positive log2FC = increased in ", target_label, " (vs ", input$reference_level, ")")) +
         theme_minimal(base_size = 14) +
         theme(
           plot.title = element_text(size = 16, face = "bold"),
@@ -784,8 +816,12 @@ mod_maaslin2_server <- function(id, ps_obj) {
     })
 
     bar_plot_reactive <- reactive({
-      req(selected_plot_data())
+      req(selected_plot_data(), input$volcano_y_axis)
       res <- selected_plot_data()
+      selected_levels <- group_selection_info()$selected_levels
+      target_levels <- setdiff(selected_levels, input$reference_level)
+      target_label <- if (length(target_levels) == 1) target_levels[1] else "selected comparison levels"
+      sig_col <- input$volcano_y_axis
       plot_df <- res[res$diff & !is.na(res$lfc), , drop = FALSE]
       if (nrow(plot_df) == 0) {
         plot_df <- res[!is.na(res$lfc), , drop = FALSE]
@@ -806,23 +842,45 @@ mod_maaslin2_server <- function(id, ps_obj) {
         res_top <- res_top[seq_len(min(top_n, nrow(res_top))), , drop = FALSE]
       }
 
+      sig_values <- suppressWarnings(as.numeric(res_top[[sig_col]]))
+      res_top$stat_value_label <- ifelse(
+        is.na(sig_values),
+        "NA",
+        formatC(sig_values, format = "e", digits = 2)
+      )
+
       res_top$direction_flag <- res_top$lfc > 0
+      y_abs_max <- max(abs(res_top$lfc), na.rm = TRUE)
+      if (!is.finite(y_abs_max) || y_abs_max <= 0) {
+        y_abs_max <- 1
+      }
+      label_offset <- y_abs_max * 0.08
+      label_right <- max(0, max(res_top$lfc, na.rm = TRUE)) + label_offset
+      res_top$label_y <- label_right
+      res_top$label_hjust <- 0
+      y_limits <- c(min(res_top$lfc, na.rm = TRUE), label_right + (label_offset * 4))
 
       p <- ggplot(res_top, aes(x = reorder(taxa_label, lfc), y = lfc, fill = direction_flag)) +
         geom_col(color = "black") +
-        coord_flip() +
+        geom_text(
+          aes(y = label_y, label = stat_value_label, hjust = label_hjust),
+          size = 3
+        ) +
+        coord_flip(clip = "off") +
+        scale_y_continuous(limits = y_limits) +
         scale_fill_manual(
           values = c("TRUE" = "red", "FALSE" = "blue"),
           labels = c(
-            "TRUE" = "Increase vs reference",
-            "FALSE" = "Decrease vs reference"
+            "TRUE" = paste0("Increase in ", target_label),
+            "FALSE" = paste0("Decrease in ", target_label)
           )
         ) +
         labs(title = paste("Top", top_n, "Differential Taxa by log2FC (reference:", input$reference_level, ")"),
              x = input$tax_level,
              y = expression("log"[2]*"FC"),
              fill = "Direction") +
-        theme_bw()
+        theme_bw() +
+        theme(plot.margin = ggplot2::margin(6, 90, 6, 90))
 
       if ("contrast" %in% colnames(res_top)) {
         p <- p + facet_wrap(~ contrast, scales = "free_y", drop = FALSE)

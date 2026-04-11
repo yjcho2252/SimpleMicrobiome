@@ -105,6 +105,19 @@ mod_barplot_ui <- function(id) {
 ## Server
 mod_barplot_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
     
     output$local_group_selector <- renderUI({
       req(meta_cols())
@@ -116,7 +129,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     
     output$secondary_group_selector <- renderUI({
       req(meta_cols(), input$group_var)
-      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var))
+      resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
+      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, resolved_primary))
       selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
       selectInput(session$ns("secondary_var"), "Secondary Grouping Variable (Sub-Group):",
                   choices = c("None" = "None", group_choices), 
@@ -125,7 +139,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     
     group_var <- reactive({
       req(input$group_var)
-      input$group_var
+      resolve_meta_colname(input$group_var, meta_cols())
     })
     
     secondary_var <- reactive({
@@ -133,8 +147,13 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       if (input$secondary_var == "None") {
         return(NULL)
       } else {
-        return(input$secondary_var)
+        return(resolve_meta_colname(input$secondary_var, meta_cols()))
       }
+    })
+
+    sort_metadata_var_resolved <- reactive({
+      req(input$sort_metadata_var)
+      resolve_meta_colname(input$sort_metadata_var, meta_cols())
     })
     
     output$sort_by_metadata_ui <- renderUI({
@@ -193,6 +212,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           names(df_sample)[names(df_sample) == syntactic_col] <- meta_col
         }
       }
+      primary_var <- resolve_meta_colname(primary_var, names(df_sample))
+      secondary_var_val <- resolve_meta_colname(secondary_var_val, names(df_sample))
 
       if (!primary_var %in% names(df_sample)) {
         return(NULL)
@@ -313,6 +334,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           names(df_sample)[names(df_sample) == syntactic_col] <- meta_col
         }
       }
+      primary_var <- resolve_meta_colname(primary_var, names(df_sample))
+      secondary_var_val <- resolve_meta_colname(secondary_var_val, names(df_sample))
       
       if (!primary_var %in% names(df_sample)) {
         showNotification(
@@ -423,8 +446,9 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         
         if (sort_method == "metadata_var") {
           req(input$sort_metadata_var)
-          if (input$sort_metadata_var %in% names(meta_df_base)) {
-            required_vars <- c(required_vars, input$sort_metadata_var)
+          sort_meta_var <- sort_metadata_var_resolved()
+          if (sort_meta_var %in% names(meta_df_base)) {
+            required_vars <- c(required_vars, sort_meta_var)
           } else {
             showNotification(paste0("Error: Metadata variable '", input$sort_metadata_var, "' not found in sample data."), type = "error")
             return(NULL)
@@ -459,7 +483,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           
         } else if (sort_method == "metadata_var") {
           req(input$secondary_sort)
-          sort_meta_var <- input$sort_metadata_var; secondary_sort_crit <- input$secondary_sort; meta_df_sortable <- meta_df
+          sort_meta_var <- sort_metadata_var_resolved(); secondary_sort_crit <- input$secondary_sort; meta_df_sortable <- meta_df
           
           if (secondary_sort_crit == "taxa_top1") {
             main_top_taxa_name <- as.character(ordered_taxa_levels[1])
