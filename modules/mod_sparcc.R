@@ -29,8 +29,9 @@ mod_sparcc_ui <- function(id) {
         tags$details(
           style = "margin-bottom: 8px;",
           tags$summary("Advanced Options"),
-          numericInput(ns("max_taxa"), "7. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
-          numericInput(ns("seed"), "8. Seed", value = 1001, min = 1, step = 1)
+          numericInput(ns("min_edge_weight"), "7. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
+          numericInput(ns("max_taxa"), "8. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
+          numericInput(ns("seed"), "9. Seed", value = 1001, min = 1, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -385,6 +386,18 @@ mod_sparcc_server <- function(id, ps_obj) {
       igraph::induced_subgraph(g, vids = connected_nodes)
     }
 
+    filter_graph_by_weight <- function(g, cutoff) {
+      if (igraph::ecount(g) == 0) return(g)
+      edge_weight <- igraph::E(g)$weight
+      edge_weight <- as.numeric(edge_weight)
+      edge_weight[!is.finite(edge_weight)] <- 0
+      keep_edges <- abs(edge_weight) >= cutoff
+      if (!any(keep_edges)) {
+        return(igraph::delete_edges(g, igraph::E(g)))
+      }
+      igraph::subgraph.edges(g, eids = igraph::E(g)[keep_edges], delete.vertices = FALSE)
+    }
+
     get_current_eligible_groups <- function(built, group_var_value, group_levels_value) {
       if (is.null(built)) return(character(0))
       if (is.null(group_var_value) || group_var_value == "All" || !group_var_value %in% colnames(built$sample_df)) {
@@ -505,12 +518,15 @@ mod_sparcc_server <- function(id, ps_obj) {
       size_var <- input$node_size_by
       color_var <- input$node_color_by
       if (is.null(color_var)) color_var <- "None"
+      min_edge_weight <- suppressWarnings(as.numeric(input$min_edge_weight))
+      if (is.na(min_edge_weight) || min_edge_weight < 0) min_edge_weight <- 0.1
       node_rows <- list()
       edge_rows <- list()
       idx <- 1L
 
       for (gname in names(res$networks)) {
         g <- res$networks[[gname]]$graph
+        g <- filter_graph_by_weight(g, min_edge_weight)
         if (connected_only) g <- get_connected_graph(g)
         if (igraph::vcount(g) == 0 || igraph::ecount(g) == 0) next
 
@@ -618,7 +634,12 @@ mod_sparcc_server <- function(id, ps_obj) {
 
     edge_table_all <- reactive({
       req(network_result())
-      network_result()$edge_table
+      edge_tbl <- network_result()$edge_table
+      min_edge_weight <- suppressWarnings(as.numeric(input$min_edge_weight))
+      if (is.na(min_edge_weight) || min_edge_weight < 0) min_edge_weight <- 0.1
+      if (!"weight" %in% colnames(edge_tbl)) return(edge_tbl)
+      edge_tbl <- edge_tbl[is.finite(edge_tbl$weight) & abs(edge_tbl$weight) >= min_edge_weight, , drop = FALSE]
+      edge_tbl
     })
 
     output$network_plot_all <- renderPlot({

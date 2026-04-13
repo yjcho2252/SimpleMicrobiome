@@ -25,6 +25,31 @@ mod_barplot_ui <- function(id) {
         uiOutput(ns("local_group_selector")), 
         
         uiOutput(ns("secondary_group_selector")),
+
+        conditionalPanel(
+          condition = paste0("input['", ns("plot_mode"), "'] == 'Sample'"),
+
+          selectInput(ns("sort_method"), "Primary Sort Criterion (within Group):",
+                      choices = c(
+                        "Top Taxa Abundance (Default)" = "taxa_top1",
+                        "Sample Name (Alphabetical)" = "sample_name",
+                        "Metadata Variable" = "metadata_var"
+                      ),
+                      selected = "taxa_top1"),
+
+          conditionalPanel(
+            condition = paste0("input['", ns("sort_method"), "'] == 'metadata_var'"),
+            hr(),
+            uiOutput(ns("sort_by_metadata_ui")),
+            selectInput(ns("secondary_sort"), "Secondary Sort (after Metadata):",
+                        choices = c(
+                          "None (Metadata only)" = "none",
+                          "Top Taxa Abundance (Descending)" = "taxa_top1",
+                          "Sample Name (Alphabetical)" = "sample_name_asc"
+                        ),
+                        selected = "taxa_top1")
+          )
+        ),
         hr(),
         h4(icon("sliders"), "Plot Settings"),
         selectInput(ns("plot_mode"), "Plot Display Mode:",
@@ -50,35 +75,6 @@ mod_barplot_ui <- function(id) {
                      value = 600, min = 300, step = 50),
 
         
-        hr(),
-        h4(icon("sort"), "Sample Sorting"),
-        
-        conditionalPanel(
-          condition = paste0("input['", ns("plot_mode"), "'] == 'Sample'"),
-          
-          selectInput(ns("sort_method"), "Primary Sort Criterion (within Group):",
-                      choices = c(
-                        "Top Taxa Abundance (Default)" = "taxa_top1",
-                        "Sample Name (Alphabetical)" = "sample_name",
-                        "Metadata Variable" = "metadata_var"
-                      ),
-                      selected = "taxa_top1"),
-          
-          conditionalPanel(
-            condition = paste0("input['", ns("sort_method"), "'] == 'metadata_var'"),
-            hr(),
-            uiOutput(ns("sort_by_metadata_ui")),
-            selectInput(ns("secondary_sort"), "Secondary Sort (after Metadata):",
-                        choices = c(
-                          "None (Metadata only)" = "none",
-                          "Top Taxa Abundance (Descending)" = "taxa_top1",
-                          "Sample Name (Alphabetical)" = "sample_name_asc"
-                        ),
-                        selected = "taxa_top1")
-          )
-        ),
-                
-
         hr(),
         h5(icon("download"), "Download"),
         tags$div(

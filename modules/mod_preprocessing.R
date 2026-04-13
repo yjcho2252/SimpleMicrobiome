@@ -126,10 +126,11 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
           target = 'row'
         ), 
         options = list(
-          dom = 'ftip', 
-          pageLength = 20,
+          dom = 'fti',
+          paging = FALSE,
           columnDefs = list(list(className = 'dt-center', targets = "_all")),
-          scrollX = TRUE
+          scrollX = TRUE,
+          scrollY = "65vh"
         ),
         callback = JS(
           sprintf(

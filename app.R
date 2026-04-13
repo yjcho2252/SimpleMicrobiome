@@ -71,6 +71,7 @@ ui <- page_navbar(
       .navbar { min-height: 40px; }
       .navbar-brand { font-size: 15px; padding-top: 6px; padding-bottom: 6px; line-height: 1.1; }
       .navbar-nav .nav-link { font-size: 13px; padding-top: 6px; padding-bottom: 6px; line-height: 1.1; }
+      .navbar-nav .nav-link[data-value='Top'] { display: none !important; }
       .dropdown-menu { font-size: 13px; }
       .btn, .form-control, .form-select, .form-check-label { font-size: 13px; }
       h4 { font-size: 1.15rem; }
@@ -125,6 +126,11 @@ ui <- page_navbar(
   ),
   
   nav_panel(
+    title = "Top",
+    icon = icon("house"),
+    mod_top_ui("mod_top")
+  ),
+  nav_panel(
     title = "Data Loading", 
     icon = icon("upload"),
     mod_fileload_ui("mod_fileload")
@@ -167,6 +173,28 @@ ui <- page_navbar(
     title = "Citation",
     icon = icon("book"),
     mod_citation_ui("mod_citation")
+  ),
+  nav_spacer(),
+  nav_item(
+    tags$span(
+      style = "display: inline-flex; align-items: center; padding: 2px 0;",
+      tags$span(
+        style = paste(
+          "display: inline-flex;",
+          "align-items: center;",
+          "justify-content: center;",
+          "background: #ffffff;",
+          "border-radius: 8px;",
+          "padding: 3px 8px;",
+          "box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);"
+        ),
+        tags$img(
+          src = "https://www.kangwon.ac.kr/assets/ko/images/sub/symbol1.webp",
+          alt = "Kangwon National University",
+          style = "height: 22px; width: auto; display: block;"
+        )
+      )
+    )
   )
   
 )
@@ -174,7 +202,7 @@ ui <- page_navbar(
 ## App Server
 server <- function(input, output, session) {
   observeEvent(input$go_home, {
-    updateTabsetPanel(session, inputId = "tab_panel_main", selected = "Data Loading")
+    updateTabsetPanel(session, inputId = "tab_panel_main", selected = "Top")
   })
   
   file_data <- mod_fileload_server("mod_fileload")
@@ -202,6 +230,7 @@ server <- function(input, output, session) {
   mod_spieceasi_server("mod_spieceasi", ps_obj_filtered_raw)
   mod_sparcc_server("mod_sparcc", ps_obj_filtered_raw)
   mod_citation_server("mod_citation")
+  mod_top_server("mod_top")
   
   observeEvent(input[["mod_fileload-reset_all_app"]], {
     session$reload()

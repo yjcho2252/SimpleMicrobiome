@@ -225,6 +225,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       metadata <- as(phyloseq::sample_data(ps_obj()), "data.frame")
       resolve_meta_colname(input$secondary_group_var, colnames(metadata))
     })
+
+    coerce_group_vars_to_factor <- function(ps_data, primary_var, secondary_var = "None") {
+      if (is.null(ps_data)) return(ps_data)
+      sdata <- phyloseq::sample_data(ps_data)
+      sdata_df <- as(sdata, "data.frame")
+
+      if (!is.null(primary_var) && primary_var %in% colnames(sdata_df)) {
+        sdata_df[[primary_var]] <- as.factor(as.character(sdata_df[[primary_var]]))
+      }
+      if (!is.null(secondary_var) && !identical(secondary_var, "None") && secondary_var %in% colnames(sdata_df)) {
+        sdata_df[[secondary_var]] <- as.factor(as.character(sdata_df[[secondary_var]]))
+      }
+
+      phyloseq::sample_data(ps_data) <- phyloseq::sample_data(sdata_df)
+      ps_data
+    }
     
     default_group_colors <- reactive({
       req(ps_obj(), primary_group_var())
@@ -416,8 +432,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     })
 
     data_prepared <- reactive({
-      req(ps_normalized_local(), dist_method())
+      req(ps_normalized_local(), dist_method(), primary_group_var())
       ps_data <- ps_normalized_local()
+      ps_data <- coerce_group_vars_to_factor(ps_data, primary_group_var(), secondary_group_var())
       dist_mat <- phyloseq::distance(ps_data, method = dist_method())
       metadata <- as(phyloseq::sample_data(ps_data), "data.frame")
       list(ps = ps_data, dist_mat = dist_mat, metadata = metadata, dist_method = dist_method())
@@ -654,6 +671,15 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           }
         }
 
+        primary_var <- primary_group_var()
+        secondary_var <- secondary_group_var()
+        if (!is.null(primary_var) && primary_var %in% colnames(env_sub)) {
+          env_sub[[primary_var]] <- as.factor(as.character(env_sub[[primary_var]]))
+        }
+        if (!is.null(secondary_var) && !identical(secondary_var, "None") && secondary_var %in% colnames(env_sub)) {
+          env_sub[[secondary_var]] <- as.factor(as.character(env_sub[[secondary_var]]))
+        }
+
         for (cn in colnames(env_sub)) {
           if (!is.numeric(env_sub[[cn]])) {
             env_sub[[cn]] <- as.factor(as.character(env_sub[[cn]]))
@@ -824,7 +850,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         if (shape_var %in% names(sdata)) {
           current_col <- sdata[[shape_var]]
           
-          if (!is.factor(current_col) && (is.numeric(current_col) || is.character(current_col))) { 
+          if (!is.factor(current_col) && (is.numeric(current_col) || is.character(current_col))) {
             sdata[[shape_var]] <- as.factor(current_col)
             phyloseq::sample_data(ps_data) <- sdata
           }
