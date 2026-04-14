@@ -19,19 +19,25 @@ mod_sparcc_ui <- function(id) {
             plugins = list("remove_button")
           )
         ),
+        selectInput(
+          ns("analysis_mode"),
+          "3. Analysis mode",
+          choices = c("Single network", "Compare two groups"),
+          selected = "Single network"
+        ),
         tags$hr(),
         tags$small(strong("Current Comparison")),
         verbatimTextOutput(ns("comparison_status"), placeholder = TRUE),
-        selectInput(ns("tax_level"), "3. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
-        numericInput(ns("prevalence_filter_pct"), "4. Prevalence filter cutoff (%)", value = 10, min = 0, max = 100, step = 1),
-        selectInput(ns("node_size_by"), "5. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
-        selectInput(ns("node_color_by"), "6. Node color", choices = c("None"), selected = "None"),
+        selectInput(ns("tax_level"), "4. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
+        numericInput(ns("prevalence_filter_pct"), "5. Prevalence filter cutoff (%)", value = 10, min = 0, max = 100, step = 1),
+        selectInput(ns("node_size_by"), "6. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
+        selectInput(ns("node_color_by"), "7. Node color", choices = c("None"), selected = "None"),
         tags$details(
           style = "margin-bottom: 8px;",
           tags$summary("Advanced Options"),
-          numericInput(ns("min_edge_weight"), "7. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
-          numericInput(ns("max_taxa"), "8. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
-          numericInput(ns("seed"), "9. Seed", value = 1001, min = 1, step = 1)
+          numericInput(ns("min_edge_weight"), "8. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
+          numericInput(ns("max_taxa"), "9. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
+          numericInput(ns("seed"), "10. Seed", value = 1001, min = 1, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -68,7 +74,10 @@ mod_sparcc_ui <- function(id) {
             downloadButton(ns("download_edge_table_all"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
             DTOutput(ns("edge_table_all"))
           ),
-          tabPanel("Summary", verbatimTextOutput(ns("network_summary")))
+          tabPanel("SparCC Summary", verbatimTextOutput(ns("network_summary"))),
+          tabPanel("Comparison Network", plotOutput(ns("comparison_network_plot"), height = "auto")),
+          tabPanel("Differential Edges", DTOutput(ns("comparison_edge_table"))),
+          tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary")))
         )
       )
     )
@@ -237,11 +246,15 @@ mod_sparcc_server <- function(id, ps_obj) {
           }
 
           selected_levels <- input$group_levels
+          analysis_mode <- if (is.null(input$analysis_mode)) "Single network" else input$analysis_mode
           if (!is.null(group_var_resolved) && group_var_resolved != "All") {
             if (is.null(selected_levels)) selected_levels <- character(0)
             selected_levels <- trimws(as.character(selected_levels))
             selected_levels <- selected_levels[nzchar(selected_levels)]
             validate(need(length(selected_levels) > 0, "Select one or more group levels."))
+            if (identical(analysis_mode, "Compare two groups")) {
+              validate(need(length(selected_levels) == 2, "Compare mode requires selecting exactly 2 group levels."))
+            }
             available_levels <- names(group_samples)
             available_levels_key <- trimws(as.character(available_levels))
             selected_levels_key <- trimws(as.character(selected_levels))
@@ -258,6 +271,9 @@ mod_sparcc_server <- function(id, ps_obj) {
             group_samples <- group_samples[matched_levels]
           }
           validate(need(length(group_samples) > 0, "No group level is available for network estimation."))
+          if (identical(analysis_mode, "Compare two groups")) {
+            validate(need(length(group_samples) == 2, "Compare mode requires exactly 2 eligible groups."))
+          }
 
           build_group_network <- function(group_name, ids) {
             sub_otu <- otu_mat[, ids, drop = FALSE]
@@ -416,6 +432,7 @@ mod_sparcc_server <- function(id, ps_obj) {
 
     output$comparison_status <- renderText({
       selected_group_var <- if (is.null(input$group_var)) "All" else input$group_var
+      analysis_mode <- if (is.null(input$analysis_mode)) "Single network" else input$analysis_mode
       built <- tryCatch(build_network_inputs(), error = function(e) NULL)
       sample_count_line <- "Sample counts by level: (run data not ready)"
       if (!is.null(built) && selected_group_var != "All" && selected_group_var %in% colnames(built$sample_df)) {
@@ -440,6 +457,7 @@ mod_sparcc_server <- function(id, ps_obj) {
 
       if (is.null(res)) {
         return(paste(
+          paste0("Mode: ", analysis_mode),
           paste0("Group variable: ", selected_group_var),
           sample_count_line,
           "Status: Run network to compute available groups.",
@@ -450,11 +468,19 @@ mod_sparcc_server <- function(id, ps_obj) {
       groups <- get_current_eligible_groups(built, selected_group_var, input$group_levels)
       run_groups <- names(res$networks)
       lines <- c(
+        paste0("Mode: ", analysis_mode),
         paste0("Group variable: ", selected_group_var),
         paste0("Available groups (n=", length(groups), "): ", if (length(groups) == 0) "None" else paste(groups, collapse = ", ")),
         paste0("Selected levels: ", if (is.null(input$group_levels) || length(input$group_levels) == 0) "All" else paste(input$group_levels, collapse = ", ")),
         sample_count_line
       )
+      if (identical(analysis_mode, "Compare two groups")) {
+        if (length(run_groups) == 2) {
+          lines <- c(lines, paste0("Compare target: ", paste(run_groups, collapse = " vs ")))
+        } else {
+          lines <- c(lines, paste0("Compare target: Need exactly 2 successful groups (current=", length(run_groups), ")"))
+        }
+      }
 
       if (!is.null(res$group_status) && nrow(res$group_status) > 0) {
         lines <- c(lines, "Run status by group:")
@@ -477,6 +503,195 @@ mod_sparcc_server <- function(id, ps_obj) {
 
       paste(lines, collapse = "\n")
     })
+
+    comparison_metrics <- reactive({
+      req(network_result())
+      res <- network_result()
+      if (!identical(input$analysis_mode, "Compare two groups")) return(NULL)
+      if (length(res$networks) != 2) return(NULL)
+      groups <- names(res$networks)
+      g1 <- res$networks[[groups[1]]]$graph
+      g2 <- res$networks[[groups[2]]]$graph
+      edge1 <- igraph::as_data_frame(g1, what = "edges")
+      edge2 <- igraph::as_data_frame(g2, what = "edges")
+      key1 <- if (nrow(edge1) > 0) paste(pmin(edge1$from, edge1$to), pmax(edge1$from, edge1$to), sep = "||") else character(0)
+      key2 <- if (nrow(edge2) > 0) paste(pmin(edge2$from, edge2$to), pmax(edge2$from, edge2$to), sep = "||") else character(0)
+      common <- intersect(key1, key2)
+      only1 <- setdiff(key1, key2)
+      only2 <- setdiff(key2, key1)
+      data.frame(
+        metric = c("Nodes", "Edges", "Connected components", "Shared edges", "Unique edges"),
+        group_1 = c(igraph::vcount(g1), igraph::ecount(g1), igraph::components(g1)$no, length(common), length(only1)),
+        group_2 = c(igraph::vcount(g2), igraph::ecount(g2), igraph::components(g2)$no, length(common), length(only2)),
+        delta = c(
+          igraph::vcount(g1) - igraph::vcount(g2),
+          igraph::ecount(g1) - igraph::ecount(g2),
+          igraph::components(g1)$no - igraph::components(g2)$no,
+          0,
+          length(only1) - length(only2)
+        ),
+        stringsAsFactors = FALSE
+      )
+    })
+
+    comparison_edge_table <- reactive({
+      req(network_result())
+      res <- network_result()
+      if (!identical(input$analysis_mode, "Compare two groups")) return(data.frame())
+      if (length(res$networks) != 2) return(data.frame())
+      groups <- names(res$networks)
+      g1_name <- groups[1]
+      g2_name <- groups[2]
+      e1 <- igraph::as_data_frame(res$networks[[g1_name]]$graph, what = "edges")
+      e2 <- igraph::as_data_frame(res$networks[[g2_name]]$graph, what = "edges")
+      if (nrow(e1) > 0) {
+        e1$key <- paste(pmin(e1$from, e1$to), pmax(e1$from, e1$to), sep = "||")
+        e1 <- e1[, c("key", "from", "to", "weight"), drop = FALSE]
+        names(e1)[names(e1) == "weight"] <- "weight_group_1"
+      } else {
+        e1 <- data.frame(key = character(0), from = character(0), to = character(0), weight_group_1 = numeric(0), stringsAsFactors = FALSE)
+      }
+      if (nrow(e2) > 0) {
+        e2$key <- paste(pmin(e2$from, e2$to), pmax(e2$from, e2$to), sep = "||")
+        e2 <- e2[, c("key", "from", "to", "weight"), drop = FALSE]
+        names(e2)[names(e2) == "weight"] <- "weight_group_2"
+      } else {
+        e2 <- data.frame(key = character(0), from = character(0), to = character(0), weight_group_2 = numeric(0), stringsAsFactors = FALSE)
+      }
+      out <- merge(e1, e2, by = "key", all = TRUE, suffixes = c("_1", "_2"), sort = FALSE)
+      out$from <- ifelse(is.na(out$from_1), out$from_2, out$from_1)
+      out$to <- ifelse(is.na(out$to_1), out$to_2, out$to_1)
+      out$from_1 <- NULL
+      out$to_1 <- NULL
+      out$from_2 <- NULL
+      out$to_2 <- NULL
+      out$status <- ifelse(
+        !is.na(out$weight_group_1) & !is.na(out$weight_group_2),
+        "Shared",
+        ifelse(!is.na(out$weight_group_1), paste0("Only ", g1_name), paste0("Only ", g2_name))
+      )
+      out$weight_delta <- as.numeric(out$weight_group_1) - as.numeric(out$weight_group_2)
+      out <- out[, c("from", "to", "status", "weight_group_1", "weight_group_2", "weight_delta"), drop = FALSE]
+      names(out)[names(out) == "weight_group_1"] <- paste0("weight_", g1_name)
+      names(out)[names(out) == "weight_group_2"] <- paste0("weight_", g2_name)
+      out
+    })
+
+    output$comparison_summary <- renderText({
+      req(network_result())
+      res <- network_result()
+      if (!identical(input$analysis_mode, "Compare two groups")) {
+        return("Comparison mode is disabled. Select 'Compare two groups' to view results.")
+      }
+      if (length(res$networks) != 2) {
+        return("Comparison requires exactly 2 successfully estimated groups.")
+      }
+      groups <- names(res$networks)
+      metrics <- comparison_metrics()
+      lines <- c(
+        "Group Comparison Summary",
+        paste0("Group 1: ", groups[1]),
+        paste0("Group 2: ", groups[2]),
+        "Note: This summary is based on per-group estimated networks."
+      )
+      if (!is.null(metrics) && nrow(metrics) > 0) {
+        lines <- c(lines, "", "Metrics:")
+        for (i in seq_len(nrow(metrics))) {
+          lines <- c(
+            lines,
+            paste0(
+              "- ", metrics$metric[i], ": ",
+              groups[1], "=", metrics$group_1[i], ", ",
+              groups[2], "=", metrics$group_2[i], ", delta=", metrics$delta[i]
+            )
+          )
+        }
+      }
+      paste(lines, collapse = "\n")
+    })
+
+    draw_comparison_network_plot <- function(edge_tbl, edge_palette) {
+      validate(
+        need(requireNamespace("ggplot2", quietly = TRUE), "ggplot2 package is required for network plotting."),
+        need(requireNamespace("igraph", quietly = TRUE), "igraph package is required for network plotting."),
+        need(nrow(edge_tbl) > 0, "No differential edge is available for comparison plotting.")
+      )
+      g <- igraph::graph_from_data_frame(edge_tbl[, c("from", "to"), drop = FALSE], directed = FALSE)
+      if (igraph::vcount(g) == 0 || igraph::ecount(g) == 0) {
+        validate(need(FALSE, "No edge is available to build the comparison network plot."))
+      }
+      lay <- igraph::layout_with_fr(g)
+      node_df <- data.frame(
+        name = igraph::V(g)$name,
+        x = lay[, 1],
+        y = lay[, 2],
+        degree = igraph::degree(g),
+        stringsAsFactors = FALSE
+      )
+
+      edge_df <- igraph::as_data_frame(g, what = "edges")
+      edge_df <- dplyr::left_join(edge_df, edge_tbl, by = c("from", "to"))
+      edge_df <- dplyr::left_join(edge_df, node_df[, c("name", "x", "y")], by = c("from" = "name"))
+      edge_df <- dplyr::left_join(edge_df, node_df[, c("name", "x", "y")], by = c("to" = "name"), suffix = c("", "_end"))
+      names(edge_df)[names(edge_df) == "x"] <- "x"
+      names(edge_df)[names(edge_df) == "y"] <- "y"
+      names(edge_df)[names(edge_df) == "x_end"] <- "xend"
+      names(edge_df)[names(edge_df) == "y_end"] <- "yend"
+      edge_df$weight_delta <- as.numeric(edge_df$weight_delta)
+      edge_df$weight_delta[!is.finite(edge_df$weight_delta)] <- 0
+      edge_df$edge_width <- pmax(abs(edge_df$weight_delta), 0.05)
+
+      ggplot2::ggplot() +
+        ggplot2::geom_segment(
+          data = edge_df,
+          ggplot2::aes(x = x, y = y, xend = xend, yend = yend, color = status, linewidth = edge_width),
+          alpha = 0.85
+        ) +
+        ggplot2::geom_point(
+          data = node_df,
+          ggplot2::aes(x = x, y = y, size = degree),
+          shape = 21,
+          fill = "#F7F7F7",
+          color = "#222222",
+          stroke = 0.25
+        ) +
+        ggrepel::geom_text_repel(
+          data = node_df,
+          ggplot2::aes(x = x, y = y, label = name),
+          size = 2.8,
+          max.overlaps = Inf,
+          seed = as.integer(input$seed)
+        ) +
+        ggplot2::scale_color_manual(
+          values = edge_palette,
+          drop = FALSE,
+          name = "Edge class",
+          na.translate = FALSE
+        ) +
+        ggplot2::scale_linewidth(name = "|Weight delta|", range = c(0.3, 2.1)) +
+        ggplot2::scale_size(name = "Node degree", range = c(2.5, 7)) +
+        ggplot2::theme_void() +
+        ggplot2::theme(
+          plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
+          legend.title = ggplot2::element_text(size = 9),
+          legend.text = ggplot2::element_text(size = 8)
+        ) +
+        ggplot2::ggtitle("Differential Network (Two-Group Comparison)")
+    }
+
+    output$comparison_network_plot <- renderPlot({
+      req(network_result())
+      validate(need(identical(input$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to view differential network."))
+      edge_tbl <- comparison_edge_table()
+      validate(need(nrow(edge_tbl) > 0, "No differential edge is available for comparison plotting."))
+      status_vals <- unique(edge_tbl$status)
+      only_status <- status_vals[grepl("^Only ", status_vals)]
+      palette <- c("Shared" = "#7F8C8D")
+      if (length(only_status) >= 1) palette[only_status[1]] <- "#1F78B4"
+      if (length(only_status) >= 2) palette[only_status[2]] <- "#E31A1C"
+      draw_comparison_network_plot(edge_tbl, palette)
+    }, height = function() input$plot_height, width = function() input$plot_width)
+
 
     output$network_summary <- renderText({
       req(network_result())
@@ -652,6 +867,9 @@ mod_sparcc_server <- function(id, ps_obj) {
       draw_network_plot(network_result(), connected_only = TRUE)
     }, height = function() input$plot_height, width = function() input$plot_width)
     output$edge_table_all <- renderDT({ datatable(edge_table_all(), options = list(scrollX = TRUE)) })
+    output$comparison_edge_table <- renderDT({
+      datatable(comparison_edge_table(), options = list(scrollX = TRUE, pageLength = 15))
+    })
 
     output$download_network_plot_all <- downloadHandler(
       filename = function() paste0("sparcc_network_all_", Sys.Date(), ".png"),
