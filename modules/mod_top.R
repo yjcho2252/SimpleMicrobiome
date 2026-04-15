@@ -1,6 +1,7 @@
 ## UI
 mod_top_ui <- function(id) {
   ns <- NS(id)
+  converter_url <- Sys.getenv("CONVERTER_APP_URL", "https://simplemicrobiome.mglab.org/convert/ui")
 
   tagList(
     tags$style(HTML(
@@ -87,6 +88,19 @@ mod_top_ui <- function(id) {
               "Data Loading"
             ),
             " menu first."
+          )
+        ),
+        div(
+          class = "top-start",
+          tagList(
+            icon("right-to-bracket"),
+            strong(" QZA Converter (External Service): "),
+            tags$a(
+              href = converter_url,
+              target = "_blank",
+              rel = "noopener noreferrer",
+              "Open Converter Tool"
+            )
           )
         )
       ),

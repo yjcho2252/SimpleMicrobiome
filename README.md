@@ -20,6 +20,7 @@ It supports data loading, preprocessing, visualization, diversity analysis, diff
 - Network analysis:
   - SparCC
   - SpiecEasi
+- External QIIME2 converter service for `.qza` to TSV conversion (`/convert/ui`)
 - Built-in example dataset loader/downloader
 - Citation page with module-wise references
 
@@ -133,6 +134,10 @@ The repository includes example input files in `sample/`:
 
 You can use **Load Example** in the app or **Download Example** to export a zip.
 
+For QIIME2 `.qza` conversion, use the external converter page linked from **Top**:
+
+- `https://simplemicrobiome.mglab.org/convert/ui`
+
 ## Recommended Workflow
 
 1. Open **Data Loading** and upload the 3 files (or load the example).
@@ -163,6 +168,9 @@ SimpleMicrobiome/
     mod_sparcc.R
     mod_spieceasi.R
     mod_citation.R
+  convert_service/
+    app.py
+    deploy/qiime-converter.service
   sample/
 ```
 
