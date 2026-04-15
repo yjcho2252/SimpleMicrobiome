@@ -144,6 +144,8 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260415: QZA Converter Tool added."),
+            tags$li("260414: Network Comparison function added."),
             tags$li("260408: Network Analysis modules added."),
             tags$li("260407: Random Forest module added."),
             tags$li("260406: MaAsLin2 module added."),
