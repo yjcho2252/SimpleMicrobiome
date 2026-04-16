@@ -56,8 +56,12 @@ if (dir.exists(mod_path)) {
 ui <- page_navbar(
   title = actionLink(
     "go_home",
-    label = tagList(icon("microscope"), " SimpleMicrobiome"),
-    style = "font-weight: 700; letter-spacing: 0.3px; font-size: 16px; color: inherit; text-decoration: none; padding: 0;"
+    label = tags$img(
+      src = "brand-wordmark.svg",
+      alt = "SimpleMicrobiome",
+      style = "height: 30px; width: auto; display: block;"
+    ),
+    style = "display: inline-flex; align-items: center; text-decoration: none; padding: 0;"
   ),
   id = "tab_panel_main",
   theme = bs_theme(
@@ -66,10 +70,14 @@ ui <- page_navbar(
     primary = "#2c3e50"
   ),
   header = tags$head(
+    tags$title("SimpleMicrobiome"),
+    tags$link(rel = "icon", type = "image/svg+xml", href = "favicon.svg"),
     tags$style(HTML("
       body { font-size: 14px; }
       .navbar { min-height: 40px; }
       .navbar-brand { font-size: 15px; padding-top: 6px; padding-bottom: 6px; line-height: 1.1; }
+      .navbar .container-fluid { gap: 0.2rem; }
+      .navbar-brand { margin-right: 0.2rem !important; }
       .navbar-nav .nav-link { font-size: 13px; padding-top: 6px; padding-bottom: 6px; line-height: 1.1; }
       .navbar-nav .nav-link[data-value='Top'] { display: none !important; }
       .dropdown-menu { font-size: 13px; }
@@ -173,28 +181,6 @@ ui <- page_navbar(
     title = "Citation",
     icon = icon("book"),
     mod_citation_ui("mod_citation")
-  ),
-  nav_spacer(),
-  nav_item(
-    tags$span(
-      style = "display: inline-flex; align-items: center; padding: 2px 0;",
-      tags$span(
-        style = paste(
-          "display: inline-flex;",
-          "align-items: center;",
-          "justify-content: center;",
-          "background: #ffffff;",
-          "border-radius: 8px;",
-          "padding: 3px 8px;",
-          "box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);"
-        ),
-        tags$img(
-          src = "https://www.kangwon.ac.kr/assets/ko/images/sub/symbol1.webp",
-          alt = "Kangwon National University",
-          style = "height: 22px; width: auto; display: block;"
-        )
-      )
-    )
   )
   
 )

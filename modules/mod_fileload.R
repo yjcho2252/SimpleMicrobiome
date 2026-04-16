@@ -1,6 +1,7 @@
 ## UI
 mod_fileload_ui <- function(id) {
   ns <- NS(id)
+  converter_url <- Sys.getenv("CONVERTER_APP_URL", "https://simplemicrobiome.mglab.org/convert/ui")
   tagList(
     tags$style(HTML(sprintf(
       "#%s .btn-file, #%s .btn-file, #%s .btn-file { font-size: 11px; }",
@@ -37,6 +38,29 @@ mod_fileload_ui <- function(id) {
         icon = icon("rotate-left"),
         class = "btn btn-warning btn-sm",
         style = "font-size: 12px; padding: 3px 8px; width: 110px; white-space: nowrap; flex: 0 0 auto;"
+      )
+    ),
+    tags$div(
+      style = "font-size: 12px; color: #555; margin-top: 2px; margin-bottom: 8px;",
+      tags$p("This tool requires 3 files:", style = "margin: 0 0 4px 0;"),
+      tags$ul(
+        style = "margin: 0 0 0 18px; padding: 0;",
+        tags$li("ASV_table.tsv from table.qza"),
+        tags$li("taxonomy_table.tsv from taxonomy.qza"),
+        tags$li("metadata.tsv prepared manually by the user")
+      ),
+      tags$p(
+        tagList(
+          "To convert QZA files to TSV, use ",
+          tags$a(
+            href = converter_url,
+            target = "_blank",
+            rel = "noopener noreferrer",
+            "QZA Converter"
+          ),
+          ""
+        ),
+        style = "margin: 6px 0 0 0;"
       )
     ),
     hr(),

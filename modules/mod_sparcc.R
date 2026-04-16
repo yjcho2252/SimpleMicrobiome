@@ -2,6 +2,18 @@
 mod_sparcc_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .tabbable > .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+      .tabbable > .nav-tabs .nav-link {
+        font-size: 12px;
+        padding: 5px 8px;
+        white-space: nowrap;
+      }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -75,9 +87,14 @@ mod_sparcc_ui <- function(id) {
             DTOutput(ns("edge_table_all"))
           ),
           tabPanel("SparCC Summary", verbatimTextOutput(ns("network_summary"))),
-          tabPanel("Comparison Network", plotOutput(ns("comparison_network_plot"), height = "auto")),
+          tabPanel(
+            "Comparison Network",
+            downloadButton(ns("download_comparison_network_plot"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+            plotOutput(ns("comparison_network_plot"), height = "auto")
+          ),
           tabPanel("Differential Edges", DTOutput(ns("comparison_edge_table"))),
-          tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary")))
+          tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary"))),
+          tabPanel("Hub Table", DTOutput(ns("hub_table")))
         )
       )
     )
@@ -324,7 +341,7 @@ mod_sparcc_server <- function(id, ps_obj) {
             sample_totals[sample_totals <= 0 | is.na(sample_totals)] <- 1
             sub_otu_rel <- sweep(sub_otu, 2, sample_totals, "/")
             abundance <- rowMeans(sub_otu_rel, na.rm = TRUE)
-            list(graph = graph, edge_table = edge_df, abundance = abundance)
+            list(graph = graph, edge_table = edge_df, abundance = abundance, net_obj = net_obj)
           }
 
           networks <- list()
@@ -504,6 +521,132 @@ mod_sparcc_server <- function(id, ps_obj) {
       paste(lines, collapse = "\n")
     })
 
+    summarize_network_structure <- function(net_res) {
+      top_n <- 5
+      g <- net_res$graph
+      if (is.null(g) || igraph::vcount(g) == 0) {
+        return(list(hub_taxa = character(0), hub_scores = numeric(0), modularity_netanalyze = NA_real_))
+      }
+
+      extract_hubs <- function(obj) {
+        if (is.null(obj)) return(character(0))
+        if (is.character(obj)) return(obj[nzchar(obj)])
+        if (is.factor(obj)) return(as.character(obj))
+        if (is.list(obj)) {
+          nms <- names(obj)
+          if (!is.null(nms)) {
+            idx <- which(grepl("hub", tolower(nms)))
+            for (i in idx) {
+              v <- extract_hubs(obj[[i]])
+              if (length(v) > 0) return(v)
+            }
+          }
+          for (el in obj) {
+            v <- extract_hubs(el)
+            if (length(v) > 0) return(v)
+          }
+        }
+        character(0)
+      }
+
+      extract_modularity <- function(obj) {
+        if (is.null(obj)) return(NA_real_)
+        if (is.numeric(obj) && length(obj) == 1 && is.finite(obj)) return(as.numeric(obj))
+        if (is.list(obj)) {
+          nms <- names(obj)
+          if (!is.null(nms)) {
+            idx <- which(grepl("mod", tolower(nms)))
+            for (i in idx) {
+              v <- extract_modularity(obj[[i]])
+              if (is.finite(v)) return(v)
+            }
+          }
+          for (el in obj) {
+            v <- extract_modularity(el)
+            if (is.finite(v)) return(v)
+          }
+        }
+        NA_real_
+      }
+
+      extract_named_numeric <- function(obj, key_pattern = NULL) {
+        out <- list()
+        walk_obj <- function(x, nm = "") {
+          if (is.null(x)) return()
+          if (is.numeric(x) && !is.null(names(x))) {
+            if (is.null(key_pattern) || grepl(key_pattern, tolower(nm))) {
+              out[[length(out) + 1]] <<- x
+            }
+            return()
+          }
+          if (is.list(x)) {
+            nms <- names(x)
+            if (is.null(nms)) nms <- rep("", length(x))
+            for (i in seq_along(x)) walk_obj(x[[i]], nms[[i]])
+          }
+        }
+        walk_obj(obj)
+        out
+      }
+
+      mod_netanalyze <- NA_real_
+      hub_taxa <- character(0)
+      hub_scores <- numeric(0)
+      if (!is.null(net_res$net_obj)) {
+        ana <- tryCatch(
+          suppressWarnings(NetCoMi::netAnalyze(net_res$net_obj, verbose = 0)),
+          error = function(e) NULL
+        )
+        hub_taxa <- extract_hubs(ana)
+        mod_netanalyze <- extract_modularity(ana)
+
+        if (!is.null(ana)) {
+          vertex_names <- igraph::V(g)$name
+          deg_cands <- extract_named_numeric(ana, "degree")
+          btw_cands <- extract_named_numeric(ana, "betwe")
+          eig_cands <- extract_named_numeric(ana, "eigen")
+          pick_vec <- function(cands) {
+            if (length(cands) == 0) return(NULL)
+            for (v in cands) {
+              nm <- names(v)
+              if (!is.null(nm) && all(vertex_names %in% nm)) return(as.numeric(v[vertex_names]))
+            }
+            NULL
+          }
+          deg_v <- pick_vec(deg_cands)
+          btw_v <- pick_vec(btw_cands)
+          eig_v <- pick_vec(eig_cands)
+          if (!is.null(deg_v) && !is.null(btw_v) && !is.null(eig_v)) {
+            safe_z <- function(x) {
+              sx <- stats::sd(x, na.rm = TRUE)
+              if (!is.finite(sx) || sx == 0) return(rep(0, length(x)))
+              as.numeric((x - mean(x, na.rm = TRUE)) / sx)
+            }
+            score <- 0.4 * safe_z(deg_v) + 0.3 * safe_z(btw_v) + 0.3 * safe_z(eig_v)
+            names(score) <- vertex_names
+            hub_scores <- sort(score, decreasing = TRUE)
+          }
+        }
+      }
+
+      if (length(hub_taxa) == 0) {
+        deg <- igraph::degree(g)
+        hub_taxa <- names(sort(as.numeric(deg), decreasing = TRUE))
+      }
+      hub_taxa <- unique(as.character(hub_taxa))
+      hub_taxa <- hub_taxa[nzchar(hub_taxa)]
+      hub_taxa <- hub_taxa[hub_taxa %in% igraph::V(g)$name]
+      if (length(hub_scores) > 0) {
+        hub_taxa <- names(hub_scores)
+      }
+      if (length(hub_taxa) > top_n) hub_taxa <- hub_taxa[seq_len(top_n)]
+      if (length(hub_scores) > 0) {
+        hub_scores <- hub_scores[hub_taxa]
+      }
+
+      list(hub_taxa = hub_taxa, hub_scores = hub_scores, modularity_netanalyze = mod_netanalyze)
+    }
+
     comparison_metrics <- reactive({
       req(network_result())
       res <- network_result()
@@ -588,6 +731,15 @@ mod_sparcc_server <- function(id, ps_obj) {
       }
       groups <- names(res$networks)
       metrics <- comparison_metrics()
+      s1 <- summarize_network_structure(res$networks[[groups[1]]])
+      s2 <- summarize_network_structure(res$networks[[groups[2]]])
+      delta_modularity_netanalyze <- s1$modularity_netanalyze - s2$modularity_netanalyze
+      score_text <- function(s) {
+        if (length(s$hub_scores) == 0) return("NA")
+        vals <- s$hub_scores
+        if (length(vals) > 5) vals <- vals[seq_len(5)]
+        paste(paste0(names(vals), "=", sprintf("%.2f", as.numeric(vals))), collapse = ", ")
+      }
       lines <- c(
         "Group Comparison Summary",
         paste0("Group 1: ", groups[1]),
@@ -607,7 +759,55 @@ mod_sparcc_server <- function(id, ps_obj) {
           )
         }
       }
+      lines <- c(
+        lines,
+        "",
+        "Network Topology (Comparison):",
+        "- Hub score method: 0.4*z(degree) + 0.3*z(betweenness) + 0.3*z(eigenvector)",
+        paste0("- Hub taxa (", groups[1], "): ", if (length(s1$hub_taxa) > 0) paste(s1$hub_taxa, collapse = ", ") else "NA"),
+        paste0("- Hub taxa (", groups[2], "): ", if (length(s2$hub_taxa) > 0) paste(s2$hub_taxa, collapse = ", ") else "NA"),
+        paste0("- Hub score (", groups[1], "): ", score_text(s1)),
+        paste0("- Hub score (", groups[2], "): ", score_text(s2)),
+        paste0("- Modularity (netAnalyze, ", groups[1], "): ", if (is.finite(s1$modularity_netanalyze)) sprintf("%.3f", s1$modularity_netanalyze) else "NA"),
+        paste0("- Modularity (netAnalyze, ", groups[2], "): ", if (is.finite(s2$modularity_netanalyze)) sprintf("%.3f", s2$modularity_netanalyze) else "NA"),
+        paste0("- Delta modularity (netAnalyze, ", groups[1], " - ", groups[2], "): ", if (is.finite(delta_modularity_netanalyze)) sprintf("%.3f", delta_modularity_netanalyze) else "NA")
+      )
       paste(lines, collapse = "\n")
+    })
+
+    hub_table <- reactive({
+      req(network_result())
+      res <- network_result()
+      rows <- list()
+      for (gname in names(res$networks)) {
+        s <- summarize_network_structure(res$networks[[gname]])
+        taxa <- s$hub_taxa
+        if (length(taxa) == 0) next
+        scores <- s$hub_scores
+        score_vals <- rep(NA_real_, length(taxa))
+        if (length(scores) > 0) {
+          score_vals <- as.numeric(scores[taxa])
+        }
+        rows[[length(rows) + 1]] <- data.frame(
+          group = gname,
+          rank = seq_along(taxa),
+          taxa = taxa,
+          hub_score = round(score_vals, 2),
+          stringsAsFactors = FALSE
+        )
+      }
+      if (length(rows) == 0) {
+        return(data.frame(group = character(0), rank = integer(0), taxa = character(0), hub_score = numeric(0)))
+      }
+      do.call(rbind, rows)
+    })
+
+    output$hub_table <- renderDT({
+      DT::datatable(
+        hub_table(),
+        rownames = FALSE,
+        options = list(pageLength = 10, scrollX = TRUE)
+      )
     })
 
     draw_comparison_network_plot <- function(edge_tbl, edge_palette) {
@@ -691,6 +891,30 @@ mod_sparcc_server <- function(id, ps_obj) {
       if (length(only_status) >= 2) palette[only_status[2]] <- "#E31A1C"
       draw_comparison_network_plot(edge_tbl, palette)
     }, height = function() input$plot_height, width = function() input$plot_width)
+
+    output$download_comparison_network_plot <- downloadHandler(
+      filename = function() paste0("sparcc_differential_network_", Sys.Date(), ".png"),
+      content = function(file) {
+        req(network_result())
+        validate(need(identical(input$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to download differential network."))
+        edge_tbl <- comparison_edge_table()
+        validate(need(nrow(edge_tbl) > 0, "No differential edge is available for download."))
+        status_vals <- unique(edge_tbl$status)
+        only_status <- status_vals[grepl("^Only ", status_vals)]
+        palette <- c("Shared" = "#7F8C8D")
+        if (length(only_status) >= 1) palette[only_status[1]] <- "#1F78B4"
+        if (length(only_status) >= 2) palette[only_status[2]] <- "#E31A1C"
+
+        plot_width <- as.integer(input$plot_width)
+        plot_height <- as.integer(input$plot_height)
+        if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
+        if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
+
+        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        on.exit(grDevices::dev.off(), add = TRUE)
+        draw_comparison_network_plot(edge_tbl, palette)
+      }
+    )
 
 
     output$network_summary <- renderText({

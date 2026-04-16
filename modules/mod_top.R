@@ -12,13 +12,20 @@ mod_top_ui <- function(id) {
         "  border-radius: 16px;",
         "  padding: 22px 24px;",
         "  margin-bottom: 16px;",
+        "  max-width: 920px;",
+        "  margin-left: 0;",
+        "  margin-right: 0;",
         "  box-shadow: 0 4px 14px rgba(20, 56, 99, 0.08);",
         "}",
         "#", ns("top_wrap"), " .top-title {",
-        "  font-size: 28px;",
-        "  font-weight: 700;",
-        "  color: #0f3568;",
-        "  margin-bottom: 6px;",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  margin-bottom: 14px;",
+        "}",
+        "#", ns("top_wrap"), " .top-title img {",
+        "  height: 42px;",
+        "  width: auto;",
+        "  display: block;",
         "}",
         "#", ns("top_wrap"), " .top-subtitle {",
         "  font-size: 14px;",
@@ -35,11 +42,25 @@ mod_top_ui <- function(id) {
         "  margin-bottom: 12px;",
         "  box-shadow: 0 2px 8px rgba(20, 56, 99, 0.05);",
         "}",
+        "#", ns("top_wrap"), " .top-card-readable {",
+        "  max-width: 920px;",
+        "  margin-left: 0;",
+        "  margin-right: 0;",
+        "}",
         "#", ns("top_wrap"), " .top-card h4 {",
         "  margin-top: 0;",
         "  margin-bottom: 8px;",
         "  font-size: 16px;",
         "  color: #123b70;",
+        "}",
+        "#", ns("top_wrap"), " .top-workflow-img {",
+        "  width: 100%;",
+        "  height: auto;",
+        "  display: block;",
+        "  border: 1px solid #d7e4f5;",
+        "  border-radius: 12px;",
+        "  margin-bottom: 10px;",
+        "  background: #f8fbff;",
         "}",
         "#", ns("top_wrap"), " .top-list { margin: 0; padding-left: 18px; }",
         "#", ns("top_wrap"), " .top-start {",
@@ -60,21 +81,36 @@ mod_top_ui <- function(id) {
         "}",
         "#", ns("top_wrap"), " details summary { cursor: pointer; color: #0f3568; }",
         "#", ns("top_wrap"), " a { color: #0f4c92; font-weight: 600; text-decoration: none; }",
-        "#", ns("top_wrap"), " a:hover { color: #0a3a70; text-decoration: underline; }"
+        "#", ns("top_wrap"), " a:hover { color: #0a3a70; text-decoration: underline; }",
+        "#", ns("top_wrap"), " .top-footer {",
+        "  display: flex;",
+        "  align-items: center;",
+        "  justify-content: center;",
+        "  gap: 8px;",
+        "  margin-top: 4px;",
+        "  max-width: 920px;",
+        "  width: 100%;",
+        "  color: #355074;",
+        "  font-size: 13px;",
+        "}",
+        "#", ns("top_wrap"), " .top-footer img {",
+        "  height: 18px;",
+        "  width: auto;",
+        "  display: block;",
+        "}"
       )
     )),
     div(
       id = ns("top_wrap"),
       div(
         class = "top-hero",
-        div(class = "top-title", tagList(icon("microscope"), " SimpleMicrobiome")),
-        p(
-          class = "top-subtitle",
-          "SimpleMicrobiome supports microbiome data loading, preprocessing, visualization, diversity analysis, differential abundance, and network analysis."
+        div(
+          class = "top-title",
+          tags$img(src = "brand-wordmark-dark.svg", alt = "SimpleMicrobiome")
         ),
         p(
           class = "top-subtitle",
-          "Developed by the Microbial Genomics Laboratory, Kangwon National University."
+          "SimpleMicrobiome supports microbiome data visualization, diversity analysis, differential abundance, and network analysis."
         ),
         div(
           class = "top-start",
@@ -107,10 +143,10 @@ mod_top_ui <- function(id) {
       fluidRow(
         class = "top-grid",
         column(
-          width = 7,
+          width = 12,
           class = "top-col",
           div(
-            class = "top-card",
+            class = "top-card top-card-readable",
             h4(icon("route"), " Quick Workflow"),
             tags$ol(
               class = "top-list",
@@ -119,26 +155,10 @@ mod_top_ui <- function(id) {
               tags$li("Analysis: Run visualization/diversity/DA/network modules as needed.")
             )
           )
-        ),
-        column(
-          width = 5,
-          class = "top-col",
-          div(
-            class = "top-card",
-            h4(icon("shield-halved"), " Notes"),
-            div(
-              class = "top-note",
-              tags$ul(
-                class = "top-list",
-                tags$li("Use enough samples per group for stable statistics."),
-                tags$li("Network outputs are sensitive to filtering settings.")
-              )
-            )
-          )
         )
       ),
       div(
-        class = "top-card",
+        class = "top-card top-card-readable",
         h4(icon("clock-rotate-left"), " Version History"),
         tags$details(
           tags$summary("Show updates"),
@@ -154,6 +174,14 @@ mod_top_ui <- function(id) {
             tags$li("251210: First public version released.")
           )
         )
+      ),
+      div(
+        class = "top-footer",
+        tags$img(
+          src = "https://www.kangwon.ac.kr/assets/ko/images/sub/symbol1.webp",
+          alt = "Kangwon National University"
+        ),
+        tags$span("\u00a9 2025-2026 SimpleMicrobiome | Microbial Genomics Lab")
       )
     )
   )

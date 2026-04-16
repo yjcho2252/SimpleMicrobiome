@@ -104,6 +104,12 @@ Load three files in the **Data Loading** tab:
 2. `Taxonomy Table` (`.csv`, `.tsv`, `.txt`)
 3. `Metadata File` (`.csv`, `.tsv`, `.txt`)
 
+For the standard TSV workflow in this app:
+- `ASV_table.tsv` comes from `table.qza`.
+- `taxonomy_table.tsv` comes from `taxonomy.qza`.
+- `metadata.tsv` must be prepared manually by the user.
+- To convert QZA files to TSV, use **QZA Converter** on the app's **Top** page.
+
 Expected structure:
 
 - ASV/OTU table:
@@ -168,7 +174,7 @@ SimpleMicrobiome/
     mod_sparcc.R
     mod_spieceasi.R
     mod_citation.R
-  convert_service/
+  convert_service/  # Not uploaded to GitHub for security reasons
     app.py
     deploy/qiime-converter.service
   sample/
