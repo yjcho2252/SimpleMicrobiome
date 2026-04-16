@@ -8,6 +8,7 @@
 /convert_service/.env
 /convert_service/deploy/qiime-converter.env
 /convert_service/deploy/qiime-converter.service
+/convert_service
 /converter_service
 
 # Security: ignore common local secret/config artifacts
