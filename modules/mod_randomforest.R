@@ -46,7 +46,14 @@ mod_randomforest_ui <- function(id) {
           numericInput(ns("top_n_features"), "9. Top N features by mean abundance", value = 100, min = 10, max = 5000, step = 10),
           numericInput(ns("ntree"), "10. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
           numericInput(ns("mtry"), "11. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
-          numericInput(ns("seed"), "12. Random seed", value = 1234, min = 1, max = 999999, step = 1)
+          selectInput(
+            ns("validation_mode"),
+            "12. Validation mode",
+            choices = c("Holdout split", "K-fold CV"),
+            selected = "Holdout split"
+          ),
+          numericInput(ns("cv_folds"), "13. K for K-fold CV", value = 5, min = 3, max = 10, step = 1),
+          numericInput(ns("seed"), "14. Random seed", value = 1234, min = 1, max = 999999, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -336,161 +343,310 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           } else {
             identical(mode_selected, "Classification")
           }
+          compute_binary_roc <- function(y_true_bin, y_score) {
+            keep <- !is.na(y_true_bin) & !is.na(y_score)
+            y_true_bin <- y_true_bin[keep]
+            y_score <- y_score[keep]
+            if (length(y_true_bin) < 2) return(NULL)
+            n_pos <- sum(y_true_bin == 1)
+            n_neg <- sum(y_true_bin == 0)
+            if (n_pos == 0 || n_neg == 0) return(NULL)
+
+            ord <- order(y_score, decreasing = TRUE)
+            y_sorted <- y_true_bin[ord]
+            score_sorted <- y_score[ord]
+            tp <- cumsum(y_sorted == 1)
+            fp <- cumsum(y_sorted == 0)
+            tpr <- tp / n_pos
+            fpr <- fp / n_neg
+            change_idx <- which(c(diff(score_sorted) != 0, TRUE))
+            tpr_u <- c(0, tpr[change_idx], 1)
+            fpr_u <- c(0, fpr[change_idx], 1)
+            auc <- sum(diff(fpr_u) * (head(tpr_u, -1) + tail(tpr_u, -1)) / 2)
+            list(curve = data.frame(FPR = fpr_u, TPR = tpr_u), auc = as.numeric(auc))
+          }
+
           if (is_classification) {
             y <- factor(as.character(y_raw))
             validate(need(length(levels(y)) >= 2, "Classification requires at least two classes."))
-
-            split_by_class <- split(seq_len(length(y)), y)
-            train_idx <- unlist(lapply(split_by_class, function(idx) {
-              n_tr <- max(1, floor(length(idx) * input$train_ratio))
-              sample(idx, size = n_tr)
-            }), use.names = FALSE)
-            train_idx <- sort(unique(train_idx))
-            test_idx <- setdiff(seq_len(nrow(x)), train_idx)
-            validate(need(length(test_idx) > 0, "Test set is empty. Lower train ratio or add samples."))
           } else {
             y <- as.numeric(y_raw)
             validate(need(!all(is.na(y)), "Outcome has only missing values."))
-            train_n <- floor(nrow(x) * input$train_ratio)
-            train_idx <- sample(seq_len(nrow(x)), size = train_n)
-            test_idx <- setdiff(seq_len(nrow(x)), train_idx)
-            validate(need(length(test_idx) > 0, "Test set is empty. Lower train ratio or add samples."))
           }
 
-          x_train <- x[train_idx, , drop = FALSE]
-          y_train <- y[train_idx]
-          x_test <- x[test_idx, , drop = FALSE]
-          y_test <- y[test_idx]
+          validation_mode <- if (!is.null(input$validation_mode)) input$validation_mode else "Holdout split"
+          cv_folds <- as.integer(input$cv_folds)
+          if (is.na(cv_folds) || cv_folds < 3) cv_folds <- 5L
+          cv_folds <- min(cv_folds, 10L)
+          cv_folds <- min(cv_folds, nrow(x))
+          if (cv_folds < 3) validation_mode <- "Holdout split"
 
-          mtry_val <- as.integer(input$mtry)
-          if (is.na(mtry_val) || mtry_val <= 0) {
-            mtry_val <- floor(sqrt(ncol(x_train)))
-          }
-          mtry_val <- max(1, min(mtry_val, ncol(x_train)))
-          rf_options_text <- paste0(
-            "RF options:",
-            "\n- package: randomForest",
-            "\n- split strategy: ", if (is_classification) "stratified by class" else "random split",
-            "\n- train ratio: ", sprintf("%.2f", as.numeric(input$train_ratio)),
-            "\n- seed: ", as.integer(input$seed),
-            "\n- prevalence cutoff (%): ", as.numeric(input$prevalence_filter_pct),
-            "\n- top_n_features before transform: ", as.integer(input$top_n_features),
-            "\n- ntree: ", as.integer(input$ntree),
-            "\n- mtry used: ", as.integer(mtry_val),
-            "\n- selected outcome levels: ", if (length(input$outcome_levels) > 0) paste(input$outcome_levels, collapse = ", ") else "All"
-          )
-
-          log_rf(sprintf("fit start: ntree=%d, mtry=%d", as.integer(input$ntree), mtry_val))
-          rf_fit <- randomForest::randomForest(
-            x = x_train,
-            y = y_train,
-            ntree = as.integer(input$ntree),
-            mtry = mtry_val,
-            importance = TRUE
-          )
-          log_rf("fit completed")
-
-          pred <- stats::predict(rf_fit, newdata = x_test)
-
-      roc_payload <- NULL
-      if (is_classification) {
-        cm <- table(Predicted = pred, Actual = y_test)
-        accuracy <- mean(pred == y_test)
-        pred_prob <- stats::predict(rf_fit, newdata = x_test, type = "prob")
-
-        compute_binary_roc <- function(y_true_bin, y_score) {
-          keep <- !is.na(y_true_bin) & !is.na(y_score)
-          y_true_bin <- y_true_bin[keep]
-          y_score <- y_score[keep]
-          if (length(y_true_bin) < 2) {
-            return(NULL)
-          }
-          n_pos <- sum(y_true_bin == 1)
-          n_neg <- sum(y_true_bin == 0)
-          if (n_pos == 0 || n_neg == 0) {
-            return(NULL)
+          get_mtry <- function(p) {
+            mtry_val <- as.integer(input$mtry)
+            if (is.na(mtry_val) || mtry_val <= 0) mtry_val <- floor(sqrt(p))
+            max(1L, min(mtry_val, p))
           }
 
-          ord <- order(y_score, decreasing = TRUE)
-          y_sorted <- y_true_bin[ord]
-          score_sorted <- y_score[ord]
-          tp <- cumsum(y_sorted == 1)
-          fp <- cumsum(y_sorted == 0)
-          tpr <- tp / n_pos
-          fpr <- fp / n_neg
+          roc_payload <- NULL
+          if (identical(validation_mode, "K-fold CV")) {
+            create_folds_classification <- function(y_fac, k) {
+              folds <- vector("list", k)
+              by_class <- split(seq_along(y_fac), y_fac)
+              for (idx in by_class) {
+                idx <- sample(idx, length(idx))
+                for (j in seq_along(idx)) {
+                  fold_id <- ((j - 1) %% k) + 1
+                  folds[[fold_id]] <- c(folds[[fold_id]], idx[j])
+                }
+              }
+              lapply(folds, sort)
+            }
+            create_folds_regression <- function(n, k) {
+              idx <- sample(seq_len(n), n)
+              split(idx, cut(seq_along(idx), breaks = k, labels = FALSE))
+            }
 
-          change_idx <- which(c(diff(score_sorted) != 0, TRUE))
-          tpr_u <- c(0, tpr[change_idx], 1)
-          fpr_u <- c(0, fpr[change_idx], 1)
-          auc <- sum(diff(fpr_u) * (head(tpr_u, -1) + tail(tpr_u, -1)) / 2)
+            folds <- if (is_classification) create_folds_classification(y, cv_folds) else create_folds_regression(nrow(x), cv_folds)
+            if (is_classification) {
+              lv <- levels(y)
+              oof_pred <- rep(NA_character_, length(y))
+              oof_prob <- matrix(NA_real_, nrow = length(y), ncol = length(lv), dimnames = list(NULL, lv))
+              acc_vec <- numeric(length(folds))
+              macro_f1_vec <- numeric(length(folds))
+              for (i in seq_along(folds)) {
+                valid_idx <- as.integer(folds[[i]])
+                train_idx <- setdiff(seq_len(nrow(x)), valid_idx)
+                x_tr <- x[train_idx, , drop = FALSE]
+                y_tr <- y[train_idx]
+                x_va <- x[valid_idx, , drop = FALSE]
+                y_va <- y[valid_idx]
+                mtry_fold <- get_mtry(ncol(x_tr))
+                rf_fold <- randomForest::randomForest(
+                  x = x_tr, y = y_tr, ntree = as.integer(input$ntree), mtry = mtry_fold, importance = FALSE
+                )
+                pred_fold <- stats::predict(rf_fold, newdata = x_va)
+                pred_prob_fold <- as.data.frame(stats::predict(rf_fold, newdata = x_va, type = "prob"), check.names = FALSE)
+                oof_pred[valid_idx] <- as.character(pred_fold)
+                for (cl in colnames(pred_prob_fold)) {
+                  if (cl %in% colnames(oof_prob)) oof_prob[valid_idx, cl] <- as.numeric(pred_prob_fold[[cl]])
+                }
+                acc_vec[i] <- mean(pred_fold == y_va)
+                f1_each <- vapply(lv, function(cl) {
+                  tp <- sum(pred_fold == cl & y_va == cl)
+                  fp <- sum(pred_fold == cl & y_va != cl)
+                  fn <- sum(pred_fold != cl & y_va == cl)
+                  precision <- if ((tp + fp) == 0) 0 else tp / (tp + fp)
+                  recall <- if ((tp + fn) == 0) 0 else tp / (tp + fn)
+                  if ((precision + recall) == 0) 0 else 2 * precision * recall / (precision + recall)
+                }, numeric(1))
+                macro_f1_vec[i] <- mean(f1_each)
+              }
 
-          list(
-            curve = data.frame(FPR = fpr_u, TPR = tpr_u),
-            auc = as.numeric(auc)
-          )
-        }
+              oof_pred_fac <- factor(oof_pred, levels = levels(y))
+              cm <- table(Predicted = oof_pred_fac, Actual = y)
+              roc_list <- lapply(levels(y), function(cl) {
+                y_bin <- as.integer(y == cl)
+                score <- as.numeric(oof_prob[, cl])
+                roc_res <- compute_binary_roc(y_bin, score)
+                if (is.null(roc_res)) return(NULL)
+                roc_res$class <- cl
+                roc_res
+              })
+              names(roc_list) <- levels(y)
+              roc_list <- roc_list[!vapply(roc_list, is.null, logical(1))]
+              if (length(roc_list) > 0) {
+                auc_values <- vapply(roc_list, function(xx) xx$auc, numeric(1))
+                roc_payload <- list(curves = roc_list, auc_by_class = auc_values, macro_auc = mean(auc_values, na.rm = TRUE))
+              }
 
-        lv <- levels(y)
-        f1_each <- vapply(lv, function(cl) {
-          tp <- sum(pred == cl & y_test == cl)
-          fp <- sum(pred == cl & y_test != cl)
-          fn <- sum(pred != cl & y_test == cl)
-          precision <- if ((tp + fp) == 0) 0 else tp / (tp + fp)
-          recall <- if ((tp + fn) == 0) 0 else tp / (tp + fn)
-          if ((precision + recall) == 0) 0 else 2 * precision * recall / (precision + recall)
-        }, numeric(1))
-        macro_f1 <- mean(f1_each)
-        roc_list <- lapply(lv, function(cl) {
-          y_bin <- as.integer(y_test == cl)
-          score <- as.numeric(pred_prob[, cl])
-          roc_res <- compute_binary_roc(y_bin, score)
-          if (is.null(roc_res)) return(NULL)
-          roc_res$class <- cl
-          roc_res
-        })
-        names(roc_list) <- lv
-        roc_list <- roc_list[!vapply(roc_list, is.null, logical(1))]
-        if (length(roc_list) > 0) {
-          auc_values <- vapply(roc_list, function(x) x$auc, numeric(1))
-          macro_auc <- mean(auc_values, na.rm = TRUE)
-          roc_payload <- list(
-            curves = roc_list,
-            auc_by_class = auc_values,
-            macro_auc = macro_auc
-          )
-        }
+              metrics_text <- paste0(
+                "Task: Classification\n",
+                "Outcome type mode: ", mode_selected, "\n",
+                "Taxonomic level: ", input$tax_level, "\n",
+                "Transform: ", transform_method, "\n",
+                "Validation: K-fold CV (K=", cv_folds, ")\n",
+                "Samples: ", nrow(x), "\n",
+                "Features used: ", ncol(x), "\n",
+                "Accuracy (mean±sd): ", sprintf("%.4f ± %.4f", mean(acc_vec), stats::sd(acc_vec)), "\n",
+                "Macro-F1 (mean±sd): ", sprintf("%.4f ± %.4f", mean(macro_f1_vec), stats::sd(macro_f1_vec)), "\n\n",
+                "OOF Confusion Matrix:\n",
+                paste(capture.output(print(cm)), collapse = "\n")
+              )
+            } else {
+              rmse_vec <- numeric(length(folds))
+              mae_vec <- numeric(length(folds))
+              r2_vec <- numeric(length(folds))
+              for (i in seq_along(folds)) {
+                valid_idx <- as.integer(folds[[i]])
+                train_idx <- setdiff(seq_len(nrow(x)), valid_idx)
+                x_tr <- x[train_idx, , drop = FALSE]
+                y_tr <- y[train_idx]
+                x_va <- x[valid_idx, , drop = FALSE]
+                y_va <- y[valid_idx]
+                mtry_fold <- get_mtry(ncol(x_tr))
+                rf_fold <- randomForest::randomForest(
+                  x = x_tr, y = y_tr, ntree = as.integer(input$ntree), mtry = mtry_fold, importance = FALSE
+                )
+                pred_fold <- as.numeric(stats::predict(rf_fold, newdata = x_va))
+                rmse_vec[i] <- sqrt(mean((pred_fold - y_va)^2))
+                mae_vec[i] <- mean(abs(pred_fold - y_va))
+                sst <- sum((y_va - mean(y_va))^2)
+                sse <- sum((y_va - pred_fold)^2)
+                r2_vec[i] <- if (sst == 0) NA_real_ else 1 - sse / sst
+              }
+              metrics_text <- paste0(
+                "Task: Regression\n",
+                "Outcome type mode: ", mode_selected, "\n",
+                "Taxonomic level: ", input$tax_level, "\n",
+                "Transform: ", transform_method, "\n",
+                "Validation: K-fold CV (K=", cv_folds, ")\n",
+                "Samples: ", nrow(x), "\n",
+                "Features used: ", ncol(x), "\n",
+                "RMSE (mean±sd): ", sprintf("%.4f ± %.4f", mean(rmse_vec, na.rm = TRUE), stats::sd(rmse_vec, na.rm = TRUE)), "\n",
+                "MAE (mean±sd): ", sprintf("%.4f ± %.4f", mean(mae_vec, na.rm = TRUE), stats::sd(mae_vec, na.rm = TRUE)), "\n",
+                "R-squared (mean±sd): ", sprintf("%.4f ± %.4f", mean(r2_vec, na.rm = TRUE), stats::sd(r2_vec, na.rm = TRUE))
+              )
+            }
 
-        metrics_text <- paste0(
-          "Task: Classification\n",
-          "Outcome type mode: ", mode_selected, "\n",
-          "Taxonomic level: ", input$tax_level, "\n",
-          "Transform: ", transform_method, "\n",
-          "Samples: ", nrow(x), " (Train: ", length(train_idx), ", Test: ", length(test_idx), ")\n",
-          "Features used: ", ncol(x), "\n",
-          "Accuracy: ", round(accuracy, 4), "\n",
-          "Macro-F1: ", round(macro_f1, 4), "\n\n",
-          "Confusion Matrix:\n",
-          paste(capture.output(print(cm)), collapse = "\n")
-        )
-      } else {
-        rmse <- sqrt(mean((pred - y_test)^2))
-        mae <- mean(abs(pred - y_test))
-        sst <- sum((y_test - mean(y_test))^2)
-        sse <- sum((y_test - pred)^2)
-        r2 <- if (sst == 0) NA_real_ else 1 - sse / sst
+            mtry_val <- get_mtry(ncol(x))
+            rf_options_text <- paste0(
+              "RF options:",
+              "\n- package: randomForest",
+              "\n- validation mode: K-fold CV",
+              "\n- K folds: ", as.integer(cv_folds),
+              "\n- seed: ", as.integer(input$seed),
+              "\n- prevalence cutoff (%): ", as.numeric(input$prevalence_filter_pct),
+              "\n- top_n_features before transform: ", as.integer(input$top_n_features),
+              "\n- ntree: ", as.integer(input$ntree),
+              "\n- mtry used: ", as.integer(mtry_val),
+              "\n- selected outcome levels: ", if (length(input$outcome_levels) > 0) paste(input$outcome_levels, collapse = ", ") else "All"
+            )
+            log_rf(sprintf("fit final model after CV: ntree=%d, mtry=%d", as.integer(input$ntree), mtry_val))
+            rf_fit <- randomForest::randomForest(
+              x = x, y = y, ntree = as.integer(input$ntree), mtry = mtry_val, importance = TRUE
+            )
+            log_rf("final fit completed")
 
-        metrics_text <- paste0(
-          "Task: Regression\n",
-          "Outcome type mode: ", mode_selected, "\n",
-          "Taxonomic level: ", input$tax_level, "\n",
-          "Transform: ", transform_method, "\n",
-          "Samples: ", nrow(x), " (Train: ", length(train_idx), ", Test: ", length(test_idx), ")\n",
-          "Features used: ", ncol(x), "\n",
-          "RMSE: ", round(rmse, 4), "\n",
-          "MAE: ", round(mae, 4), "\n",
-          "R-squared: ", round(r2, 4)
-        )
-      }
+            x_train <- x
+            y_train <- y
+            explain_n <- min(nrow(x), max(20L, floor(nrow(x) * 0.2)))
+            explain_idx <- sort(sample(seq_len(nrow(x)), explain_n))
+            x_test <- x[explain_idx, , drop = FALSE]
+            y_test <- y[explain_idx]
+          } else {
+            if (is_classification) {
+              split_by_class <- split(seq_len(length(y)), y)
+              train_idx <- unlist(lapply(split_by_class, function(idx) {
+                n_tr <- max(1, floor(length(idx) * input$train_ratio))
+                sample(idx, size = n_tr)
+              }), use.names = FALSE)
+              train_idx <- sort(unique(train_idx))
+              test_idx <- setdiff(seq_len(nrow(x)), train_idx)
+              validate(need(length(test_idx) > 0, "Test set is empty. Lower train ratio or add samples."))
+            } else {
+              train_n <- floor(nrow(x) * input$train_ratio)
+              train_idx <- sample(seq_len(nrow(x)), size = train_n)
+              test_idx <- setdiff(seq_len(nrow(x)), train_idx)
+              validate(need(length(test_idx) > 0, "Test set is empty. Lower train ratio or add samples."))
+            }
+
+            x_train <- x[train_idx, , drop = FALSE]
+            y_train <- y[train_idx]
+            x_test <- x[test_idx, , drop = FALSE]
+            y_test <- y[test_idx]
+
+            mtry_val <- get_mtry(ncol(x_train))
+            rf_options_text <- paste0(
+              "RF options:",
+              "\n- package: randomForest",
+              "\n- split strategy: ", if (is_classification) "stratified by class" else "random split",
+              "\n- validation mode: Holdout split",
+              "\n- train ratio: ", sprintf("%.2f", as.numeric(input$train_ratio)),
+              "\n- seed: ", as.integer(input$seed),
+              "\n- prevalence cutoff (%): ", as.numeric(input$prevalence_filter_pct),
+              "\n- top_n_features before transform: ", as.integer(input$top_n_features),
+              "\n- ntree: ", as.integer(input$ntree),
+              "\n- mtry used: ", as.integer(mtry_val),
+              "\n- selected outcome levels: ", if (length(input$outcome_levels) > 0) paste(input$outcome_levels, collapse = ", ") else "All"
+            )
+
+            log_rf(sprintf("fit start: ntree=%d, mtry=%d", as.integer(input$ntree), mtry_val))
+            rf_fit <- randomForest::randomForest(
+              x = x_train,
+              y = y_train,
+              ntree = as.integer(input$ntree),
+              mtry = mtry_val,
+              importance = TRUE
+            )
+            log_rf("fit completed")
+
+            pred <- stats::predict(rf_fit, newdata = x_test)
+            if (is_classification) {
+              cm <- table(Predicted = pred, Actual = y_test)
+              accuracy <- mean(pred == y_test)
+              pred_prob <- stats::predict(rf_fit, newdata = x_test, type = "prob")
+              lv <- levels(y)
+              f1_each <- vapply(lv, function(cl) {
+                tp <- sum(pred == cl & y_test == cl)
+                fp <- sum(pred == cl & y_test != cl)
+                fn <- sum(pred != cl & y_test == cl)
+                precision <- if ((tp + fp) == 0) 0 else tp / (tp + fp)
+                recall <- if ((tp + fn) == 0) 0 else tp / (tp + fn)
+                if ((precision + recall) == 0) 0 else 2 * precision * recall / (precision + recall)
+              }, numeric(1))
+              macro_f1 <- mean(f1_each)
+              roc_list <- lapply(lv, function(cl) {
+                y_bin <- as.integer(y_test == cl)
+                score <- as.numeric(pred_prob[, cl])
+                roc_res <- compute_binary_roc(y_bin, score)
+                if (is.null(roc_res)) return(NULL)
+                roc_res$class <- cl
+                roc_res
+              })
+              names(roc_list) <- lv
+              roc_list <- roc_list[!vapply(roc_list, is.null, logical(1))]
+              if (length(roc_list) > 0) {
+                auc_values <- vapply(roc_list, function(x1) x1$auc, numeric(1))
+                macro_auc <- mean(auc_values, na.rm = TRUE)
+                roc_payload <- list(
+                  curves = roc_list,
+                  auc_by_class = auc_values,
+                  macro_auc = macro_auc
+                )
+              }
+              metrics_text <- paste0(
+                "Task: Classification\n",
+                "Outcome type mode: ", mode_selected, "\n",
+                "Taxonomic level: ", input$tax_level, "\n",
+                "Transform: ", transform_method, "\n",
+                "Validation: Holdout split\n",
+                "Samples: ", nrow(x), " (Train: ", length(train_idx), ", Test: ", length(test_idx), ")\n",
+                "Features used: ", ncol(x), "\n",
+                "Accuracy: ", round(accuracy, 4), "\n",
+                "Macro-F1: ", round(macro_f1, 4), "\n\n",
+                "Confusion Matrix:\n",
+                paste(capture.output(print(cm)), collapse = "\n")
+              )
+            } else {
+              rmse <- sqrt(mean((pred - y_test)^2))
+              mae <- mean(abs(pred - y_test))
+              sst <- sum((y_test - mean(y_test))^2)
+              sse <- sum((y_test - pred)^2)
+              r2 <- if (sst == 0) NA_real_ else 1 - sse / sst
+              metrics_text <- paste0(
+                "Task: Regression\n",
+                "Outcome type mode: ", mode_selected, "\n",
+                "Taxonomic level: ", input$tax_level, "\n",
+                "Transform: ", transform_method, "\n",
+                "Validation: Holdout split\n",
+                "Samples: ", nrow(x), " (Train: ", length(train_idx), ", Test: ", length(test_idx), ")\n",
+                "Features used: ", ncol(x), "\n",
+                "RMSE: ", round(rmse, 4), "\n",
+                "MAE: ", round(mae, 4), "\n",
+                "R-squared: ", round(r2, 4)
+              )
+            }
+          }
 
       perm_raw <- randomForest::importance(rf_fit, type = 1, scale = TRUE)
       perm_df <- as.data.frame(perm_raw)

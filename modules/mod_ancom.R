@@ -60,22 +60,22 @@ mod_ancom_ui <- function(id) {
             )
           ),
           selectizeInput(
-            ns("rand_covariates"),
-            "8. Random-effect grouping variables (optional)",
-            choices = NULL,
-            multiple = TRUE,
-            options = list(
-              placeholder = "Select grouping variables for random intercepts",
-              plugins = list("remove_button")
-            )
-          ),
-          selectizeInput(
             ns("fix_interactions"),
-            "9. Interaction terms for fix_formula (optional)",
+            "8. Interaction terms for fix_formula (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
               placeholder = "Select interaction terms among fixed effects",
+              plugins = list("remove_button")
+            )
+          ),
+          selectizeInput(
+            ns("rand_covariates"),
+            "9. Random-effect grouping variables (optional)",
+            choices = NULL,
+            multiple = TRUE,
+            options = list(
+              placeholder = "Select grouping variables for random intercepts",
               plugins = list("remove_button")
             )
           ),
@@ -135,22 +135,27 @@ mod_ancom_server <- function(id, ps_obj) {
       resolve_meta_colname(input$group_var, colnames(meta_df))
     })
     
-    build_interaction_choices <- function(group_var, fix_covariates) {
+    build_interaction_choices <- function(group_var, all_metadata_cols) {
       if (is.null(group_var) || !nzchar(group_var)) {
         return(character(0))
       }
-      covariates <- fix_covariates
-      if (is.null(covariates) || length(covariates) == 0) {
-        covariates <- character(0)
-      }
-      covariates <- covariates[nzchar(covariates)]
-      covariates <- unique(setdiff(covariates, group_var))
-      fixed_terms <- unique(c(group_var, covariates))
-      if (length(fixed_terms) < 2) {
+      all_vars <- setdiff(all_metadata_cols, c("SampleID", group_var))
+      
+      if (length(all_vars) == 0) {
         return(character(0))
       }
-      comb_mat <- utils::combn(fixed_terms, 2)
-      apply(comb_mat, 2, function(x) paste(x[1], x[2], sep = ":"))
+      
+      # Single variables (for group_var * variable interactions)
+      single_interactions <- all_vars
+      
+      # Multi-variable interactions
+      if (length(all_vars) >= 2) {
+        comb_mat <- utils::combn(all_vars, 2)
+        multi_interactions <- apply(comb_mat, 2, function(x) paste(x[1], x[2], sep = ":"))
+        return(c(single_interactions, multi_interactions))
+      } else {
+        return(single_interactions)
+      }
     }
 
     observeEvent(ps_obj(), {
@@ -161,7 +166,7 @@ mod_ancom_server <- function(id, ps_obj) {
       group_choices <- candidate_groups[vapply(candidate_groups, function(col) {
         level_values <- as.character(meta_df[[col]])
         level_values <- level_values[!is.na(level_values) & nzchar(level_values)]
-        length(unique(level_values)) < 5
+        length(unique(level_values)) <= 10
       }, logical(1))]
       selected_group <- if (length(group_choices) > 0) group_choices[1] else NULL
 
@@ -233,7 +238,7 @@ mod_ancom_server <- function(id, ps_obj) {
         server = TRUE
       )
 
-      interaction_choices <- build_interaction_choices(group_var, selected_covariates)
+      interaction_choices <- build_interaction_choices(group_var, colnames(meta_df))
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -248,7 +253,7 @@ mod_ancom_server <- function(id, ps_obj) {
     }, ignoreNULL = FALSE)
     
     observeEvent(list(input$group_var, input$fix_covariates), {
-      interaction_choices <- build_interaction_choices(group_var_resolved(), input$fix_covariates)
+      interaction_choices <- build_interaction_choices(group_var_resolved(), colnames(as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)))
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -426,6 +431,32 @@ mod_ancom_server <- function(id, ps_obj) {
       result <- tryCatch({
         withProgress(message = "Running ANCOM-BC2...", value = 0, {
           ps_current <- ps_filtered()
+          otu_for_var <- as.matrix(phyloseq::otu_table(ps_current))
+          if (!phyloseq::taxa_are_rows(phyloseq::otu_table(ps_current))) {
+            otu_for_var <- t(otu_for_var)
+          }
+          taxa_var <- apply(otu_for_var, 1, stats::var, na.rm = TRUE)
+          keep_taxa <- rownames(otu_for_var)[is.finite(taxa_var) & taxa_var > 0]
+          removed_taxa <- setdiff(phyloseq::taxa_names(ps_current), keep_taxa)
+          if (length(removed_taxa) > 0) {
+            ps_current <- phyloseq::prune_taxa(keep_taxa, ps_current)
+            preview_removed <- paste(utils::head(removed_taxa, 5), collapse = ", ")
+            more_suffix <- if (length(removed_taxa) > 5) paste0(" ... (+", length(removed_taxa) - 5, " more)") else ""
+            showNotification(
+              paste0(
+                "Removed ",
+                length(removed_taxa),
+                " zero-variance taxa before ANCOM-BC2: ",
+                preview_removed,
+                more_suffix
+              ),
+              type = "warning",
+              duration = 8
+            )
+          }
+          validate(
+            need(phyloseq::ntaxa(ps_current) > 0, "No taxa remain after removing zero-variance taxa.")
+          )
           tax_level_arg <- if (input$tax_level == "ASV") NULL else input$tax_level
           selected_levels <- group_selection_info()$selected_levels
           use_multi_group_tests <- length(selected_levels) >= 3
@@ -441,10 +472,30 @@ mod_ancom_server <- function(id, ps_obj) {
             interaction_terms <- character(0)
           }
           interaction_terms <- interaction_terms[nzchar(interaction_terms)]
-          valid_interactions <- build_interaction_choices(current_group_var, covariates)
+          all_metadata_cols <- colnames(as.data.frame(phyloseq::sample_data(ps_current), stringsAsFactors = FALSE))
+          valid_interactions <- build_interaction_choices(current_group_var, all_metadata_cols)
           interaction_terms <- intersect(interaction_terms, valid_interactions)
-          fix_formula_terms <- c(current_group_var, covariates, interaction_terms)
-          fix_formula_str <- paste(unique(fix_formula_terms), collapse = " + ")
+          
+          # Process interaction terms: single variables and multi-variable interactions
+          interaction_terms_formatted <- sapply(interaction_terms, function(term) {
+            if (grepl(":", term)) {
+              # Multi-variable interaction: Age:BMI → Age*BMI
+              gsub(":", "*", term)
+            } else {
+              # Single variable: Age → group_var*Age
+              paste0(current_group_var, "*", term)
+            }
+          }, USE.NAMES = FALSE)
+          
+          # Check if any interaction term already contains current_group_var
+          has_group_interaction <- any(grepl(paste0("^", current_group_var, "\\*"), interaction_terms_formatted))
+          
+          # Build formula without duplicating current_group_var
+          if (has_group_interaction) {
+            fix_formula_str <- paste(c(covariates, interaction_terms_formatted), collapse = " + ")
+          } else {
+            fix_formula_str <- paste(c(current_group_var, covariates, interaction_terms_formatted), collapse = " + ")
+          }
 
           rand_covariates <- input$rand_covariates
           if (is.null(rand_covariates) || length(rand_covariates) == 0) {
@@ -471,7 +522,7 @@ mod_ancom_server <- function(id, ps_obj) {
             pairwise = use_multi_group_tests,
             trend = use_multi_group_tests,
             alpha = 0.05,
-            n_cl = 1
+            n_cl = 4
           )
 
           res <- out$res
@@ -484,17 +535,75 @@ mod_ancom_server <- function(id, ps_obj) {
             res <- dplyr::left_join(res, tax_df, by = "feature_id")
           }
 
-          preferred_order <- c("Species", "Genus", "Family", "Order", "Class", "Phylum", "Kingdom")
-          res$taxa_label <- NA_character_
-          for (col in preferred_order) {
-            if (col %in% colnames(res)) {
-              idx <- is.na(res$taxa_label) & !is.na(res[[col]]) & res[[col]] != ""
-              res$taxa_label[idx] <- as.character(res[[col]][idx])
+          taxonomy_ranks <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+          rank_default_unassigned <- c(
+            Kingdom = "k__Unassigned",
+            Phylum = "p__Unassigned",
+            Class = "c__Unassigned",
+            Order = "o__Unassigned",
+            Family = "f__Unassigned",
+            Genus = "g__Unassigned",
+            Species = "s__Unassigned"
+          )
+          for (rk in taxonomy_ranks) {
+            if (!rk %in% colnames(res)) {
+              res[[rk]] <- NA_character_
             }
           }
-          missing_idx <- is.na(res$taxa_label) | res$taxa_label == ""
-          res$taxa_label[missing_idx] <- res$feature_id[missing_idx]
-          res$taxon <- res$taxa_label
+
+          extract_rank_from_feature <- function(feature_vec, rank_name) {
+            prefix_map <- list(
+              Kingdom = c("k__", "d__", "kingdom__"),
+              Phylum = c("p__", "phylum__"),
+              Class = c("c__", "class__"),
+              Order = c("o__", "order__"),
+              Family = c("f__", "family__"),
+              Genus = c("g__", "genus__"),
+              Species = c("s__", "species__")
+            )
+            prefixes <- prefix_map[[rank_name]]
+            out <- rep(NA_character_, length(feature_vec))
+            if (is.null(prefixes) || length(prefixes) == 0) return(out)
+
+            for (i in seq_along(feature_vec)) {
+              fid <- as.character(feature_vec[i])
+              if (is.na(fid) || !nzchar(trimws(fid))) next
+              fid_norm <- trimws(fid)
+              if (!grepl(";", fid_norm, fixed = TRUE) && grepl("__", fid_norm, fixed = TRUE)) {
+                fid_norm <- gsub("(?<!^)([A-Za-z][A-Za-z0-9]*__)", "; \\1", fid_norm, perl = TRUE)
+              }
+              parts <- trimws(unlist(strsplit(fid_norm, ";", fixed = TRUE)))
+              if (length(parts) == 0) next
+              lower_parts <- tolower(parts)
+              hit_mask <- Reduce(`|`, lapply(prefixes, function(px) {
+                startsWith(lower_parts, tolower(px))
+              }))
+              hit_idx <- which(hit_mask)
+              if (length(hit_idx) > 0) {
+                token <- parts[hit_idx[1]]
+                token <- gsub("_+$", "", token)
+                out[i] <- token
+              }
+            }
+            out
+          }
+
+          for (rk in taxonomy_ranks) {
+            vals <- as.character(res[[rk]])
+            vals <- gsub("_+$", "", vals)
+            missing_idx <- is.na(vals) | !nzchar(trimws(vals))
+            if (any(missing_idx) && "feature_id" %in% colnames(res)) {
+              parsed_vals <- extract_rank_from_feature(res$feature_id, rk)
+              vals[missing_idx] <- parsed_vals[missing_idx]
+            }
+            still_missing <- is.na(vals) | !nzchar(trimws(vals))
+            vals[still_missing] <- rank_default_unassigned[[rk]]
+            res[[rk]] <- vals
+          }
+
+          current_labels <- resolve_current_taxa_labels(res, input$tax_level)
+          res$taxa_label <- current_labels
+          res$taxon <- current_labels
 
           rownames(res) <- res$feature_id
           res
@@ -525,17 +634,38 @@ mod_ancom_server <- function(id, ps_obj) {
         interaction_terms <- character(0)
       }
       interaction_terms <- interaction_terms[nzchar(interaction_terms)]
-      valid_interactions <- build_interaction_choices(group_var, covariates)
+      all_metadata_cols_preview <- colnames(as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE))
+      valid_interactions <- build_interaction_choices(group_var, all_metadata_cols_preview)
       interaction_terms <- intersect(interaction_terms, valid_interactions)
+      
+      # Process interaction terms for display: single variables and multi-variable interactions
+      interaction_terms_formatted <- sapply(interaction_terms, function(term) {
+        if (grepl(":", term)) {
+          # Multi-variable interaction: Age:BMI → Age*BMI
+          gsub(":", "*", term)
+        } else {
+          # Single variable: Age → group_var*Age
+          paste0(group_var, "*", term)
+        }
+      }, USE.NAMES = FALSE)
+      
+      # Check if any interaction term already contains group_var
+      has_group_interaction <- any(grepl(paste0("^", group_var, "\\*"), interaction_terms_formatted))
+      
+      # Build formula without duplicating group_var
+      if (has_group_interaction) {
+        fix_formula_str <- paste(c(covariates, interaction_terms_formatted), collapse = " + ")
+      } else {
+        fix_formula_str <- paste(c(group_var, covariates, interaction_terms_formatted), collapse = " + ")
+      }
+      
       rand_covariates <- input$rand_covariates
       if (is.null(rand_covariates) || length(rand_covariates) == 0) {
         rand_covariates <- character(0)
       }
       rand_covariates <- rand_covariates[nzchar(rand_covariates)]
       rand_covariates <- unique(setdiff(rand_covariates, group_var))
-
-      fix_formula_terms <- c(group_var, covariates, interaction_terms)
-      fix_formula_str <- paste(unique(fix_formula_terms), collapse = " + ")
+      
       rand_formula_str <- if (length(rand_covariates) > 0) {
         paste0("(1|", rand_covariates, ")", collapse = " + ")
       } else {
@@ -739,6 +869,50 @@ mod_ancom_server <- function(id, ps_obj) {
       }
     )
 
+    resolve_current_taxa_labels <- function(df, tax_level) {
+      prettify_tax_label <- function(x) {
+        x <- as.character(x)
+        x <- trimws(x)
+        x[is.na(x)] <- ""
+        # If taxonomy tokens are concatenated (e.g., k__...p__...g__...), insert separators.
+        needs_split <- !grepl(";", x, fixed = TRUE) & grepl("__", x, fixed = TRUE)
+        x[needs_split] <- gsub("(?<!^)([A-Za-z][A-Za-z0-9]*__)", "; \\1", x[needs_split], perl = TRUE)
+        x <- gsub("_+\\s*(;|$)", "\\1", x, perl = TRUE)
+        x
+      }
+
+      is_unassigned_taxa <- function(x) {
+        x <- as.character(x)
+        x_trim <- trimws(x)
+        is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_trim, ignore.case = TRUE)
+      }
+
+      rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+      out <- if (identical(tax_level, "ASV")) {
+        if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep(NA_character_, nrow(df))
+      } else {
+        label_vec <- rep(NA_character_, nrow(df))
+        if (tax_level %in% rank_order) {
+          selected_idx <- match(tax_level, rank_order)
+          fallback_ranks <- rev(rank_order[seq_len(selected_idx)])
+          fallback_ranks <- fallback_ranks[fallback_ranks %in% colnames(df)]
+          for (rk in fallback_ranks) {
+            rk_vals <- as.character(df[[rk]])
+            use_idx <- is.na(label_vec) | is_unassigned_taxa(label_vec)
+            label_vec[use_idx] <- rk_vals[use_idx]
+          }
+        }
+        label_vec
+      }
+
+      # Final fallback: use feature_id only (avoid falling back to full hierarchy labels).
+      fallback_feature <- if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep("", nrow(df))
+      use_idx <- is.na(out) | !nzchar(out) | is_unassigned_taxa(out)
+      out[use_idx] <- fallback_feature[use_idx]
+      prettify_tax_label(out)
+    }
+
     volcano_plot_reactive <- reactive({
       req(ancom_processed(), input$volcano_y_axis)
       res <- ancom_processed()
@@ -768,7 +942,8 @@ mod_ancom_server <- function(id, ps_obj) {
         plot_df$diffexpressed,
         levels = c("Decreased", "Not significant", "Increased")
       )
-      plot_df$delabel <- ifelse(plot_df$diffexpressed == "Not significant", "", plot_df$taxa_label)
+      label_by_rank <- resolve_current_taxa_labels(plot_df, input$tax_level)
+      plot_df$delabel <- ifelse(plot_df$diffexpressed == "Not significant", "", label_by_rank)
 
       y_vals <- plot_df$y_metric[is.finite(plot_df$y_metric) & !is.na(plot_df$y_metric)]
       y_upper <- if (length(y_vals) > 0) {
@@ -795,7 +970,13 @@ mod_ancom_server <- function(id, ps_obj) {
         geom_point(size = 2.8, alpha = 0.9) +
         scale_color_manual(
           values = c("Decreased" = "#00AFBB", "Not significant" = "grey", "Increased" = "#bb0c00"),
-          labels = c("Decreased", "Not significant", "Increased")
+          breaks = c("Decreased", "Not significant", "Increased"),
+          labels = c(
+            "Decreased" = "Decreased",
+            "Not significant" = "Not significant",
+            "Increased" = "Increased"
+          ),
+          drop = FALSE
         ) +
         coord_cartesian(ylim = c(0, y_upper), xlim = x_lim) +
         scale_x_continuous(breaks = x_breaks) +
@@ -860,6 +1041,7 @@ mod_ancom_server <- function(id, ps_obj) {
         "NA",
         formatC(sig_values, format = "e", digits = 2)
       )
+      res_top$taxa_label_current <- make.unique(resolve_current_taxa_labels(res_top, input$tax_level))
 
       res_top$direction_flag <- res_top$lfc > 0
       y_abs_max <- max(abs(res_top$lfc), na.rm = TRUE)
@@ -872,7 +1054,7 @@ mod_ancom_server <- function(id, ps_obj) {
       res_top$label_hjust <- 0
       y_limits <- c(min(res_top$lfc, na.rm = TRUE), label_right + (label_offset * 4))
 
-      p <- ggplot(res_top, aes(x = reorder(taxa_label, lfc), y = lfc, fill = direction_flag)) +
+      p <- ggplot(res_top, aes(x = reorder(taxa_label_current, lfc), y = lfc, fill = direction_flag)) +
         geom_col(color = "black") +
         geom_text(
           aes(y = label_y, label = stat_value_label, hjust = label_hjust),

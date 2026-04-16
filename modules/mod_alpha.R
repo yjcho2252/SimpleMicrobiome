@@ -17,7 +17,12 @@ mod_alpha_ui <- function(id) {
           ns("alpha_methods"), ns("alpha_methods")
         ))),
         checkboxGroupInput(ns("alpha_methods"), "",
-                           choices = c("Observed", "Chao1", "Shannon", "Simpson"),
+                           choices = c(
+                             "Observed" = "Observed",
+                             "Chao1" = "Chao1",
+                             "Shannon" = "Shannon",
+                             "Simpson (1-D)" = "Simpson"
+                           ),
                            selected = c("Chao1", "Shannon")),
         
         hr(),
@@ -126,8 +131,18 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
       alpha_df[[primary_col]] <- factor(meta_filtered[[primary_col]])
       if (is_secondary) alpha_df[[secondary_col]] <- factor(meta_filtered[[secondary_col]])
       alpha_df$SampleID <- rownames(alpha_df)
-      tidyr::pivot_longer(alpha_df, cols = tidyselect::any_of(input$alpha_methods), 
-                          names_to = "Alpha_Index", values_to = "Value")
+      out_long <- tidyr::pivot_longer(
+        alpha_df,
+        cols = tidyselect::any_of(input$alpha_methods),
+        names_to = "Alpha_Index",
+        values_to = "Value"
+      )
+      out_long$Alpha_Index <- ifelse(
+        out_long$Alpha_Index == "Simpson",
+        "Simpson (1-D)",
+        out_long$Alpha_Index
+      )
+      out_long
     })
     
     alpha_plot_reactive <- reactive({

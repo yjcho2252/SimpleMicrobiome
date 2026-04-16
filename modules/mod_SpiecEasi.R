@@ -358,8 +358,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
               edge_df$weight <- as.numeric(edge_df$weight)
               edge_df$sign <- ifelse(edge_df$weight > 0, "Positive", ifelse(edge_df$weight < 0, "Negative", "Zero"))
             } else {
-              edge_df$weight <- NA_real_
-              edge_df$sign <- NA_character_
+              edge_df$weight <- numeric(0)
+              edge_df$sign <- character(0)
             }
             edge_df$group <- group_name
             sample_totals <- colSums(sub_otu, na.rm = TRUE)
@@ -940,6 +940,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
         draw_comparison_network_plot(edge_tbl, palette)
       }
     )
+    outputOptions(output, "comparison_network_plot", suspendWhenHidden = FALSE)
+    outputOptions(output, "download_comparison_network_plot", suspendWhenHidden = FALSE)
 
     output$network_summary <- renderText({
       req(network_result())
@@ -1087,7 +1089,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
         p <- p + ggplot2::scale_fill_manual(
           name = paste0("Node color: ", color_var),
           values = palette,
-          drop = FALSE
+          drop = FALSE,
+          guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 6))
         )
       }
 

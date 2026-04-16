@@ -332,8 +332,8 @@ mod_sparcc_server <- function(id, ps_obj) {
               edge_df$weight <- as.numeric(edge_df$weight)
               edge_df$sign <- ifelse(edge_df$weight > 0, "Positive", ifelse(edge_df$weight < 0, "Negative", "Zero"))
             } else {
-              edge_df$weight <- NA_real_
-              edge_df$sign <- NA_character_
+              edge_df$weight <- numeric(0)
+              edge_df$sign <- character(0)
             }
             edge_df$group <- group_name
 
@@ -864,6 +864,7 @@ mod_sparcc_server <- function(id, ps_obj) {
         ) +
         ggplot2::scale_color_manual(
           values = edge_palette,
+          breaks = names(edge_palette),
           drop = FALSE,
           name = "Edge class",
           na.translate = FALSE
@@ -915,6 +916,8 @@ mod_sparcc_server <- function(id, ps_obj) {
         draw_comparison_network_plot(edge_tbl, palette)
       }
     )
+    outputOptions(output, "comparison_network_plot", suspendWhenHidden = FALSE)
+    outputOptions(output, "download_comparison_network_plot", suspendWhenHidden = FALSE)
 
 
     output$network_summary <- renderText({
@@ -1041,7 +1044,12 @@ mod_sparcc_server <- function(id, ps_obj) {
           seed = as.integer(input$seed)
         ) +
         ggplot2::facet_wrap(~group, scales = "free") +
-        ggplot2::scale_color_manual(values = c("Positive" = "#4575B4", "Negative" = "#D73027", "Zero" = "#999999"), drop = FALSE, name = "Edge sign") +
+        ggplot2::scale_color_manual(
+          values = c("Positive" = "#4575B4", "Negative" = "#D73027", "Zero" = "#999999"),
+          breaks = c("Positive", "Negative", "Zero"),
+          drop = FALSE,
+          name = "Edge sign"
+        ) +
         ggplot2::scale_linewidth(name = "Edge strength (|w|)", range = c(0.2, 1.6)) +
         ggplot2::scale_size(name = if (identical(size_var, "Abundance")) "Node size: Relative Abundance" else "Node size: Connectivity", range = c(2.4, 7.2)) +
         ggplot2::theme_void() +
@@ -1064,7 +1072,8 @@ mod_sparcc_server <- function(id, ps_obj) {
         p <- p + ggplot2::scale_fill_manual(
           name = paste0("Node color: ", color_var),
           values = palette,
-          drop = FALSE
+          drop = FALSE,
+          guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 6))
         )
       }
 

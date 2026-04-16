@@ -64,6 +64,16 @@ mod_maaslin2_ui <- function(id) {
               plugins = list("remove_button")
             )
           ),
+          selectizeInput(
+            ns("random_effects"),
+            "9. Random effects (optional)",
+            choices = NULL,
+            multiple = TRUE,
+            options = list(
+              placeholder = "Select grouping variables for random effects",
+              plugins = list("remove_button")
+            )
+          ),
           verbatimTextOutput(ns("model_formula_preview"))
         ),
         hr(),
@@ -138,6 +148,85 @@ mod_maaslin2_server <- function(id, ps_obj) {
       apply(comb_mat, 2, function(x) paste(x[1], x[2], sep = ":"))
     }
 
+    expand_interaction_columns <- function(metadata_df, interaction_terms) {
+      sanitize_name <- function(x) {
+        x <- gsub("[^A-Za-z0-9]+", "_", as.character(x))
+        x <- gsub("^_+|_+$", "", x)
+        if (!nzchar(x)) {
+          return("x")
+        }
+        x
+      }
+
+      if (is.null(interaction_terms) || length(interaction_terms) == 0) {
+        return(list(metadata = metadata_df, interaction_effects = character(0)))
+      }
+
+      out_metadata <- metadata_df
+      created_effects <- character(0)
+      interaction_terms <- interaction_terms[nzchar(interaction_terms)]
+
+      for (term in interaction_terms) {
+        parts <- strsplit(term, ":", fixed = TRUE)[[1]]
+        if (length(parts) != 2) {
+          next
+        }
+        vars <- trimws(parts)
+        if (any(!vars %in% colnames(out_metadata))) {
+          next
+        }
+
+        design_df <- data.frame(
+          lhs = out_metadata[[vars[1]]],
+          rhs = out_metadata[[vars[2]]],
+          stringsAsFactors = FALSE
+        )
+
+        interaction_mat <- tryCatch(
+          stats::model.matrix(~ 0 + lhs:rhs, data = design_df),
+          error = function(e) NULL
+        )
+        if (is.null(interaction_mat) || ncol(interaction_mat) == 0) {
+          next
+        }
+
+        keep_col <- vapply(seq_len(ncol(interaction_mat)), function(i) {
+          vals <- as.numeric(interaction_mat[, i])
+          any(!is.na(vals)) && stats::sd(vals, na.rm = TRUE) > 0
+        }, logical(1))
+        interaction_mat <- interaction_mat[, keep_col, drop = FALSE]
+        if (ncol(interaction_mat) == 0) {
+          next
+        }
+
+        for (j in seq_len(ncol(interaction_mat))) {
+          mm_name <- colnames(interaction_mat)[j]
+          mm_label <- gsub("^lhs", paste0(vars[1], "_"), mm_name)
+          mm_label <- gsub(":rhs", paste0("_X_", vars[2], "_"), mm_label, fixed = TRUE)
+          mm_label <- gsub("^rhs", paste0(vars[2], "_"), mm_label)
+          mm_label <- sanitize_name(mm_label)
+          base_name <- paste0(
+            "int_",
+            sanitize_name(vars[1]),
+            "_X_",
+            sanitize_name(vars[2]),
+            "__",
+            mm_label
+          )
+          new_name <- base_name
+          suffix <- 1L
+          while (new_name %in% colnames(out_metadata)) {
+            suffix <- suffix + 1L
+            new_name <- paste0(base_name, "_", suffix)
+          }
+          out_metadata[[new_name]] <- as.numeric(interaction_mat[, j])
+          created_effects <- c(created_effects, new_name)
+        }
+      }
+
+      list(metadata = out_metadata, interaction_effects = created_effects)
+    }
+
     observeEvent(ps_obj(), {
       req(ps_obj())
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
@@ -146,7 +235,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       group_choices <- candidate_groups[vapply(candidate_groups, function(col) {
         level_values <- as.character(meta_df[[col]])
         level_values <- level_values[!is.na(level_values) & nzchar(level_values)]
-        length(unique(level_values)) < 5
+        length(unique(level_values)) <= 10
       }, logical(1))]
       selected_group <- if (length(group_choices) > 0) group_choices[1] else NULL
 
@@ -212,6 +301,19 @@ mod_maaslin2_server <- function(id, ps_obj) {
         "fix_interactions",
         choices = interaction_choices,
         selected = intersect(selected_interactions, interaction_choices),
+        server = TRUE
+      )
+
+      random_choices <- setdiff(colnames(meta_df), "SampleID")
+      selected_random <- input$random_effects
+      if (is.null(selected_random)) {
+        selected_random <- character(0)
+      }
+      updateSelectizeInput(
+        session,
+        "random_effects",
+        choices = random_choices,
+        selected = intersect(selected_random, random_choices),
         server = TRUE
       )
     }, ignoreNULL = FALSE)
@@ -421,20 +523,29 @@ mod_maaslin2_server <- function(id, ps_obj) {
           interaction_terms <- interaction_terms[nzchar(interaction_terms)]
           valid_interactions <- build_interaction_choices(current_group_var, covariates)
           interaction_terms <- intersect(interaction_terms, valid_interactions)
+          random_effects <- input$random_effects
+          if (is.null(random_effects) || length(random_effects) == 0) {
+            random_effects <- character(0)
+          }
+          random_effects <- random_effects[nzchar(random_effects)]
+          random_effects <- unique(setdiff(random_effects, "SampleID"))
           main_effects <- c(current_group_var, covariates)
-          fixed_effects <- unique(c(main_effects, interaction_terms))
 
           validate(
             need(all(main_effects %in% colnames(input_metadata)),
                  "One or more fixed-effect metadata columns are missing.")
           )
+          validate(
+            need(all(random_effects %in% colnames(input_metadata)),
+                 "One or more random-effect metadata columns are missing.")
+          )
 
-          metadata_cols <- unique(c("SampleID", main_effects))
+          metadata_cols <- unique(c("SampleID", main_effects, random_effects))
           input_metadata <- input_metadata[, metadata_cols, drop = FALSE]
           input_metadata <- as.data.frame(input_metadata, stringsAsFactors = FALSE, check.names = FALSE)
           colnames(input_metadata) <- make.unique(colnames(input_metadata))
 
-          for (col in main_effects) {
+          for (col in unique(c(main_effects, random_effects))) {
             if (col %in% colnames(input_metadata)) {
               if (is.data.frame(input_metadata[[col]])) {
                 input_metadata[[col]] <- input_metadata[[col]][, 1, drop = TRUE]
@@ -444,6 +555,20 @@ mod_maaslin2_server <- function(id, ps_obj) {
               }
               input_metadata[[col]] <- as.vector(input_metadata[[col]])
             }
+          }
+
+          expanded_interactions <- expand_interaction_columns(input_metadata, interaction_terms)
+          input_metadata <- expanded_interactions$metadata
+          interaction_effects <- expanded_interactions$interaction_effects
+          fixed_effects <- unique(c(main_effects, interaction_effects))
+          random_effects_arg <- if (length(random_effects) > 0) random_effects else NULL
+
+          if (length(interaction_terms) > 0 && length(interaction_effects) == 0) {
+            showNotification(
+              "Selected interaction terms could not be encoded and were skipped.",
+              type = "warning",
+              duration = 8
+            )
           }
 
           make_reference <- function(var_name, ref_level) {
@@ -485,11 +610,12 @@ mod_maaslin2_server <- function(id, ps_obj) {
             output = out_dir,
             fixed_effects = fixed_effects,
             reference = reference_terms,
-            random_effects = NULL,
+            random_effects = random_effects_arg,
             normalization = "TSS",
             transform = "LOG",
             analysis_method = "LM",
             standardize = FALSE,
+            cores = 4,
             max_significance = 1,
             plot_heatmap = FALSE,
             plot_scatter = FALSE
@@ -618,8 +744,27 @@ mod_maaslin2_server <- function(id, ps_obj) {
       interaction_terms <- interaction_terms[nzchar(interaction_terms)]
       valid_interactions <- build_interaction_choices(group_var, covariates)
       interaction_terms <- intersect(interaction_terms, valid_interactions)
-      fixed_effects <- unique(c(group_var, covariates, interaction_terms))
-      paste0("Applied fixed_effects: ", paste(fixed_effects, collapse = " + "))
+      random_effects <- input$random_effects
+      if (is.null(random_effects) || length(random_effects) == 0) {
+        random_effects <- character(0)
+      }
+      random_effects <- random_effects[nzchar(random_effects)]
+      random_effects <- unique(setdiff(random_effects, "SampleID"))
+      fixed_effects <- unique(c(group_var, covariates))
+      preview <- paste0("Applied fixed_effects: ", paste(fixed_effects, collapse = " + "))
+      if (length(interaction_terms) > 0) {
+        preview <- paste0(
+          preview,
+          "\nSelected interactions (expanded into derived metadata columns at run time): ",
+          paste(interaction_terms, collapse = ", ")
+        )
+      }
+      preview <- paste0(
+        preview,
+        "\nApplied random_effects: ",
+        if (length(random_effects) > 0) paste(random_effects, collapse = " + ") else "NULL"
+      )
+      preview
     })
 
     round_numeric_columns <- function(df, digits = 2, exclude_cols = c("pval", "qval", "p_val", "q_val")) {
@@ -740,6 +885,38 @@ mod_maaslin2_server <- function(id, ps_obj) {
       }
     )
 
+    resolve_current_taxa_labels <- function(df, tax_level) {
+      is_unassigned_taxa <- function(x) {
+        x <- as.character(x)
+        x_trim <- trimws(x)
+        is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_trim, ignore.case = TRUE)
+      }
+
+      rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+      out <- if (identical(tax_level, "ASV")) {
+        if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep(NA_character_, nrow(df))
+      } else {
+        label_vec <- rep(NA_character_, nrow(df))
+        if (tax_level %in% rank_order) {
+          selected_idx <- match(tax_level, rank_order)
+          fallback_ranks <- rev(rank_order[seq_len(selected_idx)])
+          fallback_ranks <- fallback_ranks[fallback_ranks %in% colnames(df)]
+          for (rk in fallback_ranks) {
+            rk_vals <- as.character(df[[rk]])
+            use_idx <- is.na(label_vec) | is_unassigned_taxa(label_vec)
+            label_vec[use_idx] <- rk_vals[use_idx]
+          }
+        }
+        label_vec
+      }
+
+      fallback_taxa <- if ("taxa_label" %in% colnames(df)) as.character(df$taxa_label) else rep("", nrow(df))
+      fallback_feature <- if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep("", nrow(df))
+      out[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)] <- fallback_taxa[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)]
+      out[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)] <- fallback_feature[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)]
+      out
+    }
+
     volcano_plot_reactive <- reactive({
       req(selected_plot_data(), input$volcano_y_axis)
       res <- selected_plot_data()
@@ -765,7 +942,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
         TRUE ~ "Not significant"
       )
       plot_df$diffexpressed <- factor(plot_df$diffexpressed, levels = c("Decreased", "Not significant", "Increased"))
-      plot_df$delabel <- ifelse(plot_df$diffexpressed == "Not significant", "", plot_df$taxa_label)
+      label_by_rank <- resolve_current_taxa_labels(plot_df, input$tax_level)
+      plot_df$delabel <- ifelse(plot_df$diffexpressed == "Not significant", "", label_by_rank)
       y_vals <- plot_df$y_metric[is.finite(plot_df$y_metric) & !is.na(plot_df$y_metric)]
       y_upper <- if (length(y_vals) > 0) max(stats::quantile(y_vals, probs = 0.99, na.rm = TRUE), max(y_vals, na.rm = TRUE) * 0.1) + 1 else 10
       y_upper <- max(5, y_upper)
@@ -783,7 +961,13 @@ mod_maaslin2_server <- function(id, ps_obj) {
         geom_point(size = 2.8, alpha = 0.9) +
         scale_color_manual(
           values = c("Decreased" = "#00AFBB", "Not significant" = "grey", "Increased" = "#bb0c00"),
-          labels = c("Decreased", "Not significant", "Increased")
+          breaks = c("Decreased", "Not significant", "Increased"),
+          labels = c(
+            "Decreased" = "Decreased",
+            "Not significant" = "Not significant",
+            "Increased" = "Increased"
+          ),
+          drop = FALSE
         ) +
         coord_cartesian(ylim = c(0, y_upper), xlim = x_lim) +
         scale_x_continuous(breaks = x_breaks) +
@@ -848,8 +1032,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
         "NA",
         formatC(sig_values, format = "e", digits = 2)
       )
+      res_top$taxa_label_current <- make.unique(resolve_current_taxa_labels(res_top, input$tax_level))
 
-      res_top$direction_flag <- res_top$lfc > 0
+      res_top$direction <- ifelse(res_top$lfc > 0, "Increased", "Decreased")
+      res_top$direction <- factor(res_top$direction, levels = c("Decreased", "Increased"))
       y_abs_max <- max(abs(res_top$lfc), na.rm = TRUE)
       if (!is.finite(y_abs_max) || y_abs_max <= 0) {
         y_abs_max <- 1
@@ -860,7 +1046,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       res_top$label_hjust <- 0
       y_limits <- c(min(res_top$lfc, na.rm = TRUE), label_right + (label_offset * 4))
 
-      p <- ggplot(res_top, aes(x = reorder(taxa_label, lfc), y = lfc, fill = direction_flag)) +
+      p <- ggplot(res_top, aes(x = reorder(taxa_label_current, lfc), y = lfc, fill = direction)) +
         geom_col(color = "black") +
         geom_text(
           aes(y = label_y, label = stat_value_label, hjust = label_hjust),
@@ -869,11 +1055,13 @@ mod_maaslin2_server <- function(id, ps_obj) {
         coord_flip(clip = "off") +
         scale_y_continuous(limits = y_limits) +
         scale_fill_manual(
-          values = c("TRUE" = "red", "FALSE" = "blue"),
+          values = c("Decreased" = "blue", "Increased" = "red"),
+          breaks = c("Decreased", "Increased"),
           labels = c(
-            "TRUE" = paste0("Increase in ", target_label),
-            "FALSE" = paste0("Decrease in ", target_label)
-          )
+            "Decreased" = paste0("Decrease in ", target_label),
+            "Increased" = paste0("Increase in ", target_label)
+          ),
+          drop = FALSE
         ) +
         labs(title = paste("Top", top_n, "Differential Taxa by log2FC (reference:", input$reference_level, ")"),
              x = input$tax_level,

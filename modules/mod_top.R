@@ -181,7 +181,9 @@ mod_top_ui <- function(id) {
           src = "https://www.kangwon.ac.kr/assets/ko/images/sub/symbol1.webp",
           alt = "Kangwon National University"
         ),
-        tags$span("\u00a9 2025-2026 SimpleMicrobiome | Microbial Genomics Lab")
+        tags$span("\u00a9 2025-2026 SimpleMicrobiome | Microbial Genomics Lab"),
+        tags$br(),
+        tags$span("Contact: yongjoon (at) kangwon.ac.kr")
       )
     )
   )

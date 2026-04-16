@@ -166,6 +166,52 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       return(colors)
     }
 
+    build_disambiguated_rank_labels <- function(df_taxa, current_rank, rank_order) {
+      if (!current_rank %in% colnames(df_taxa)) {
+        return(rep("Unassigned", nrow(df_taxa)))
+      }
+
+      base_label <- as.character(df_taxa[[current_rank]])
+      base_label[is.na(base_label) | !nzchar(base_label)] <- paste0(current_rank, "__Unassigned")
+
+      parent_ranks <- rank_order[rank_order %in% colnames(df_taxa)]
+      current_idx <- match(current_rank, parent_ranks)
+      if (!is.na(current_idx) && current_idx > 1) {
+        parent_ranks <- parent_ranks[seq_len(current_idx - 1)]
+      } else {
+        parent_ranks <- character(0)
+      }
+
+      # Default label scope: include parent ranks only up to Family (not broader than Order/Class/Phylum).
+      if ("Family" %in% parent_ranks) {
+        fam_idx <- match("Family", parent_ranks)
+        parent_ranks <- parent_ranks[fam_idx:length(parent_ranks)]
+      }
+
+      out <- base_label
+      dup_vals <- unique(base_label[duplicated(base_label) | duplicated(base_label, fromLast = TRUE)])
+      if (length(dup_vals) == 0 || length(parent_ranks) == 0) return(out)
+
+      for (val in dup_vals) {
+        idx <- which(base_label == val)
+        sub_df <- df_taxa[idx, , drop = FALSE]
+        suffix <- rep("", length(idx))
+
+        for (r in rev(parent_ranks)) {
+          rv <- as.character(sub_df[[r]])
+          rv[is.na(rv) | !nzchar(rv)] <- paste0(r, "__Unassigned")
+          if (length(unique(rv)) > 1) {
+            suffix <- ifelse(nzchar(suffix), paste0(r, "=", rv, ";", suffix), paste0(r, "=", rv))
+          }
+        }
+
+        if (any(nzchar(suffix))) {
+          out[idx] <- paste0(val, " [", suffix, "]")
+        }
+      }
+      out
+    }
+
     barplot_matrix_reactive <- reactive({
       req(ps_obj(), group_var(), input$tax_level, input$name_display_mode,
           input$plot_mode, input$top_n_taxa)
@@ -226,7 +272,11 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       if (input$name_display_mode == "full") {
         df_sample$Taxa_Name_Display <- df_sample$Full_Taxa_Name
       } else {
-        df_sample$Taxa_Name_Display <- df_sample[[current_rank]]
+        df_sample$Taxa_Name_Display <- build_disambiguated_rank_labels(
+          df_taxa = df_sample,
+          current_rank = current_rank,
+          rank_order = tax_ranks
+        )
       }
 
       df_sample$Taxa_Group <- ifelse(df_sample$OTU %in% top_otu_ids,
@@ -357,7 +407,11 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         df_sample$Taxa_Name_Display <- df_sample$Full_Taxa_Name
         fill_label <- paste(current_rank, "Taxa (Full Hierarchy)")
       } else {
-        df_sample$Taxa_Name_Display <- df_sample[[current_rank]]
+        df_sample$Taxa_Name_Display <- build_disambiguated_rank_labels(
+          df_taxa = df_sample,
+          current_rank = current_rank,
+          rank_order = tax_ranks
+        )
         fill_label <- current_rank
       }
       
@@ -634,7 +688,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         ggplot2::coord_cartesian(clip = "off") +
         ggplot2::theme(
           plot.title = ggplot2::element_text(size = 14, face = "bold"),
-          axis.text.x = ggplot2::element_text(angle = if(plot_mode == "Group_Mean") 45 else 8, hjust = 1, size = if(plot_mode == "Group_Mean") 10 else 8),
+          axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = if(plot_mode == "Group_Mean") 10 else 8),
           panel.grid.major = ggplot2::element_line(color = "white", linewidth = 0.1),
           panel.grid.minor = ggplot2::element_line(color = "white", linewidth = 0.1),
           axis.title.x = ggplot2::element_blank(),

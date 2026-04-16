@@ -63,6 +63,7 @@ ui <- page_navbar(
     ),
     style = "display: inline-flex; align-items: center; text-decoration: none; padding: 0;"
   ),
+  window_title = "SimpleMicrobiome",
   id = "tab_panel_main",
   theme = bs_theme(
     version = 5,

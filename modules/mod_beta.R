@@ -70,6 +70,7 @@ mod_beta_ui <- function(id) {
           numericInput(ns("y_max"), "Y-axis maximum:", value = NA)
         ),
         hr(),
+        h4(icon("layer-group"), "Post-Ordination Analyses"),
 
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("Clustering")),
@@ -933,7 +934,27 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
       
       if (input$show_sample_names) {
-        p <- p + ggplot2::geom_text(data = plot_data, mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = SampleID), color = "black", size = 3, hjust = 0.2, vjust = 0.5)
+        if (requireNamespace("ggrepel", quietly = TRUE)) {
+          p <- p + ggrepel::geom_text_repel(
+            data = plot_data,
+            mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = SampleID),
+            color = "black",
+            size = 3,
+            box.padding = 0.25,
+            point.padding = 0.3,
+            max.overlaps = Inf,
+            seed = 1001
+          )
+        } else {
+          p <- p + ggplot2::geom_text(
+            data = plot_data,
+            mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = SampleID),
+            color = "black",
+            size = 3,
+            hjust = -0.1,
+            vjust = 0.5
+          )
+        }
       }
 
       if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result)) {
@@ -1109,7 +1130,27 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
       
       if (input$show_sample_names) {
-        p <- p + ggplot2::geom_text(data = plot_data, mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = SampleID), color = "black", size = 3, hjust = -0.1, vjust = 0.5)
+        if (requireNamespace("ggrepel", quietly = TRUE)) {
+          p <- p + ggrepel::geom_text_repel(
+            data = plot_data,
+            mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = SampleID),
+            color = "black",
+            size = 3,
+            box.padding = 0.25,
+            point.padding = 0.3,
+            max.overlaps = Inf,
+            seed = 1001
+          )
+        } else {
+          p <- p + ggplot2::geom_text(
+            data = plot_data,
+            mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = SampleID),
+            color = "black",
+            size = 3,
+            hjust = -0.1,
+            vjust = 0.5
+          )
+        }
       }
 
       if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result)) {
