@@ -783,7 +783,7 @@ mod_ancom_server <- function(id, ps_obj) {
         }
 
         lfc_values_raw <- to_numeric(res[[lfc_col]])
-        lfc_values <- -lfc_values_raw
+        lfc_values <- lfc_values_raw
         se_values <- if (!is.na(se_col)) to_numeric(res[[se_col]]) else rep(NA_real_, nrow(res))
         w_values <- if (!is.na(w_col)) to_numeric(res[[w_col]]) else rep(NA_real_, nrow(res))
         p_values <- if (!is.na(p_col)) to_numeric(res[[p_col]]) else rep(NA_real_, nrow(res))

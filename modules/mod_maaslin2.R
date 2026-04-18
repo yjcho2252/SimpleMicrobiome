@@ -783,7 +783,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       }
       if ("coef" %in% colnames(res)) {
         coef_num_raw <- suppressWarnings(as.numeric(res$coef))
-        coef_num <- -coef_num_raw
+        coef_num <- coef_num_raw
         res$coef <- coef_num
         res$exp_coef <- exp(coef_num)
         res$lfc <- log2(res$exp_coef)
@@ -809,7 +809,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       ref_level <- input$reference_level
 
       coef_values_raw <- suppressWarnings(as.numeric(res$coef))
-      coef_values <- -coef_values_raw
+      coef_values <- coef_values_raw
       lfc_values <- log2(exp(coef_values))
       se_values <- if ("stderr" %in% colnames(res)) suppressWarnings(as.numeric(res$stderr)) else rep(NA_real_, nrow(res))
       p_values <- if ("pval" %in% colnames(res)) suppressWarnings(as.numeric(res$pval)) else rep(NA_real_, nrow(res))
