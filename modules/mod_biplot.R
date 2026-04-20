@@ -1,11 +1,31 @@
-library(shiny)
-library(phyloseq)
-library(ggplot2)
-library(dplyr)
-
 mod_biplot_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .simple-result-card {
+        width: 600px;
+        max-width: 100%;
+        height: 130px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.45;
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        border-radius: 10px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        margin-bottom: 10px;
+      }
+      .simple-result-card pre {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -48,14 +68,22 @@ mod_biplot_ui <- function(id) {
           max = 100,
           step = 1
         ),
+        selectizeInput(
+          ns("selected_taxa"),
+          "Selected taxa (optional)",
+          choices = NULL,
+          selected = NULL,
+          multiple = TRUE,
+          options = list(placeholder = "If selected, these taxa are drawn instead of Top taxa vectors")
+        ),
         checkboxInput(ns("show_taxa_vectors"), "Show taxa vectors", value = TRUE),
         checkboxInput(ns("show_group_vectors"), "Show group vectors", value = TRUE),
         checkboxInput(ns("show_group_centroid"), "Show group centroids", value = TRUE),
         checkboxInput(ns("show_sample_names"), "Show sample names", value = FALSE),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2400, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 700, min = 300, max = 2400, step = 50),
+        numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
+        numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
         actionButton(ns("run_biplot"), "Run Biplot", class = "btn-danger", style = "font-size: 12px;")
       ),
       mainPanel(
@@ -66,7 +94,10 @@ mod_biplot_ui <- function(id) {
           downloadButton(ns("download_biplot_scores"), "Download Scores (TSV)")
         ),
         plotOutput(ns("biplot_plot"), height = "auto"),
-        verbatimTextOutput(ns("biplot_status"))
+        div(
+          class = "simple-result-card",
+          verbatimTextOutput(ns("biplot_status"))
+        )
       )
     )
   )
@@ -199,6 +230,23 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         }
       )
 
+      adonis_tbl <- tryCatch(
+        vegan::adonis2(dist_obj ~ group_model, data = model_df, permutations = 999),
+        error = function(e) NULL
+      )
+      permanova_p <- NA_real_
+      permanova_r2 <- NA_real_
+      if (!is.null(adonis_tbl)) {
+        adf <- as.data.frame(adonis_tbl)
+        if ("group_model" %in% rownames(adf)) {
+          if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf["group_model", "Pr(>F)"])
+          if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf["group_model", "R2"])
+        } else if (nrow(adf) >= 1) {
+          if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf[1, "Pr(>F)"])
+          if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf[1, "R2"])
+        }
+      }
+
       anova_all <- tryCatch(vegan::anova.cca(model, permutations = 999), error = function(e) NULL)
       p_all <- if (!is.null(anova_all) && nrow(as.data.frame(anova_all)) >= 1) as.data.frame(anova_all)[1, "Pr(>F)"] else NA_real_
 
@@ -215,13 +263,15 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       site_df$Group <- as.character(model_df$group_model)
 
       species_df <- data.frame()
+      species_all_df <- data.frame()
       if (!is.null(species_scores)) {
-        species_df <- as.data.frame(species_scores, stringsAsFactors = FALSE)
-        if (ncol(species_df) >= 2) {
-          colnames(species_df)[1:2] <- c("Axis1", "Axis2")
-          species_df$Taxon <- rownames(species_df)
-          species_df$Length <- sqrt(species_df$Axis1^2 + species_df$Axis2^2)
-          species_df <- species_df[order(species_df$Length, decreasing = TRUE), , drop = FALSE]
+        species_all_df <- as.data.frame(species_scores, stringsAsFactors = FALSE)
+        if (ncol(species_all_df) >= 2) {
+          colnames(species_all_df)[1:2] <- c("Axis1", "Axis2")
+          species_all_df$Taxon <- rownames(species_all_df)
+          species_all_df$Length <- sqrt(species_all_df$Axis1^2 + species_all_df$Axis2^2)
+          species_all_df <- species_all_df[order(species_all_df$Length, decreasing = TRUE), , drop = FALSE]
+          species_df <- species_all_df
           n_top <- as.integer(input$top_taxa_vectors)
           if (is.na(n_top) || n_top < 0) n_top <- 15
           if (n_top == 0) {
@@ -230,6 +280,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
             species_df <- species_df[seq_len(n_top), , drop = FALSE]
           }
         } else {
+          species_all_df <- data.frame()
           species_df <- data.frame()
         }
       }
@@ -256,7 +307,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
             Axis2 = mean(Axis2, na.rm = TRUE),
             .groups = "drop"
           ) %>%
-          dplyr::mutate(Variable = paste0("Group: ", Group))
+          dplyr::mutate(Variable = paste0("", Group))
       }
 
       eig <- vegan::eigenvals(model)
@@ -266,22 +317,36 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       list(
         site_df = site_df,
         species_df = species_df,
+        species_all_df = species_all_df,
         bp_df = bp_df,
         group_arrow_df = group_arrow_df,
         metric_label = if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis",
         axis1_var = axis1_var,
         axis2_var = axis2_var,
         model_p = as.numeric(p_all),
+        permanova_p = permanova_p,
+        permanova_r2 = permanova_r2,
         n_samples = nrow(site_df),
         n_taxa = nrow(otu_use)
       )
     }, ignoreNULL = FALSE)
+
+    observeEvent(biplot_payload(), {
+      payload <- biplot_payload()
+      all_taxa <- if (nrow(payload$species_all_df) > 0) payload$species_all_df$Taxon else character(0)
+      current_selected <- isolate(input$selected_taxa)
+      selected_keep <- if (length(current_selected) > 0) intersect(current_selected, all_taxa) else character(0)
+      updateSelectizeInput(session, "selected_taxa", choices = all_taxa, selected = selected_keep, server = TRUE)
+    }, ignoreInit = FALSE)
 
     biplot_plot <- reactive({
       req(biplot_payload())
       payload <- biplot_payload()
       site_df <- payload$site_df
       taxa_df <- payload$species_df
+      if (length(input$selected_taxa) > 0 && nrow(payload$species_all_df) > 0) {
+        taxa_df <- payload$species_all_df[payload$species_all_df$Taxon %in% input$selected_taxa, , drop = FALSE]
+      }
       bp_df <- payload$bp_df
       group_arrow_df <- payload$group_arrow_df
 
@@ -425,14 +490,23 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       req(biplot_payload())
       payload <- biplot_payload()
       pval_txt <- if (is.finite(payload$model_p)) format(payload$model_p, digits = 3) else "NA"
+      permanova_p_txt <- if (is.finite(payload$permanova_p)) format(payload$permanova_p, digits = 3) else "NA"
+      permanova_r2_txt <- if (is.finite(payload$permanova_r2)) format(payload$permanova_r2, digits = 3) else "NA"
+      taxa_vectors_shown <- if (length(input$selected_taxa) > 0 && nrow(payload$species_all_df) > 0) {
+        sum(payload$species_all_df$Taxon %in% input$selected_taxa)
+      } else {
+        nrow(payload$species_df)
+      }
       paste(
         c(
           paste0("Distance metric: ", payload$metric_label),
           paste0("Group variable: ", input$group_var),
           paste0("Samples used: ", payload$n_samples),
           paste0("Taxa used: ", payload$n_taxa),
-          paste0("Top taxa vectors: ", nrow(payload$species_df)),
-          paste0("dbRDA model p-value (perm): ", pval_txt)
+          paste0("Taxa vectors shown: ", taxa_vectors_shown),
+          paste0("dbRDA model p-value (perm): ", pval_txt),
+          paste0("PERMANOVA p-value (adonis2): ", permanova_p_txt),
+          paste0("PERMANOVA R2 (adonis2): ", permanova_r2_txt)
         ),
         collapse = "\n"
       )

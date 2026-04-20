@@ -19,7 +19,6 @@ library(igraph)
 library(ggraph)
 library(ggrepel)
 library(shapr)
-library(vegan)
 
 app_script_path <- tryCatch({
   normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)
@@ -152,14 +151,14 @@ ui <- page_navbar(
   ),
     
   nav_menu(
-    title = "Visualization",
+    title = "Taxa Profiles",
     icon = icon("chart-line"),
     nav_panel("Taxa Barplot", icon = icon("chart-bar"), mod_barplot_ui("mod_barplot")),
     nav_panel("Taxa Comparison", icon = icon("square-poll-vertical"), mod_taxa_comparison_ui("mod_taxa_comparison"))
   ),
   
   nav_menu(
-    title = "Diversity Analysis",
+    title = "Diversity",
     icon = icon("dna"),
     nav_panel("Alpha Diversity", icon = icon("circle-nodes"), mod_alpha_ui("mod_alpha")),
     nav_panel("Beta Diversity", icon = icon("project-diagram"), mod_beta_ui("mod_beta"))
@@ -174,7 +173,7 @@ ui <- page_navbar(
   ),
   
   nav_menu(
-    title = "Network Analysis",
+    title = "Network",
     icon = icon("diagram-project"),
     nav_panel("SparCC", icon = icon("share-nodes"), mod_sparcc_ui("mod_sparcc")),
     nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi"))

@@ -66,6 +66,15 @@ mod_citation_server <- function(id) {
         "Friedman, J., & Alm, E. J. (2012). Inferring correlation networks from genomic survey data. PLOS Computational Biology, 8(9), e1002687. https://doi.org/10.1371/journal.pcbi.1002687",
         "Peschel, S., Muller, C. L., von Mutius, E., Boulesteix, A.-L., Depner, M., & NetCoMi Development Team. (2021). NetCoMi: Network construction and comparison for microbiome data in R. Briefings in Bioinformatics, 22(4), bbaa290. https://doi.org/10.1093/bib/bbaa290"
       ),
+      "Correlation Heatmap" = c(
+        "Aitchison, J. (1982). The statistical analysis of compositional data. Journal of the Royal Statistical Society: Series B (Methodological), 44(2), 139-177. https://doi.org/10.1111/j.2517-6161.1982.tb01195.x",
+        "Wickham, H. (2016). ggplot2: Elegant graphics for data analysis. Springer. https://ggplot2.tidyverse.org"
+      ),
+      "Association Biplot (dbRDA)" = c(
+        "Legendre, P., & Anderson, M. J. (1999). Distance-based redundancy analysis: Testing multispecies responses in multifactorial ecological experiments. Ecological Monographs, 69(1), 1-24. https://doi.org/10.1890/0012-9615(1999)069[0001:DBRATM]2.0.CO;2",
+        "Oksanen, J., Simpson, G. L., Blanchet, F. G., Kindt, R., Legendre, P., Minchin, P. R., O'Hara, R. B., Solymos, P., Stevens, M. H. H., Szoecs, E., & Wagner, H. (2024). vegan: Community Ecology Package (R package). https://CRAN.R-project.org/package=vegan",
+        "Wickham, H. (2016). ggplot2: Elegant graphics for data analysis. Springer. https://ggplot2.tidyverse.org"
+      ),
       "General Visualization / Reporting" = c(
         "Wickham, H. (2016). ggplot2: Elegant graphics for data analysis. Springer. https://ggplot2.tidyverse.org"
       )

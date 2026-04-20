@@ -152,7 +152,7 @@ mod_top_ui <- function(id) {
               class = "top-list",
               tags$li("Data Loading: Upload feature table, taxonomy, and metadata."),
               tags$li("Preprocessing: Filter data by read counts and user-selected options."),
-              tags$li("Analysis: Run visualization/diversity/DA/network modules as needed.")
+              tags$li("Analysis: Run Taxa Profiles/Diversity/DA/Network/Association modules as needed.")
             )
           )
         )

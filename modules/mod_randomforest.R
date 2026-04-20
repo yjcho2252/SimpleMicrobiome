@@ -2,6 +2,31 @@
 mod_randomforest_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .simple-result-card {
+        width: 600px;
+        max-width: 100%;
+        height: 130px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.45;
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        border-radius: 10px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        margin-bottom: 10px;
+      }
+      .simple-result-card pre {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -134,7 +159,10 @@ mod_randomforest_ui <- function(id) {
         ),
         hr(),
         h4(icon("square-poll-vertical"), "Result"),
-        verbatimTextOutput(ns("rf_metrics"))
+        div(
+          class = "simple-result-card",
+          verbatimTextOutput(ns("rf_metrics"))
+        )
       )
     )
   )
@@ -145,6 +173,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
   moduleServer(id, function(input, output, session) {
     model_result <- reactiveVal(NULL)
     status_text <- reactiveVal("Waiting for model run.")
+    filtered_outcome_vars <- reactiveVal(character(0))
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
         return(requested)
@@ -175,11 +204,49 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       )
     }
 
+    is_identifier_like <- function(vec) {
+      v <- as.character(vec)
+      v <- v[!is.na(v) & nzchar(v)]
+      if (length(v) == 0) return(TRUE)
+      uniq_ratio <- length(unique(v)) / length(v)
+      uniq_ratio > 0.9
+    }
+
+    get_valid_outcome_vars <- function(md, outcome_mode) {
+      if (is.null(md) || ncol(md) == 0) return(character(0))
+      vars <- colnames(md)
+      vars <- vars[!tolower(vars) %in% c("sampleid", "sample_id")]
+      vars <- vars[!grepl("(^|_)id$", tolower(vars))]
+
+      keep <- vapply(vars, function(vn) {
+        x <- md[[vn]]
+        x_non_na <- x[!is.na(x)]
+        if (length(x_non_na) < 3) return(FALSE)
+        if (length(unique(x_non_na)) < 2) return(FALSE)
+        if (is_identifier_like(x_non_na)) return(FALSE)
+
+        if (identical(outcome_mode, "Classification")) {
+          lv <- table(as.character(x_non_na))
+          return(length(lv) >= 2 && all(lv >= 3))
+        }
+        if (identical(outcome_mode, "Auto")) {
+          if (is.factor(x) || is.character(x)) {
+            lv <- table(as.character(x_non_na))
+            return(length(lv) >= 2 && all(lv >= 3))
+          }
+        }
+        TRUE
+      }, logical(1))
+
+      vars[keep]
+    }
+
     observe({
-      req(ps_obj_filtered_raw())
+      req(ps_obj_filtered_raw(), input$outcome_type)
       ps <- ps_obj_filtered_raw()
       md <- data.frame(phyloseq::sample_data(ps))
-      vars <- colnames(md)
+      vars <- get_valid_outcome_vars(md, input$outcome_type)
+      filtered_outcome_vars(vars)
       current <- input$outcome_var
       if (is.null(current) || !current %in% vars) {
         current <- if (length(vars) > 0) vars[1] else NULL
@@ -191,6 +258,9 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       req(ps_obj_filtered_raw(), input$outcome_var, input$outcome_type)
       ps <- ps_obj_filtered_raw()
       md <- data.frame(phyloseq::sample_data(ps))
+      validate(
+        need(input$outcome_var %in% filtered_outcome_vars(), "Selected outcome variable is filtered out by automatic validity checks.")
+      )
       outcome_var <- outcome_var_resolved()
       validate(need(outcome_var %in% colnames(md), "Selected outcome is not available."))
 

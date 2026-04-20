@@ -201,7 +201,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           rv <- as.character(sub_df[[r]])
           rv[is.na(rv) | !nzchar(rv)] <- paste0(r, "__Unassigned")
           if (length(unique(rv)) > 1) {
-            suffix <- ifelse(nzchar(suffix), paste0(r, "=", rv, ";", suffix), paste0(r, "=", rv))
+            suffix <- ifelse(nzchar(suffix), paste0(rv, ";", suffix), rv)
           }
         }
 

@@ -1,69 +1,109 @@
-library(shiny)
-library(phyloseq)
-library(ggplot2)
-
 mod_heatmap_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .simple-result-card {
+        width: 600px;
+        max-width: 100%;
+        height: 130px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.45;
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        border-radius: 10px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        margin-bottom: 10px;
+      }
+      .simple-result-card pre {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
         h4(icon("table-cells"), "Correlation Heatmap"),
         hr(),
         selectInput(
-          ns("analysis_target"),
-          "1. Analysis target",
-          choices = c("Taxa vs Taxa" = "taxa_taxa", "Taxa vs Group" = "taxa_group"),
-          selected = "taxa_taxa"
+          ns("group_var"),
+          "1. Group variable (for Taxa vs Group)",
+          choices = character(0),
+          selected = NULL
         ),
-        uiOutput(ns("group_var_ui")),
-        uiOutput(ns("group_type_ui")),
+        selectInput(
+          ns("group_type"),
+          "2. Group type",
+          choices = c("Auto" = "auto", "Continuous" = "continuous", "Categorical" = "categorical"),
+          selected = "auto"
+        ),
         selectInput(
           ns("tax_level"),
-          "2. Taxonomic level",
+          "3. Taxonomic level",
           choices = c("ASV", "Genus", "Species"),
           selected = "Genus"
         ),
         selectInput(
           ns("transform_method"),
-          "3. Data transform",
+          "4. Data transform",
           choices = c("TSS" = "tss", "CLR" = "clr"),
           selected = "clr"
         ),
         selectInput(
           ns("corr_method"),
-          "4. Correlation method",
+          "5. Correlation method",
           choices = c("Pearson" = "pearson", "Spearman" = "spearman"),
-          selected = "spearman"
+          selected = "pearson"
         ),
         selectInput(
           ns("value_scale"),
-          "5. Heatmap value scale",
+          "6. Heatmap value scale",
           choices = c("Raw" = "raw", "Z-score (by taxa)" = "zscore"),
-          selected = "zscore"
+          selected = "raw"
         ),
-        numericInput(
-          ns("prevalence_filter_pct"),
-          "6. Prevalence filter cutoff (%)",
-          value = 10,
-          min = 0,
-          max = 100,
-          step = 1
+        tags$details(
+          tags$summary("Advanced options"),
+          numericInput(
+            ns("prevalence_filter_pct"),
+            "7. Prevalence filter cutoff (%)",
+            value = 10,
+            min = 0,
+            max = 100,
+            step = 1
+          ),
+          numericInput(
+            ns("max_taxa"),
+            "8. Max taxa",
+            value = 30,
+            min = 10,
+            max = 300,
+            step = 5
+          ),
+          selectizeInput(
+            ns("selected_taxa"),
+            "Selected taxa (optional)",
+            choices = NULL,
+            selected = NULL,
+            multiple = TRUE,
+            options = list(placeholder = "If selected, only these taxa are shown")
+          ),
+          checkboxInput(ns("show_row_dendrogram"), "Show row dendrogram (cluster row)", value = TRUE),
+          checkboxInput(ns("show_col_dendrogram"), "Show column dendrogram (cluster column)", value = TRUE),
+          numericInput(ns("abs_limit"), "Color scale abs limit (0 = auto)", value = 0, min = 0, max = 100, step = 0.1),
+          checkboxInput(ns("apply_sig_filter"), "Mask non-significant cells (FDR)", value = FALSE),
+          numericInput(ns("q_cutoff"), "FDR cutoff (q)", value = 0.05, min = 0.0001, max = 1, step = 0.01)
         ),
-        numericInput(
-          ns("max_taxa"),
-          "7. Max taxa",
-          value = 80,
-          min = 10,
-          max = 300,
-          step = 5
-        ),
-        checkboxInput(ns("show_diagonal"), "Show diagonal (Taxa vs Taxa only)", value = FALSE),
-        checkboxInput(ns("cluster_order"), "Cluster row/column order", value = TRUE),
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2400, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 780, min = 300, max = 2400, step = 50),
+        h4(icon("up-right-and-down-left-from-center"), "Cell Size"),
+        numericInput(ns("cell_width"), "Cell width (px)", value = 30, min = 6, max = 80, step = 1),
+        numericInput(ns("cell_height"), "Cell height (px)", value = 10, min = 6, max = 80, step = 1),
+        numericInput(ns("sig_text_size"), "Significance mark size", value = 3, min = 1, max = 10, step = 0.2),
         actionButton(ns("run_heatmap"), "Run Heatmap", class = "btn-danger", style = "font-size: 12px;")
       ),
       mainPanel(
@@ -74,7 +114,10 @@ mod_heatmap_ui <- function(id) {
           downloadButton(ns("download_corr_tsv"), "Download Matrix (TSV)")
         ),
         plotOutput(ns("corr_heatmap_plot"), height = "auto"),
-        verbatimTextOutput(ns("heatmap_status"))
+        div(
+          class = "simple-result-card",
+          verbatimTextOutput(ns("heatmap_status"))
+        )
       )
     )
   )
@@ -82,6 +125,8 @@ mod_heatmap_ui <- function(id) {
 
 mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
+    analysis_target <- reactive("taxa_group")
+
     sanitize_taxa_names <- function(ps_data, rank_name) {
       tt <- phyloseq::tax_table(ps_data, errorIfNULL = FALSE)
       if (is.null(tt) || !rank_name %in% colnames(tt)) {
@@ -104,37 +149,69 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       as.data.frame(sd, stringsAsFactors = FALSE)
     })
 
-    output$group_var_ui <- renderUI({
-      req(input$analysis_target)
-      if (!identical(input$analysis_target, "taxa_group")) {
-        return(NULL)
-      }
+    observe({
       meta_df <- metadata_df()
-      candidate_cols <- colnames(meta_df)
-      candidate_cols <- setdiff(candidate_cols, "SampleID")
-      selectInput(
-        session$ns("group_var"),
-        "Group variable (for Taxa vs Group)",
-        choices = candidate_cols,
-        selected = if (length(candidate_cols) > 0) candidate_cols[1] else NULL
-      )
+      candidate_cols <- setdiff(colnames(meta_df), "SampleID")
+      current_selected <- isolate(input$group_var)
+      selected_val <- if (!is.null(current_selected) && current_selected %in% candidate_cols) {
+        current_selected
+      } else if (length(candidate_cols) > 0) {
+        candidate_cols[1]
+      } else {
+        character(0)
+      }
+      updateSelectInput(session, "group_var", choices = candidate_cols, selected = selected_val)
     })
 
-    output$group_type_ui <- renderUI({
-      req(input$analysis_target)
-      if (!identical(input$analysis_target, "taxa_group")) {
-        return(NULL)
-      }
-      selectInput(
-        session$ns("group_type"),
-        "Group type",
-        choices = c("Auto" = "auto", "Continuous" = "continuous", "Categorical" = "categorical"),
-        selected = "auto"
+    taxa_choices_preview <- reactive({
+      req(ps_obj(), input$tax_level)
+      ps_data <- ps_obj()
+      validate(
+        need(phyloseq::ntaxa(ps_data) >= 1, "No taxa available.")
       )
+
+      if (!identical(input$tax_level, "ASV")) {
+        tt <- phyloseq::tax_table(ps_data, errorIfNULL = FALSE)
+        validate(
+          need(!is.null(tt), "Taxonomy table is required for taxonomic aggregation.")
+        )
+        tax_cols <- colnames(tt)
+        validate(
+          need(input$tax_level %in% tax_cols, paste0("Taxonomic rank '", input$tax_level, "' is not available."))
+        )
+        ps_data <- phyloseq::tax_glom(ps_data, taxrank = input$tax_level, NArm = FALSE)
+        ps_data <- sanitize_taxa_names(ps_data, input$tax_level)
+      }
+
+      otu_mat <- as.matrix(phyloseq::otu_table(ps_data))
+      if (!phyloseq::taxa_are_rows(phyloseq::otu_table(ps_data))) {
+        otu_mat <- t(otu_mat)
+      }
+
+      prevalence_cutoff <- as.numeric(input$prevalence_filter_pct)
+      if (is.na(prevalence_cutoff)) prevalence_cutoff <- 10
+      prevalence_cutoff <- max(0, min(100, prevalence_cutoff))
+      keep_prev <- rowMeans(otu_mat > 0, na.rm = TRUE) * 100 >= prevalence_cutoff
+      otu_mat <- otu_mat[keep_prev, , drop = FALSE]
+
+      max_taxa <- as.integer(input$max_taxa)
+      if (is.na(max_taxa) || max_taxa < 3) max_taxa <- 30
+      if (nrow(otu_mat) > max_taxa) {
+        otu_mat <- otu_mat[order(rowSums(otu_mat, na.rm = TRUE), decreasing = TRUE)[seq_len(max_taxa)], , drop = FALSE]
+      }
+
+      rownames(otu_mat)
+    })
+
+    observe({
+      taxa_choices <- taxa_choices_preview()
+      current_selected <- isolate(input$selected_taxa)
+      selected_keep <- if (length(current_selected) > 0) intersect(current_selected, taxa_choices) else character(0)
+      updateSelectizeInput(session, "selected_taxa", choices = taxa_choices, selected = selected_keep, server = TRUE)
     })
 
     corr_payload <- eventReactive(input$run_heatmap, {
-      req(ps_obj(), input$tax_level, input$transform_method, input$corr_method, input$analysis_target, input$value_scale)
+      req(ps_obj(), input$tax_level, input$transform_method, input$corr_method, input$value_scale)
       ps_data <- ps_obj()
       validate(
         need(phyloseq::nsamples(ps_data) >= 3, "At least 3 samples are required."),
@@ -168,7 +245,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       )
 
       max_taxa <- as.integer(input$max_taxa)
-      if (is.na(max_taxa) || max_taxa < 3) max_taxa <- 80
+      if (is.na(max_taxa) || max_taxa < 3) max_taxa <- 30
       if (nrow(otu_mat) > max_taxa) {
         otu_mat <- otu_mat[order(rowSums(otu_mat, na.rm = TRUE), decreasing = TRUE)[seq_len(max_taxa)], , drop = FALSE]
       }
@@ -199,9 +276,47 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         meta_df <- meta_df[sample_ids, , drop = FALSE]
       }
 
-      if (identical(input$analysis_target, "taxa_taxa")) {
+      p_mat <- NULL
+      q_mat <- NULL
+      sig_supported <- FALSE
+      sig_note <- "Not computed."
+      row_hclust <- NULL
+      col_hclust <- NULL
+
+      if (identical(analysis_target(), "taxa_taxa")) {
         assoc_mat <- stats::cor(t(transformed), method = input$corr_method, use = "pairwise.complete.obs")
         assoc_type <- "Taxa vs Taxa correlation"
+        sig_supported <- TRUE
+        sig_note <- "Computed from pairwise correlation tests (BH-adjusted)."
+
+        n_tax <- nrow(transformed)
+        p_mat <- matrix(NA_real_, nrow = n_tax, ncol = n_tax, dimnames = list(rownames(transformed), rownames(transformed)))
+        diag(p_mat) <- 0
+        if (n_tax >= 2) {
+          for (i in seq_len(n_tax - 1)) {
+            xi <- transformed[i, ]
+            for (j in (i + 1):n_tax) {
+              xj <- transformed[j, ]
+              p_val <- tryCatch(
+                suppressWarnings(stats::cor.test(xi, xj, method = input$corr_method, exact = FALSE)$p.value),
+                error = function(e) NA_real_
+              )
+              p_mat[i, j] <- p_val
+              p_mat[j, i] <- p_val
+            }
+          }
+          upper_idx <- upper.tri(p_mat)
+          p_vals <- p_mat[upper_idx]
+          q_vals <- rep(NA_real_, length(p_vals))
+          ok <- is.finite(p_vals)
+          if (any(ok)) {
+            q_vals[ok] <- stats::p.adjust(p_vals[ok], method = "BH")
+          }
+          q_mat <- matrix(NA_real_, nrow = n_tax, ncol = n_tax, dimnames = dimnames(p_mat))
+          q_mat[upper_idx] <- q_vals
+          q_mat[lower.tri(q_mat)] <- t(q_mat)[lower.tri(q_mat)]
+          diag(q_mat) <- 0
+        }
       } else {
         req(input$group_var)
         validate(
@@ -216,12 +331,19 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         if (is.null(group_type_selected) || !group_type_selected %in% c("auto", "continuous", "categorical")) {
           group_type_selected <- "auto"
         }
+        group_num_auto <- suppressWarnings(as.numeric(group_vec))
+        auto_numeric_like <- sum(is.finite(group_num_auto)) >= 3
+        n_unique_numeric <- length(unique(group_num_auto[is.finite(group_num_auto)]))
+        force_categorical_numeric <- n_unique_numeric > 0 && n_unique_numeric <= 5
         is_numeric_group <- if (identical(group_type_selected, "continuous")) {
           TRUE
         } else if (identical(group_type_selected, "categorical")) {
           FALSE
         } else {
-          is.numeric(group_vec) || is.integer(group_vec)
+          (is.numeric(group_vec) || is.integer(group_vec) || auto_numeric_like)
+        }
+        if (isTRUE(force_categorical_numeric)) {
+          is_numeric_group <- FALSE
         }
 
         if (is_numeric_group) {
@@ -236,6 +358,22 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           rownames(assoc_mat) <- names(assoc_vals)
           colnames(assoc_mat) <- input$group_var
           assoc_type <- "Taxa vs continuous group correlation"
+          sig_supported <- TRUE
+          sig_note <- "Computed from taxa-group correlation tests (BH-adjusted)."
+
+          p_vals <- apply(transformed, 1, function(taxa_x) {
+            tryCatch(
+              suppressWarnings(stats::cor.test(taxa_x, group_num, method = input$corr_method, exact = FALSE)$p.value),
+              error = function(e) NA_real_
+            )
+          })
+          q_vals <- rep(NA_real_, length(p_vals))
+          ok <- is.finite(p_vals)
+          if (any(ok)) {
+            q_vals[ok] <- stats::p.adjust(p_vals[ok], method = "BH")
+          }
+          p_mat <- matrix(as.numeric(p_vals), ncol = 1, dimnames = list(names(p_vals), input$group_var))
+          q_mat <- matrix(as.numeric(q_vals), ncol = 1, dimnames = list(names(q_vals), input$group_var))
         } else {
           group_chr <- as.character(group_vec)
           group_chr[is.na(group_chr) | !nzchar(group_chr)] <- "(Missing)"
@@ -253,14 +391,66 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           rownames(assoc_mat) <- rownames(transformed)
           colnames(assoc_mat) <- levels_keep
           assoc_type <- "Taxa vs categorical group level mean"
+          sig_supported <- TRUE
+          sig_note <- "Computed per cell by one-vs-rest Wilcoxon rank-sum test (taxa x group level), BH-adjusted."
+
+          group_fac <- factor(group_chr, levels = levels_keep)
+          p_mat <- matrix(
+            NA_real_,
+            nrow = nrow(assoc_mat),
+            ncol = ncol(assoc_mat),
+            dimnames = list(rownames(assoc_mat), colnames(assoc_mat))
+          )
+          for (j in seq_along(levels_keep)) {
+            lv <- levels_keep[j]
+            in_group <- which(group_fac == lv)
+            out_group <- which(group_fac != lv)
+            if (length(in_group) < 2 || length(out_group) < 2) {
+              next
+            }
+            p_vec <- apply(transformed, 1, function(taxa_x) {
+              tryCatch(
+                stats::wilcox.test(
+                  x = as.numeric(taxa_x[in_group]),
+                  y = as.numeric(taxa_x[out_group]),
+                  exact = FALSE
+                )$p.value,
+                error = function(e) NA_real_
+              )
+            })
+            p_mat[, j] <- as.numeric(p_vec)
+          }
+
+          q_mat <- matrix(
+            NA_real_,
+            nrow = nrow(p_mat),
+            ncol = ncol(p_mat),
+            dimnames = dimnames(p_mat)
+          )
+          p_vals_all <- as.numeric(p_mat)
+          ok <- is.finite(p_vals_all)
+          if (any(ok)) {
+            q_vals_all <- rep(NA_real_, length(p_vals_all))
+            q_vals_all[ok] <- stats::p.adjust(p_vals_all[ok], method = "BH")
+            q_mat[] <- matrix(q_vals_all, nrow = nrow(p_mat), ncol = ncol(p_mat))
+          }
         }
       }
 
       assoc_mat[is.na(assoc_mat)] <- 0
       assoc_mat[!is.finite(assoc_mat)] <- 0
+      raw_assoc_mat <- assoc_mat
 
-      if (identical(input$analysis_target, "taxa_taxa")) {
+      if (identical(analysis_target(), "taxa_taxa")) {
         assoc_mat <- pmax(-1, pmin(1, assoc_mat))
+        if (is.null(dim(assoc_mat))) {
+          assoc_mat <- matrix(
+            assoc_mat,
+            nrow = nrow(raw_assoc_mat),
+            ncol = ncol(raw_assoc_mat),
+            dimnames = dimnames(raw_assoc_mat)
+          )
+        }
         diag(assoc_mat) <- 1
       }
 
@@ -279,28 +469,65 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         }
       }
 
-      if (isTRUE(input$cluster_order) && nrow(assoc_mat) >= 3) {
+      if (isTRUE(input$show_row_dendrogram) && nrow(assoc_mat) >= 3) {
         row_dist <- stats::dist(assoc_mat, method = "euclidean")
-        row_ord <- tryCatch(
-          stats::hclust(row_dist, method = "average")$order,
-          error = function(e) seq_len(nrow(assoc_mat))
+        row_hclust <- tryCatch(
+          stats::hclust(row_dist, method = "average"),
+          error = function(e) NULL
         )
+        row_ord <- if (!is.null(row_hclust)) row_hclust$order else seq_len(nrow(assoc_mat))
         assoc_mat <- assoc_mat[row_ord, , drop = FALSE]
-
-        if (ncol(assoc_mat) >= 3) {
-          col_dist <- stats::dist(t(assoc_mat), method = "euclidean")
-          col_ord <- tryCatch(
-            stats::hclust(col_dist, method = "average")$order,
-            error = function(e) seq_len(ncol(assoc_mat))
-          )
-          assoc_mat <- assoc_mat[, col_ord, drop = FALSE]
-        }
       }
+
+      if (isTRUE(input$show_col_dendrogram) && ncol(assoc_mat) >= 3) {
+        col_dist <- stats::dist(t(assoc_mat), method = "euclidean")
+        col_hclust <- tryCatch(
+          stats::hclust(col_dist, method = "average"),
+          error = function(e) NULL
+        )
+        col_ord <- if (!is.null(col_hclust)) col_hclust$order else seq_len(ncol(assoc_mat))
+        assoc_mat <- assoc_mat[, col_ord, drop = FALSE]
+      }
+
+      if (!is.null(p_mat)) {
+        p_mat <- p_mat[rownames(assoc_mat), colnames(assoc_mat), drop = FALSE]
+      }
+      if (!is.null(q_mat)) {
+        q_mat <- q_mat[rownames(assoc_mat), colnames(assoc_mat), drop = FALSE]
+      }
+      raw_assoc_mat <- raw_assoc_mat[rownames(assoc_mat), colnames(assoc_mat), drop = FALSE]
 
       heat_df <- as.data.frame(as.table(assoc_mat), stringsAsFactors = FALSE)
       colnames(heat_df) <- c("AxisX", "AxisY", "Association")
-      if (identical(input$analysis_target, "taxa_taxa") && !isTRUE(input$show_diagonal)) {
-        heat_df <- heat_df[heat_df$AxisX != heat_df$AxisY, , drop = FALSE]
+      raw_df <- as.data.frame(as.table(raw_assoc_mat), stringsAsFactors = FALSE)
+      colnames(raw_df) <- c("AxisX", "AxisY", "AssociationRaw")
+      heat_df <- dplyr::left_join(heat_df, raw_df, by = c("AxisX", "AxisY"))
+      if (!is.null(p_mat)) {
+        p_df <- as.data.frame(as.table(p_mat), stringsAsFactors = FALSE)
+        colnames(p_df) <- c("AxisX", "AxisY", "PValue")
+        heat_df <- dplyr::left_join(heat_df, p_df, by = c("AxisX", "AxisY"))
+      } else {
+        heat_df$PValue <- NA_real_
+      }
+      if (!is.null(q_mat)) {
+        q_df <- as.data.frame(as.table(q_mat), stringsAsFactors = FALSE)
+        colnames(q_df) <- c("AxisX", "AxisY", "QValue")
+        heat_df <- dplyr::left_join(heat_df, q_df, by = c("AxisX", "AxisY"))
+      } else {
+        heat_df$QValue <- NA_real_
+      }
+      q_cutoff <- as.numeric(input$q_cutoff)
+      if (is.na(q_cutoff)) q_cutoff <- 0.05
+      q_cutoff <- max(0, min(1, q_cutoff))
+
+      if (isTRUE(input$apply_sig_filter) && sig_supported) {
+        sig_keep <- is.finite(heat_df$QValue) & heat_df$QValue <= q_cutoff
+        heat_df$Association[!sig_keep] <- NA_real_
+      }
+      heat_df$SigMark <- ""
+      if (sig_supported) {
+        sig_cells <- is.finite(heat_df$QValue) & heat_df$QValue <= q_cutoff
+        heat_df$SigMark[sig_cells] <- "*"
       }
 
       list(
@@ -308,86 +535,223 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         heat_df = heat_df,
         n_samples = ncol(transformed),
         n_taxa = nrow(transformed),
-        assoc_type = assoc_type
+        assoc_type = assoc_type,
+        sig_supported = sig_supported,
+        sig_note = sig_note,
+        row_hclust = row_hclust,
+        col_hclust = col_hclust,
+        n_tests = sum(is.finite(heat_df$QValue)),
+        n_sig = sum(is.finite(heat_df$QValue) & heat_df$QValue <= q_cutoff, na.rm = TRUE)
       )
-    }, ignoreNULL = FALSE)
+    }, ignoreNULL = TRUE)
 
-    heatmap_plot <- reactive({
+    observeEvent(corr_payload(), {
+      taxa_choices <- rownames(corr_payload()$assoc_mat)
+      current_selected <- isolate(input$selected_taxa)
+      selected_keep <- if (length(current_selected) > 0) intersect(current_selected, taxa_choices) else character(0)
+      updateSelectizeInput(session, "selected_taxa", choices = taxa_choices, selected = selected_keep, server = TRUE)
+    }, ignoreInit = FALSE)
+
+    cell_dims_px <- reactive({
+      cell_width <- as.numeric(input$cell_width)
+      if (!is.finite(cell_width)) cell_width <- 30
+      cell_width <- max(6, min(80, cell_width))
+
+      cell_height <- as.numeric(input$cell_height)
+      if (!is.finite(cell_height)) cell_height <- 10
+      cell_height <- max(6, min(80, cell_height))
+
+      list(cell_width = cell_width, cell_height = cell_height)
+    })
+
+    heatmap_plot_obj <- reactive({
       req(corr_payload())
       heat_df <- corr_payload()$heat_df
       assoc_mat <- corr_payload()$assoc_mat
+      if (length(input$selected_taxa) > 0) {
+        taxa_keep <- intersect(input$selected_taxa, rownames(assoc_mat))
+        validate(need(length(taxa_keep) > 0, "None of the selected taxa are available in the current matrix."))
+        assoc_mat <- assoc_mat[taxa_keep, , drop = FALSE]
+        heat_df <- heat_df[as.character(heat_df$AxisX) %in% taxa_keep, , drop = FALSE]
+      }
       validate(
         need(nrow(heat_df) > 0, "No cells to plot with current options.")
       )
+      validate(
+        need(requireNamespace("ComplexHeatmap", quietly = TRUE), "Package 'ComplexHeatmap' is required."),
+        need(requireNamespace("circlize", quietly = TRUE), "Package 'circlize' is required.")
+      )
 
-      heat_df$AxisX <- factor(heat_df$AxisX, levels = rownames(assoc_mat))
-      heat_df$AxisY <- factor(heat_df$AxisY, levels = colnames(assoc_mat))
       fill_limit <- max(abs(heat_df$Association), na.rm = TRUE)
       if (!is.finite(fill_limit) || fill_limit <= 0) fill_limit <- 1
-
-      if (identical(input$analysis_target, "taxa_group")) {
-        heat_df$x_plot <- factor(as.character(heat_df$AxisY), levels = colnames(assoc_mat))
-        heat_df$y_plot <- factor(as.character(heat_df$AxisX), levels = rownames(assoc_mat))
-      } else {
-        heat_df$x_plot <- heat_df$AxisX
-        heat_df$y_plot <- heat_df$AxisY
+      abs_limit_input <- as.numeric(input$abs_limit)
+      if (is.finite(abs_limit_input) && abs_limit_input > 0) {
+        fill_limit <- abs_limit_input
       }
 
-      ggplot2::ggplot(heat_df, ggplot2::aes(x = x_plot, y = y_plot, fill = Association)) +
-        ggplot2::geom_tile() +
-        ggplot2::scale_fill_gradient2(
-          low = "#2166AC",
-          mid = "#F7F7F7",
-          high = "#B2182B",
-          midpoint = 0,
-          limits = c(-fill_limit, fill_limit)
-        ) +
-        ggplot2::theme_bw() +
-        ggplot2::theme(
-          axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
-          axis.text.y = ggplot2::element_text(size = 7),
-          panel.grid = ggplot2::element_blank()
-        ) +
-        ggplot2::labs(
-          title = paste0(
-            "Heatmap (",
-            if (identical(input$transform_method, "clr")) "CLR" else "TSS",
-            " + ",
-            tools::toTitleCase(input$corr_method), ", ",
-            if (identical(input$value_scale, "zscore")) "Z-score" else "Raw",
-            ")"
-          ),
-          x = if (identical(input$analysis_target, "taxa_taxa")) "Taxa" else "Group / Level",
-          y = "Taxa",
-          fill = "Value"
-        ) +
-        ggplot2::coord_fixed()
+      sig_text_size <- as.numeric(input$sig_text_size)
+      if (!is.finite(sig_text_size)) sig_text_size <- 3
+      sig_text_size <- max(1, min(10, sig_text_size))
+      sig_fontsize_pt <- as.numeric(sig_text_size) * 2.8
+
+      dims_cell <- cell_dims_px()
+      cell_width_pt <- dims_cell$cell_width * 0.75
+      cell_height_pt <- dims_cell$cell_height * 0.75
+
+      sig_mat <- matrix("", nrow = nrow(assoc_mat), ncol = ncol(assoc_mat), dimnames = dimnames(assoc_mat))
+      if ("SigMark" %in% colnames(heat_df) && nrow(heat_df) > 0) {
+        for (i in seq_len(nrow(heat_df))) {
+          rx <- as.character(heat_df$AxisX[i])
+          cy <- as.character(heat_df$AxisY[i])
+          if (!is.na(rx) && !is.na(cy) && rx %in% rownames(sig_mat) && cy %in% colnames(sig_mat)) {
+            sig_mat[rx, cy] <- heat_df$SigMark[i]
+          }
+        }
+      }
+
+      title_text <- paste0(
+        "Heatmap (",
+        if (identical(input$transform_method, "clr")) "CLR" else "TSS",
+        " + ",
+        tools::toTitleCase(input$corr_method), ", ",
+        if (identical(input$value_scale, "zscore")) "Z-score" else "Raw",
+        ")"
+      )
+
+      col_fun <- circlize::colorRamp2(
+        c(-fill_limit, 0, fill_limit),
+        c("#2166AC", "#F7F7F7", "#B2182B")
+      )
+
+      show_row_dend_opt <- isTRUE(input$show_row_dendrogram)
+      show_col_dend_opt <- isTRUE(input$show_col_dendrogram)
+
+      # Recompute clustering on the currently displayed matrix (after taxa filtering)
+      # so dendrogram size always matches matrix dimensions.
+      row_hc_current <- NULL
+      if (show_row_dend_opt && nrow(assoc_mat) >= 3) {
+        row_hc_current <- tryCatch(
+          stats::hclust(stats::dist(assoc_mat, method = "euclidean"), method = "average"),
+          error = function(e) NULL
+        )
+      }
+      col_hc_current <- NULL
+      if (show_col_dend_opt && ncol(assoc_mat) >= 3) {
+        col_hc_current <- tryCatch(
+          stats::hclust(stats::dist(t(assoc_mat), method = "euclidean"), method = "average"),
+          error = function(e) NULL
+        )
+      }
+
+      cluster_rows_opt <- if (show_row_dend_opt && !is.null(row_hc_current)) row_hc_current else FALSE
+      cluster_cols_opt <- if (show_col_dend_opt && !is.null(col_hc_current)) col_hc_current else FALSE
+
+      ComplexHeatmap::Heatmap(
+        assoc_mat,
+        name = "Value",
+        col = col_fun,
+        na_col = "#D9D9D9",
+        cluster_rows = cluster_rows_opt,
+        cluster_columns = cluster_cols_opt,
+        show_row_dend = show_row_dend_opt,
+        show_column_dend = show_col_dend_opt,
+        row_dend_side = "left",
+        row_names_side = if (show_row_dend_opt) "right" else "left",
+        column_names_side = "bottom",
+        column_names_rot = 90,
+        row_names_gp = grid::gpar(fontsize = 8),
+        column_names_gp = grid::gpar(fontsize = 8),
+        heatmap_legend_param = list(title = "Value"),
+        width = grid::unit(ncol(assoc_mat) * cell_width_pt, "pt"),
+        height = grid::unit(nrow(assoc_mat) * cell_height_pt, "pt"),
+        column_title = title_text,
+        column_title_gp = grid::gpar(fontsize = 11, fontface = "plain"),
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          if (identical(sig_mat[i, j], "*")) {
+            grid::grid.text("*", x = x, y = y - grid::unit(2.5, "pt"), gp = grid::gpar(fontsize = sig_fontsize_pt))
+          }
+        }
+      )
+    })
+
+    plot_dims_px <- reactive({
+      req(corr_payload())
+      assoc_mat <- corr_payload()$assoc_mat
+      if (length(input$selected_taxa) > 0) {
+        taxa_keep <- intersect(input$selected_taxa, rownames(assoc_mat))
+        if (length(taxa_keep) > 0) {
+          assoc_mat <- assoc_mat[taxa_keep, , drop = FALSE]
+        }
+      }
+      n_cols <- ncol(assoc_mat)
+      n_rows <- nrow(assoc_mat)
+      dims_cell <- cell_dims_px()
+      cell_width <- dims_cell$cell_width
+      cell_height <- dims_cell$cell_height
+
+      # Reserve margins for axis labels and legend, then scale panel by cell size.
+      left_extra_px <- if (isTRUE(input$show_row_dendrogram)) 120 else 0
+      width_px <- as.integer((n_cols * cell_width) + 340 + left_extra_px)
+      height_px <- as.integer((n_rows * cell_height) + 230)
+
+      list(width_px = width_px, height_px = height_px)
     })
 
     output$corr_heatmap_plot <- renderPlot(
       {
-        heatmap_plot()
+        ht <- heatmap_plot_obj()
+        grid::grid.newpage()
+        left_pad_mm <- if (isTRUE(input$show_row_dendrogram)) 8 else 3
+        ComplexHeatmap::draw(
+          ht,
+          heatmap_legend_side = "right",
+          padding = grid::unit(c(4, 4, 4, left_pad_mm), "mm")
+        )
       },
-      width = function() input$plot_width,
-      height = function() input$plot_height,
+      width = function() plot_dims_px()$width_px,
+      height = function() plot_dims_px()$height_px,
       res = 110
     )
 
     output$heatmap_status <- renderText({
       req(corr_payload())
       payload <- corr_payload()
+      test_method_label <- if (identical(input$group_type, "continuous")) {
+        paste0("Correlation test (", tools::toTitleCase(input$corr_method), ") + BH correction")
+      } else if (identical(input$group_type, "categorical")) {
+        "One-vs-rest Wilcoxon rank-sum test (taxa x group) + BH correction"
+      } else {
+        "Auto: continuous uses correlation test, categorical uses one-vs-rest Wilcoxon + BH correction"
+      }
+      n_taxa_display <- if (length(input$selected_taxa) > 0) {
+        length(intersect(input$selected_taxa, rownames(payload$assoc_mat)))
+      } else {
+        payload$n_taxa
+      }
       paste(
         c(
-          paste0("Analysis target: ", if (identical(input$analysis_target, "taxa_taxa")) "Taxa vs Taxa" else "Taxa vs Group"),
+          paste0("Analysis target: ", if (identical(analysis_target(), "taxa_taxa")) "Taxa vs Taxa" else "Taxa vs Group"),
           paste0("Association type: ", payload$assoc_type),
           paste0("Samples used: ", payload$n_samples),
-          paste0("Taxa shown: ", payload$n_taxa),
+          paste0("Taxa shown: ", n_taxa_display),
           paste0("Transform: ", if (identical(input$transform_method, "clr")) "CLR" else "TSS"),
           paste0("Method: ", tools::toTitleCase(input$corr_method)),
           paste0("Heatmap scale: ", if (identical(input$value_scale, "zscore")) "Z-score (by taxa)" else "Raw"),
+          paste0("Color scale abs limit: ", if (is.finite(as.numeric(input$abs_limit)) && as.numeric(input$abs_limit) > 0) format(as.numeric(input$abs_limit), digits = 3) else "Auto"),
+          paste0("Cell width (px): ", format(as.numeric(input$cell_width), digits = 3)),
+          paste0("Cell height (px): ", format(as.numeric(input$cell_height), digits = 3)),
+          paste0("Auto plot width (px): ", plot_dims_px()$width_px),
+          paste0("Auto plot height (px): ", plot_dims_px()$height_px),
+          paste0("Significance mark size: ", format(as.numeric(input$sig_text_size), digits = 3)),
+          paste0("Significance filter: ", if (isTRUE(input$apply_sig_filter)) "On" else "Off"),
+          paste0("Significance test method: ", test_method_label),
+          paste0("FDR cutoff (q): ", format(as.numeric(input$q_cutoff), digits = 3)),
+          paste0("Significance note: ", payload$sig_note),
+          if (isTRUE(payload$sig_supported)) paste0("Significance tests: ", payload$n_tests) else NULL,
+          if (isTRUE(payload$sig_supported)) paste0("Significant cells (*): ", payload$n_sig) else NULL,
           paste0("Taxonomic level: ", input$tax_level),
-          if (identical(input$analysis_target, "taxa_group")) paste0("Group type: ", tools::toTitleCase(input$group_type)) else NULL,
-          if (identical(input$analysis_target, "taxa_group")) paste0("Group variable: ", input$group_var) else NULL
+          if (identical(analysis_target(), "taxa_group")) paste0("Group type: ", tools::toTitleCase(input$group_type)) else NULL,
+          if (identical(analysis_target(), "taxa_group")) paste0("Group variable: ", input$group_var) else NULL
         ),
         collapse = "\n"
       )
@@ -397,7 +761,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       filename = function() {
         paste0(
           "association_heatmap_",
-          input$analysis_target,
+          analysis_target(),
           "_",
           if (identical(input$transform_method, "clr")) "clr" else "tss",
           "_",
@@ -408,23 +772,31 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         )
       },
       content = function(file) {
-        dpi_val <- 300
-        width_in <- input$plot_width / dpi_val
-        height_in <- input$plot_height / dpi_val
-        ggplot2::ggsave(
+        req(corr_payload())
+        dims <- plot_dims_px()
+        export_scale <- 2
+        grDevices::png(
           filename = file,
-          plot = heatmap_plot(),
-          device = "png",
-          width = width_in,
-          height = height_in,
-          units = "in",
-          dpi = dpi_val
+          width = as.integer(dims$width_px * export_scale),
+          height = as.integer(dims$height_px * export_scale),
+          units = "px",
+          res = as.integer(110 * export_scale),
+          bg = "white"
+        )
+        on.exit(grDevices::dev.off(), add = TRUE)
+        ht <- heatmap_plot_obj()
+        grid::grid.newpage()
+        left_pad_mm <- if (isTRUE(input$show_row_dendrogram)) 8 else 3
+        ComplexHeatmap::draw(
+          ht,
+          heatmap_legend_side = "right",
+          padding = grid::unit(c(4, 4, 4, left_pad_mm), "mm")
         )
       }
     )
 
     output$download_corr_tsv <- downloadHandler(
-      filename = function() paste0("association_matrix_", input$analysis_target, "_", Sys.Date(), ".tsv"),
+      filename = function() paste0("association_matrix_", analysis_target(), "_", Sys.Date(), ".tsv"),
       content = function(file) {
         req(corr_payload())
         mat_df <- as.data.frame(corr_payload()$assoc_mat, stringsAsFactors = FALSE)
