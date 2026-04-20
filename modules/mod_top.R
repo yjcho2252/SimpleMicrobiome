@@ -164,6 +164,8 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260420: Association analysis modules added."),
+            tags$li("260417: K-fold CV in RF added."),
             tags$li("260415: QZA Converter Tool added."),
             tags$li("260414: Network Comparison function added."),
             tags$li("260408: Network Analysis modules added."),

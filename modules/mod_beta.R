@@ -39,10 +39,10 @@ mod_beta_ui <- function(id) {
         
         uiOutput(ns("secondary_group_selector")),
         selectInput(
-          ns("norm_method"),
-          "Normalization method:",
-          choices = c("TSS" = "tss", "CLR" = "clr"),
-          selected = "tss"
+          ns("distance_metric"),
+          "Distance metric:",
+          choices = c("Bray-Curtis" = "bray", "Aitchison" = "aitchison"),
+          selected = "bray"
         ),
         selectInput(
           ns("beta_tax_level"),
@@ -316,8 +316,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     })
     
     dist_method <- reactive({
-      req(input$norm_method)
-      if (identical(input$norm_method, "clr")) {
+      req(input$distance_metric)
+      if (identical(input$distance_metric, "aitchison")) {
         "euclidean"
       } else {
         "bray"
@@ -383,14 +383,14 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
 
     distance_label <- reactive({
       if (identical(dist_method(), "euclidean")) {
-        "Aitchison distance (CLR-transformed data)"
+        "Aitchison"
       } else {
         "Bray-Curtis"
       }
     })
 
     ps_normalized_local <- reactive({
-      req(ps_obj(), input$norm_method, input$beta_tax_level)
+      req(ps_obj(), input$distance_metric, input$beta_tax_level)
       ps_data <- ps_obj()
       validate(
         need(phyloseq::nsamples(ps_data) > 0, "No samples available for beta diversity."),
@@ -415,7 +415,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         phyloseq::taxa_names(ps_data) <- make.unique(rank_values)
       }
 
-      if (identical(input$norm_method, "clr")) {
+      if (identical(input$distance_metric, "aitchison")) {
         phyloseq::transform_sample_counts(ps_data, function(x) {
           x_num <- as.numeric(x)
           names(x_num) <- names(x)

@@ -19,6 +19,7 @@ library(igraph)
 library(ggraph)
 library(ggrepel)
 library(shapr)
+library(vegan)
 
 app_script_path <- tryCatch({
   normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)
@@ -178,6 +179,12 @@ ui <- page_navbar(
     nav_panel("SparCC", icon = icon("share-nodes"), mod_sparcc_ui("mod_sparcc")),
     nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi"))
   ),
+  nav_menu(
+    title = "Association",
+    icon = icon("diagram-next"),
+    nav_panel("Correlation Heatmap", icon = icon("table-cells"), mod_heatmap_ui("mod_heatmap")),
+    nav_panel("Association Biplot", icon = icon("arrows-up-down-left-right"), mod_biplot_ui("mod_biplot"))
+  ),
   nav_panel(
     title = "Citation",
     icon = icon("book"),
@@ -216,6 +223,8 @@ server <- function(input, output, session) {
   mod_randomforest_server("mod_randomforest", ps_obj_filtered_raw)
   mod_spieceasi_server("mod_spieceasi", ps_obj_filtered_raw)
   mod_sparcc_server("mod_sparcc", ps_obj_filtered_raw)
+  mod_heatmap_server("mod_heatmap", ps_obj_filtered_raw, meta_vars)
+  mod_biplot_server("mod_biplot", ps_obj_filtered_raw, meta_vars)
   mod_citation_server("mod_citation")
   mod_top_server("mod_top")
   
