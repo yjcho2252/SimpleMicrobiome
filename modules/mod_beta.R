@@ -182,6 +182,51 @@ mod_beta_ui <- function(id) {
 ## Server
 mod_beta_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
+    apply_disambiguated_taxrank <- function(ps, tax_level) {
+      if (is.null(ps) || identical(tax_level, "ASV")) {
+        return(ps)
+      }
+      tt_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      if (is.null(tt_obj)) {
+        return(ps)
+      }
+      tt <- as.data.frame(tt_obj, stringsAsFactors = FALSE)
+      tax_cols <- colnames(tt)
+      if (!tax_level %in% tax_cols) {
+        return(ps)
+      }
+
+      target_raw <- as.character(tt[[tax_level]])
+      target_norm <- tolower(trimws(target_raw))
+      target_norm <- gsub("^[a-z]__", "", target_norm)
+      idx_placeholder <- !is.na(target_norm) & grepl("(uncultured|unassigned)", target_norm)
+      if (!any(idx_placeholder)) {
+        return(ps)
+      }
+
+      tax_ranks <- phyloseq::rank_names(ps)
+      rank_pos <- match(tax_level, tax_ranks)
+      parent_rank <- NULL
+      if (!is.na(rank_pos) && rank_pos > 1) {
+        parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
+        parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
+        if (length(parent_candidates) > 0) {
+          parent_rank <- parent_candidates[1]
+        }
+      }
+
+      if (is.null(parent_rank)) {
+        parent_val <- rep("UnclassifiedParent", nrow(tt))
+      } else {
+        parent_val <- as.character(tt[[parent_rank]])
+        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
+      }
+
+      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
+      phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
+      ps
+    }
+
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
         return(requested)
@@ -406,6 +451,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         validate(
           need(tax_level %in% tax_cols, paste0("Taxonomic rank '", tax_level, "' is not available in taxonomy table."))
         )
+        ps_data <- apply_disambiguated_taxrank(ps_data, tax_level)
         ps_data <- phyloseq::tax_glom(ps_data, taxrank = tax_level, NArm = FALSE)
 
         tax_df <- as.data.frame(phyloseq::tax_table(ps_data), stringsAsFactors = FALSE)

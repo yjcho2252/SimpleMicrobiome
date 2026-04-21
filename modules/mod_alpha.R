@@ -24,6 +24,25 @@ mod_alpha_ui <- function(id) {
                              "Simpson (1-D)" = "Simpson"
                            ),
                            selected = c("Chao1", "Shannon")),
+        hr(),
+        selectInput(
+          ns("plot_type"),
+          "Plot Type:",
+          choices = c("Boxplot" = "boxplot", "Barplot (mean ± SE)" = "barplot"),
+          selected = "boxplot"
+        ),
+        selectInput(
+          ns("color_palette"),
+          "Color Palette:",
+          choices = c(
+            "Set2" = "set2",
+            "Dark2" = "dark2",
+            "Paired" = "paired",
+            "Grayscale" = "gray"
+          ),
+          selected = "set2"
+        ),
+        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Barplot)", value = FALSE),
         
         hr(),
         h4(icon("sliders"), "P-value Options"),
@@ -42,6 +61,17 @@ mod_alpha_ui <- function(id) {
                     choices = c("Wilcoxon (Non-parametric)" = "wilcox.test", 
                                 "T-test (Parametric)" = "t.test"),
                     selected = "wilcox.test"),
+        selectInput(
+          ns("p_adjust_method"),
+          "Pairwise Multiple Testing Correction:",
+          choices = c(
+            "None" = "none",
+            "Holm" = "holm",
+            "Benjamini-Hochberg (FDR)" = "BH",
+            "Bonferroni" = "bonferroni"
+          ),
+          selected = "BH"
+        ),
         
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -74,7 +104,7 @@ mod_alpha_ui <- function(id) {
 }
 
 ## Server
-mod_alpha_server <- function(id, ps_obj, meta_cols) { 
+mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) { 
   moduleServer(id, function(input, output, session) {
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
@@ -89,6 +119,14 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
       }
       requested
     }
+
+    is_active_tab <- reactive({
+      if (is.null(active_tab)) {
+        return(TRUE)
+      }
+      current_tab <- tryCatch(active_tab(), error = function(e) NULL)
+      identical(current_tab, "Alpha Diversity")
+    })
     
     output$local_group_selector <- renderUI({
       req(meta_cols())
@@ -106,11 +144,13 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
     })
     
     rarefaction_size <- reactive({
+      req(isTRUE(is_active_tab()))
       req(ps_obj())
       min(phyloseq::sample_sums(ps_obj()))
     })
     
     alpha_long_reactive <- reactive({
+      req(isTRUE(is_active_tab()))
       req(ps_obj(), input$group_var, input$alpha_methods)
       physeq_rarefied <- phyloseq::rarefy_even_depth(
         ps_obj(), sample.size = rarefaction_size(), rngseed = 42, replace = FALSE, verbose = FALSE
@@ -146,6 +186,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
     })
     
     alpha_plot_reactive <- reactive({
+      req(isTRUE(is_active_tab()))
       req(alpha_long <- alpha_long_reactive())
       primary_col <- resolve_meta_colname(input$group_var, colnames(alpha_long))
       secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(alpha_long))
@@ -153,12 +194,100 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
       x_axis_col <- if (is_secondary) secondary_col else primary_col
       group_levels <- levels(factor(alpha_long[[x_axis_col]]))
       num_groups <- length(group_levels)
+      plot_type <- input$plot_type
+      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot")) {
+        plot_type <- "boxplot"
+      }
+      palette_key <- input$color_palette
+      if (is.null(palette_key) || !palette_key %in% c("set2", "dark2", "paired", "gray")) {
+        palette_key <- "set2"
+      }
+      n_groups <- max(1, length(group_levels))
+      fill_values <- switch(
+        palette_key,
+        "dark2" = grDevices::hcl.colors(n_groups, palette = "Dark 3"),
+        "paired" = grDevices::hcl.colors(n_groups, palette = "Set 3"),
+        "gray" = grDevices::gray.colors(n_groups, start = 0.2, end = 0.85),
+        grDevices::hcl.colors(n_groups, palette = "Set 2")
+      )
+      names(fill_values) <- group_levels
+      use_pattern <- plot_type == "barplot" && isTRUE(input$use_ggpattern) && requireNamespace("ggpattern", quietly = TRUE)
+      pattern_values <- rep(c("stripe", "stripe", "crosshatch", "none"), length.out = n_groups)
+      names(pattern_values) <- group_levels
+      pattern_angle_values <- rep(c(45, -45, 0, 0), length.out = n_groups)
+      names(pattern_angle_values) <- group_levels
       
       p <- ggplot2::ggplot(alpha_long, ggplot2::aes_string(x = x_axis_col, y = "Value", fill = x_axis_col)) +
-        ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7) +
-        ggplot2::geom_jitter(width = 0.1, alpha = 0.5, size = 1.5) +
         ggplot2::theme_bw() +
-        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.45)))
+        ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
+        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.08))) +
+        ggplot2::coord_cartesian(clip = "off") +
+        ggplot2::theme(plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8))
+
+      if (plot_type == "barplot") {
+        if (use_pattern) {
+          summary_group_cols <- c("Alpha_Index", x_axis_col)
+          if (is_secondary) {
+            summary_group_cols <- c(summary_group_cols, primary_col)
+          }
+          summary_df <- alpha_long %>%
+            dplyr::group_by(dplyr::across(dplyr::all_of(summary_group_cols))) %>%
+            dplyr::summarise(
+              mean_val = mean(Value, na.rm = TRUE),
+              se_val = stats::sd(Value, na.rm = TRUE) / sqrt(dplyr::n()),
+              .groups = "drop"
+            )
+          summary_df$se_val[!is.finite(summary_df$se_val)] <- 0
+
+          p <- p +
+            ggpattern::geom_col_pattern(
+              data = summary_df,
+              mapping = ggplot2::aes(
+                x = .data[[x_axis_col]],
+                y = mean_val,
+                fill = .data[[x_axis_col]],
+                pattern = .data[[x_axis_col]],
+                pattern_angle = .data[[x_axis_col]]
+              ),
+              inherit.aes = FALSE,
+              color = "black",
+              linewidth = 0.25,
+              alpha = 0.85,
+              width = 0.7,
+              pattern_fill = "white",
+              pattern_colour = "#222222",
+              pattern_density = 0.01,
+              pattern_spacing = 0.03
+            ) +
+            ggplot2::geom_errorbar(
+              data = summary_df,
+              mapping = ggplot2::aes(
+                x = .data[[x_axis_col]],
+                ymin = pmax(mean_val - se_val, 0),
+                ymax = mean_val + se_val
+              ),
+              inherit.aes = FALSE,
+              width = 0.2,
+              linewidth = 0.4
+            ) +
+            ggpattern::scale_pattern_manual(values = pattern_values, drop = FALSE) +
+            ggpattern::scale_pattern_angle_manual(values = pattern_angle_values, drop = FALSE) +
+            ggplot2::guides(pattern = "none", pattern_angle = "none")
+        } else {
+          p <- p +
+            ggplot2::stat_summary(fun = mean, geom = "col", alpha = 0.8, width = 0.7, color = "black", linewidth = 0.25) +
+            ggplot2::stat_summary(fun.data = ggplot2::mean_se, geom = "errorbar", width = 0.2, linewidth = 0.4)
+        }
+        p <- p + ggplot2::geom_point(
+          position = ggplot2::position_jitter(width = 0.1, height = 0),
+          alpha = 0.5,
+          size = 1.5
+        )
+      } else {
+        p <- p +
+          ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7) +
+          ggplot2::geom_jitter(width = 0.1, alpha = 0.5, size = 1.5)
+      }
       
       if (is_secondary) {
         p <- p + ggplot2::facet_grid(stats::as.formula(paste("Alpha_Index ~", primary_col)), scales = "free_y")
@@ -169,18 +298,41 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
       if (input$show_p_val && num_groups >= 2) {
         all_comps <- utils::combn(group_levels, 2, simplify = FALSE)
         current_label <- if (input$only_sig) "p.signif" else "p.format"
+        p_adjust_method <- input$p_adjust_method
+        if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
+          p_adjust_method <- "none"
+        }
         
         if (input$only_sig) {
           final_comps <- list()
           for (comp in all_comps) {
             is_sig_anywhere <- FALSE
             for (idx in unique(alpha_long$Alpha_Index)) {
-              sub_data <- alpha_long[alpha_long$Alpha_Index == idx, ]
-              d1 <- sub_data$Value[sub_data[[x_axis_col]] == comp[1]]
-              d2 <- sub_data$Value[sub_data[[x_axis_col]] == comp[2]]
-              if (length(d1) > 1 && length(d2) > 1) {
-                p_val <- if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value
-                if (!is.na(p_val) && p_val < 0.05) { is_sig_anywhere <- TRUE; break }
+              sub_data <- alpha_long[alpha_long$Alpha_Index == idx, , drop = FALSE]
+              comp_pvals <- vapply(all_comps, function(this_comp) {
+                d1 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[1]]
+                d2 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[2]]
+                if (length(d1) <= 1 || length(d2) <= 1) {
+                  return(NA_real_)
+                }
+                tryCatch(
+                  if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value,
+                  error = function(e) NA_real_
+                )
+              }, numeric(1))
+              if (p_adjust_method != "none") {
+                ok <- is.finite(comp_pvals)
+                if (any(ok)) {
+                  comp_pvals[ok] <- stats::p.adjust(comp_pvals[ok], method = p_adjust_method)
+                }
+              }
+              comp_idx <- which(vapply(all_comps, function(this_comp) identical(this_comp, comp), logical(1)))
+              if (length(comp_idx) == 1) {
+                p_val <- comp_pvals[comp_idx]
+                if (!is.na(p_val) && p_val < 0.05) {
+                  is_sig_anywhere <- TRUE
+                  break
+                }
               }
             }
             if (is_sig_anywhere) final_comps[[length(final_comps) + 1]] <- comp
@@ -188,25 +340,23 @@ mod_alpha_server <- function(id, ps_obj, meta_cols) {
         } else {
           final_comps <- all_comps
         }
-        
+
         if (length(final_comps) > 0) {
-          p <- p + ggpubr::stat_compare_means(
+          stat_args <- list(
             comparisons = final_comps,
             method = input$stat_method,
             label = current_label,
-            step.increase = 0.08,
-            label.y.npc = 0.96,
+            step.increase = 0.14,
+            label.y.npc = 1.22,
             hide.ns = input$only_sig,
-            digits = 3
+            digits = 3,
+            size = 3.2
           )
+          if (p_adjust_method != "none") {
+            stat_args$p.adjust.method <- p_adjust_method
+          }
+          p <- p + do.call(ggpubr::stat_compare_means, stat_args)
         }
-        
-        p <- p + ggpubr::stat_compare_means(
-          method = if (num_groups > 2) "kruskal.test" else input$stat_method,
-          label.x.npc = "center",
-          label.y.npc = 1.03,
-          size = 3
-        )
       }
       return(
         p + ggplot2::theme(

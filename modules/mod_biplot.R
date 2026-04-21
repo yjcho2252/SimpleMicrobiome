@@ -112,6 +112,28 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       }
       tax_df <- as.data.frame(tt, stringsAsFactors = FALSE)
       rank_values <- as.character(tax_df[[rank_name]])
+      rank_norm <- tolower(trimws(rank_values))
+      rank_norm <- gsub("^[a-z]__", "", rank_norm)
+      idx_placeholder <- !is.na(rank_norm) & grepl("(uncultured|unassigned)", rank_norm)
+
+      if (any(idx_placeholder)) {
+        tax_ranks <- phyloseq::rank_names(ps_data)
+        rank_pos <- match(rank_name, tax_ranks)
+        parent_rank <- NULL
+        if (!is.na(rank_pos) && rank_pos > 1) {
+          parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
+          parent_candidates <- parent_candidates[parent_candidates %in% colnames(tax_df)]
+          if (length(parent_candidates) > 0) parent_rank <- parent_candidates[1]
+        }
+        if (is.null(parent_rank)) {
+          parent_val <- rep("UnclassifiedParent", nrow(tax_df))
+        } else {
+          parent_val <- as.character(tax_df[[parent_rank]])
+          parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
+        }
+        rank_values[idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", rank_values[idx_placeholder])
+      }
+
       missing_idx <- is.na(rank_values) | !nzchar(rank_values)
       rank_values[missing_idx] <- phyloseq::taxa_names(ps_data)[missing_idx]
       phyloseq::taxa_names(ps_data) <- make.unique(rank_values)

@@ -69,6 +69,24 @@ mod_taxa_comparison_ui <- function(id) {
           ),
           selected = "clr"
         ),
+        selectInput(
+          ns("plot_type"),
+          "Plot Type:",
+          choices = c("Boxplot" = "boxplot", "Barplot (mean ± SE)" = "barplot"),
+          selected = "boxplot"
+        ),
+        selectInput(
+          ns("color_palette"),
+          "Color Palette:",
+          choices = c(
+            "Set2" = "set2",
+            "Dark2" = "dark2",
+            "Paired" = "paired",
+            "Grayscale" = "gray"
+          ),
+          selected = "set2"
+        ),
+        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Barplot)", value = FALSE),
         hr(),
         h4(icon("sliders"), "P-value Options"),
         checkboxInput(ns("show_p_val"), "Show P-value Comparison Bars", value = TRUE),
@@ -83,7 +101,18 @@ mod_taxa_comparison_ui <- function(id) {
             "Wilcoxon (Non-parametric)" = "wilcox.test",
             "t-test (Parametric)" = "t.test"
           ),
-          selected = "wilcox.test"
+          selected = "t.test"
+        ),
+        selectInput(
+          ns("p_adjust_method"),
+          "Pairwise Multiple Testing Correction:",
+          choices = c(
+            "None" = "none",
+            "Holm" = "holm",
+            "Benjamini-Hochberg (FDR)" = "BH",
+            "Bonferroni" = "bonferroni"
+          ),
+          selected = "BH"
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -132,7 +161,7 @@ mod_taxa_comparison_ui <- function(id) {
 }
 
 ## Server
-mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
+mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
   moduleServer(id, function(input, output, session) {
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
@@ -147,6 +176,61 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       }
       requested
     }
+
+    apply_disambiguated_taxrank <- function(ps, tax_level) {
+      if (is.null(ps) || tax_level == "ASV") {
+        return(ps)
+      }
+      tt_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      if (is.null(tt_obj)) {
+        return(ps)
+      }
+      tt <- as.data.frame(tt_obj, stringsAsFactors = FALSE)
+      tax_cols <- colnames(tt)
+      if (!tax_level %in% tax_cols) {
+        return(ps)
+      }
+
+      # If target rank is "uncultured" / "Unassigned", prepend parent-rank label
+      # so these entries are not merged across different higher taxa.
+      target_raw <- as.character(tt[[tax_level]])
+      target_norm <- tolower(trimws(target_raw))
+      # Handle variants such as "g__uncultured", "uncultured bacterium", "k__Unassigned", etc.
+      target_norm <- gsub("^[a-z]__", "", target_norm)
+      idx_placeholder <- !is.na(target_norm) & grepl("(uncultured|unassigned)", target_norm)
+      if (!any(idx_placeholder)) {
+        return(ps)
+      }
+
+      tax_ranks <- phyloseq::rank_names(ps)
+      rank_pos <- match(tax_level, tax_ranks)
+      parent_rank <- NULL
+      if (!is.na(rank_pos) && rank_pos > 1) {
+        parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
+        parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
+        if (length(parent_candidates) > 0) {
+          parent_rank <- parent_candidates[1]
+        }
+      }
+      if (is.null(parent_rank)) {
+        parent_val <- rep("UnclassifiedParent", nrow(tt))
+      } else {
+        parent_val <- as.character(tt[[parent_rank]])
+        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
+      }
+
+      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
+      phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
+      ps
+    }
+
+    is_active_tab <- reactive({
+      if (is.null(active_tab)) {
+        return(TRUE)
+      }
+      current_tab <- tryCatch(active_tab(), error = function(e) NULL)
+      identical(current_tab, "Taxa Comparison")
+    })
     
     output$group_selector <- renderUI({
       req(meta_cols())
@@ -197,6 +281,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     })
 
     taxa_long_data <- reactive({
+      req(isTRUE(is_active_tab()))
       req(ps_obj(), input$group_var, input$tax_level)
       
       ps <- ps_obj()
@@ -210,6 +295,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         validate(need(!is.null(phyloseq::tax_table(ps)), "Taxonomy table is missing."))
         tax_ranks <- phyloseq::rank_names(ps)
         validate(need(tax_level %in% tax_ranks, paste0("Level '", tax_level, "' not found.")))
+        ps <- apply_disambiguated_taxrank(ps, tax_level)
         ps <- phyloseq::tax_glom(ps, taxrank = tax_level, NArm = FALSE)
       }
       
@@ -296,6 +382,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     })
 
     taxa_stats <- reactive({
+      req(isTRUE(is_active_tab()))
       req(taxa_long_data(), input$group_var)
       df <- taxa_long_data()
 
@@ -318,6 +405,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     })
     
     tax_level_ps_raw <- reactive({
+      req(isTRUE(is_active_tab()))
       req(ps_obj(), input$tax_level)
       ps <- ps_obj()
       tax_level <- input$tax_level
@@ -330,12 +418,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         validate(
           need(tax_level %in% tax_ranks, paste0("Taxonomic level '", tax_level, "' is not available in this dataset."))
         )
+        ps <- apply_disambiguated_taxrank(ps, tax_level)
         ps <- phyloseq::tax_glom(ps, taxrank = tax_level, NArm = FALSE)
       }
       ps
     })
     
     tax_matrices <- reactive({
+      req(isTRUE(is_active_tab()))
       req(tax_level_ps_raw(), input$tax_level)
       ps <- tax_level_ps_raw()
       tax_level <- input$tax_level
@@ -374,6 +464,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     })
     
     observeEvent(list(taxa_stats(), input$tax_level, input$show_p_lt_0_05_only), {
+      req(isTRUE(is_active_tab()))
       taxa_summary <- taxa_stats()
 
       if (isTRUE(input$show_p_lt_0_05_only)) {
@@ -408,6 +499,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     })
     
     taxa_plot_data <- reactive({
+      req(isTRUE(is_active_tab()))
       req(taxa_long_data(), input$group_var)
       df <- taxa_long_data()
       selected_taxa <- if (is.null(input$taxa_selected) || length(input$taxa_selected) == 0) {
@@ -431,6 +523,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
     })
     
     taxa_plot_reactive <- reactive({
+      req(isTRUE(is_active_tab()))
       req(taxa_plot_data())
       df <- taxa_plot_data()
       secondary_col <- input$secondary_group_var
@@ -450,6 +543,29 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       )
       group_levels <- levels(factor(df$Group))
       num_groups <- length(group_levels)
+      plot_type <- input$plot_type
+      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot")) {
+        plot_type <- "boxplot"
+      }
+      palette_key <- input$color_palette
+      if (is.null(palette_key) || !palette_key %in% c("set2", "dark2", "paired", "gray")) {
+        palette_key <- "set2"
+      }
+      use_pattern_requested <- isTRUE(input$use_ggpattern)
+      use_pattern <- plot_type == "barplot" && use_pattern_requested && requireNamespace("ggpattern", quietly = TRUE)
+      n_groups <- max(1, length(group_levels))
+      fill_values <- switch(
+        palette_key,
+        "dark2" = grDevices::hcl.colors(n_groups, palette = "Dark 3"),
+        "paired" = grDevices::hcl.colors(n_groups, palette = "Set 3"),
+        "gray" = grDevices::gray.colors(n_groups, start = 0.2, end = 0.85),
+        grDevices::hcl.colors(n_groups, palette = "Set 2")
+      )
+      names(fill_values) <- group_levels
+      pattern_values <- rep(c("stripe", "stripe", "crosshatch", "none"), length.out = n_groups)
+      names(pattern_values) <- group_levels
+      pattern_angle_values <- rep(c(45, -45, 0, 0), length.out = n_groups)
+      names(pattern_angle_values) <- group_levels
       integer_breaks <- function(x) {
         if (length(x) == 0 || all(!is.finite(x))) {
           return(NULL)
@@ -471,15 +587,15 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
       }
 
       p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
-        ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.65) +
         ggplot2::scale_y_continuous(
           breaks = integer_breaks,
           limits = c(0, NA),
-          expand = ggplot2::expansion(mult = c(0.1, 0.08))
+          expand = ggplot2::expansion(mult = c(0, 0.08))
         ) +
         ggplot2::theme_bw() +
         ggplot2::labs(title = paste0("Taxa Comparison: ", input$tax_level),
                       x = if (is_secondary) secondary_col else input$group_var, y = y_label) +
+        ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
         ggplot2::theme(
           axis.text.x = ggplot2::element_text(angle = 25, hjust = 1),
           legend.position = "none",
@@ -488,10 +604,87 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         ) +
         ggplot2::coord_cartesian(clip = "off")
 
-      if (has_subject) {
-        p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.5)
+      if (plot_type == "barplot") {
+        if (use_pattern) {
+          summary_group_cols <- c("Taxa", "Group")
+          if (is_secondary) {
+            summary_group_cols <- c(summary_group_cols, "PrimaryGroup")
+          }
+          summary_df <- df %>%
+            dplyr::group_by(dplyr::across(dplyr::all_of(summary_group_cols))) %>%
+            dplyr::summarise(
+              mean_ab = mean(AbundancePlot, na.rm = TRUE),
+              se_ab = stats::sd(AbundancePlot, na.rm = TRUE) / sqrt(dplyr::n()),
+              .groups = "drop"
+            )
+          summary_df$se_ab[!is.finite(summary_df$se_ab)] <- 0
+          p <- p +
+            ggpattern::geom_col_pattern(
+              data = summary_df,
+              mapping = ggplot2::aes(
+                x = Group,
+                y = mean_ab,
+                fill = Group,
+                pattern = Group,
+                pattern_angle = Group
+              ),
+              inherit.aes = FALSE,
+              alpha = 0.85,
+              width = 0.7,
+              color = "#333333",
+              linewidth = 0.25,
+              pattern_fill = "white",
+              pattern_colour = "#222222",
+              pattern_density = 0.01,
+              pattern_spacing = 0.03
+            ) +
+            ggplot2::geom_errorbar(
+              data = summary_df,
+              mapping = ggplot2::aes(
+                x = Group,
+                ymin = pmax(mean_ab - se_ab, 0),
+                ymax = mean_ab + se_ab
+              ),
+              inherit.aes = FALSE,
+              width = 0.2,
+              linewidth = 0.4
+            ) +
+            ggpattern::scale_pattern_manual(values = pattern_values, drop = FALSE) +
+            ggpattern::scale_pattern_angle_manual(values = pattern_angle_values, drop = FALSE) +
+            ggplot2::guides(pattern = "none", pattern_angle = "none")
+        } else {
+          p <- p +
+            ggplot2::stat_summary(
+              fun = mean,
+              geom = "col",
+              alpha = 0.8,
+              width = 0.7,
+              color = "#333333",
+              linewidth = 0.25
+            ) +
+            ggplot2::stat_summary(
+              fun.data = ggplot2::mean_se,
+              geom = "errorbar",
+              width = 0.2,
+              linewidth = 0.4
+            )
+        }
+        if (has_subject) {
+          p <- p + ggplot2::geom_point(alpha = 0.6, size = 1.4)
+        } else {
+          p <- p + ggplot2::geom_point(
+            position = ggplot2::position_jitter(width = 0.12, height = 0),
+            alpha = 0.55,
+            size = 1.4
+          )
+        }
       } else {
-        p <- p + ggplot2::geom_jitter(width = 0.15, alpha = 0.6, size = 1.5)
+        p <- p + ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.65)
+        if (has_subject) {
+          p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.5)
+        } else {
+          p <- p + ggplot2::geom_jitter(width = 0.15, alpha = 0.6, size = 1.5)
+        }
       }
 
       if (is_secondary) {
@@ -541,6 +734,15 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         all_comps <- utils::combn(group_levels, 2, simplify = FALSE)
         current_label <- if (isTRUE(input$only_sig)) "p.signif" else "p.format"
         paired_mode <- has_subject
+        p_adjust_method <- input$p_adjust_method
+        if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
+          p_adjust_method <- "none"
+        }
+        y_max <- suppressWarnings(max(df$AbundancePlot, na.rm = TRUE))
+        if (!is.finite(y_max) || y_max <= 0) {
+          y_max <- 1
+        }
+        pairwise_label_y <- y_max * 1.08
 
         compute_pairwise_p <- function(sub_data, comp_levels) {
           if (!all(comp_levels %in% unique(as.character(sub_data$Group)))) {
@@ -598,6 +800,24 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
           }, error = function(e) NA_real_)
         }
 
+        compute_adjusted_p_for_comp <- function(sub_data, target_comp) {
+          raw_p <- vapply(all_comps, function(this_comp) {
+            compute_pairwise_p(sub_data, this_comp)
+          }, numeric(1))
+          adj_p <- raw_p
+          if (p_adjust_method != "none") {
+            ok <- is.finite(adj_p)
+            if (any(ok)) {
+              adj_p[ok] <- stats::p.adjust(adj_p[ok], method = p_adjust_method)
+            }
+          }
+          comp_idx <- which(vapply(all_comps, function(this_comp) identical(this_comp, target_comp), logical(1)))
+          if (length(comp_idx) != 1) {
+            return(NA_real_)
+          }
+          adj_p[comp_idx]
+        }
+
         if (isTRUE(input$only_sig)) {
           final_comps <- list()
           for (comp in all_comps) {
@@ -607,14 +827,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
               if (is_secondary) {
                 for (prim in unique(sub_taxa$PrimaryGroup)) {
                   sub_data <- sub_taxa[sub_taxa$PrimaryGroup == prim, , drop = FALSE]
-                  p_val <- compute_pairwise_p(sub_data, comp)
+                  p_val <- compute_adjusted_p_for_comp(sub_data, comp)
                   if (!is.na(p_val) && p_val < 0.05) {
                     is_sig_anywhere <- TRUE
                     break
                   }
                 }
               } else {
-                p_val <- compute_pairwise_p(sub_taxa, comp)
+                p_val <- compute_adjusted_p_for_comp(sub_taxa, comp)
                 if (!is.na(p_val) && p_val < 0.05) {
                   is_sig_anywhere <- TRUE
                 }
@@ -633,35 +853,20 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
             method = input$stat_method,
             label = current_label,
             step.increase = 0.14,
-            label.y.npc = 1.22,
+            label.y = pairwise_label_y,
             hide.ns = isTRUE(input$only_sig),
             digits = 3
           )
           if (paired_mode && input$stat_method %in% c("wilcox.test", "t.test")) {
             pairwise_args$paired <- TRUE
           }
+          if (p_adjust_method != "none") {
+            pairwise_args$p.adjust.method <- p_adjust_method
+          }
           p <- p + do.call(ggpubr::stat_compare_means, pairwise_args)
         }
 
-        if (!paired_mode) {
-          p <- p + ggpubr::stat_compare_means(
-            method = if (num_groups > 2) "kruskal.test" else input$stat_method,
-            label.x.npc = "center",
-            label.y.npc = 1.34,
-            size = 3
-          )
-        } else if (num_groups == 2) {
-          overall_args <- list(
-            method = input$stat_method,
-            label.x.npc = "center",
-            label.y.npc = 1.34,
-            size = 3
-          )
-          if (input$stat_method %in% c("wilcox.test", "t.test")) {
-            overall_args$paired <- TRUE
-          }
-          p <- p + do.call(ggpubr::stat_compare_means, overall_args)
-        }
+        # Do not add the overall test label (e.g., "t-test, p=...") to avoid duplicate p-value text.
       }
 
       p
@@ -685,6 +890,28 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
 
       group_levels <- levels(factor(df$Group))
       n_groups <- length(group_levels)
+      plot_type <- input$plot_type
+      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot")) {
+        plot_type <- "boxplot"
+      }
+      p_adjust_method <- input$p_adjust_method
+      if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
+        p_adjust_method <- "none"
+      }
+      use_pattern_requested <- isTRUE(input$use_ggpattern)
+      pattern_status <- if (plot_type == "barplot") {
+        if (use_pattern_requested) {
+          if (requireNamespace("ggpattern", quietly = TRUE)) {
+            "On (stripe 45°, stripe -45°, crosshatch, solid; density = 0.01)"
+          } else {
+            "Requested, but ggpattern is not installed (fallback to standard fill)"
+          }
+        } else {
+          "Off"
+        }
+      } else {
+        "Not used"
+      }
       method_label <- if (identical(input$stat_method, "t.test")) {
         "T-test"
       } else {
@@ -707,6 +934,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
         c(
           paste0("Primary grouping variable: ", input$group_var),
           paste0("Secondary grouping variable: ", if (is_secondary) secondary_col else "(None)"),
+          paste0("Plot type: ", if (plot_type == "barplot") "Barplot (mean ± SE)" else "Boxplot"),
+          paste0("ggpattern: ", pattern_status),
           paste0("Pairing condition axis: ", if (is_secondary) "Secondary group" else "Primary group"),
           paste0("Selected taxa count: ", dplyr::n_distinct(df$Taxa)),
           paste0("Group levels compared: ", paste(group_levels, collapse = ", ")),
@@ -714,6 +943,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols) {
           paste0("Subject ID variable: ", if (has_subject) input$subject_id_var else "Not applied"),
           paste0("Comparison mode: ", if (has_subject) "Paired / repeated" else "Independent groups"),
           paste0("Pairwise test: ", method_label, if (has_subject) " with paired = TRUE" else ""),
+          paste0("Pairwise correction: ", p_adjust_method),
           paste0("Overall test: ", overall_label)
         ),
         collapse = "\n"

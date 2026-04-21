@@ -1,40 +1,45 @@
 # SimpleMicrobiome
 
-SimpleMicrobiome is an R Shiny application for end-to-end microbiome analysis with a GUI.
-It supports data loading, preprocessing, visualization, diversity analysis, differential abundance testing, and network analysis in one workflow.
+[![R](https://img.shields.io/badge/R-%3E%3D4.2-276DC3)](https://www.r-project.org/)
+[![Shiny](https://img.shields.io/badge/Shiny-App-1F77B4)](https://shiny.posit.co/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Features
+SimpleMicrobiome is an R Shiny application for end-to-end microbiome analysis with a GUI.  
+It integrates data loading, preprocessing, taxa profiling, diversity, differential abundance, network analysis, and association analysis in a single workflow.
+Public app: https://simplemicrobiome.mglab.org/
 
-- Guided workflow from data upload to downstream analysis
-- Interactive sample filtering and selection in preprocessing
-- Taxa visualization:
+## Current App Modules
+
+- **Top**
+  - App overview, quick workflow, version history, and external QZA converter link
+- **Data Loading**
+  - Upload ASV/OTU table, taxonomy table, metadata
+  - Load/download bundled example data
+- **Preprocessing**
+  - Sample/taxa filtering before downstream analyses
+- **Taxa Profiles**
   - Taxa Barplot
-  - Taxa Comparison
-- Diversity analysis:
+  - Taxa Comparison (including optional longitudinal/paired overlay and paired test mode when enabled)
+- **Diversity**
   - Alpha Diversity
   - Beta Diversity
-- Differential abundance and predictive modeling:
+- **Differential Abundance**
   - ANCOM-BC2
   - MaAsLin2
   - Random Forest
-- Network analysis:
+- **Network**
   - SparCC
   - SpiecEasi
-- External QIIME2 converter service for `.qza` to TSV conversion (`/convert/ui`)
-- Built-in example dataset loader/downloader
-- Citation page with module-wise references
-
-## Tech Stack
-
-- Language: R
-- App framework: Shiny + bslib
-- Core microbiome object model: phyloseq
-- Major analysis libraries: ANCOMBC, Maaslin2, vegan, randomForest, NetCoMi
+- **Association**
+  - Correlation Heatmap
+  - Association Biplot (dbRDA/CAP-based)
+- **Citation**
+  - Method/package references
 
 ## Requirements
 
 - R (recommended: 4.2+)
-- R packages:
+- Main R packages:
   - shiny
   - phyloseq
   - tidyverse
@@ -57,144 +62,54 @@ It supports data loading, preprocessing, visualization, diversity analysis, diff
   - ggrepel
   - shapr
 
-## Installation
+## Input Data
 
-Clone the repository:
+Upload three files in **Data Loading**:
 
-```bash
-git clone https://github.com/<your-org-or-user>/SimpleMicrobiome.git
-cd SimpleMicrobiome
-```
+1. ASV/OTU abundance matrix (`.csv`, `.tsv`, `.txt`)
+2. Taxonomy table (`.csv`, `.tsv`, `.txt`)
+3. Metadata file (`.csv`, `.tsv`, `.txt`)
 
-Install required packages in R:
+Expected format:
 
-```r
-install.packages(c(
-  "shiny", "tidyverse", "DT", "bslib", "ggplot2", "ggpubr", "shinyWidgets",
-  "microbiome", "cluster", "vegan", "dplyr", "randomForest", "igraph",
-  "ggraph", "ggrepel", "shapr"
-))
-
-# Bioconductor / non-CRAN packages as needed
-if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-BiocManager::install(c("phyloseq", "ANCOMBC", "ComplexHeatmap"))
-
-# Maaslin2 and NetCoMi may require project-specific installation steps
-```
-
-## Run the App
-
-From the project root:
-
-```r
-shiny::runApp()
-```
-
-Or:
-
-```r
-source("app.R")
-```
-
-## Input Data Format
-
-Load three files in the **Data Loading** tab:
-
-1. `ASV/OTU Abundance Matrix` (`.csv`, `.tsv`, `.txt`)
-2. `Taxonomy Table` (`.csv`, `.tsv`, `.txt`)
-3. `Metadata File` (`.csv`, `.tsv`, `.txt`)
-
-For the standard TSV workflow in this app:
-- `ASV_table.tsv` comes from `table.qza`.
-- `taxonomy_table.tsv` comes from `taxonomy.qza`.
-- `metadata.tsv` must be prepared manually by the user.
-- To convert QZA files to TSV, use **QZA Converter** on the app's **Top** page.
-
-Expected structure:
-
-- ASV/OTU table:
-  - Rows: taxa/features
-  - Columns: sample IDs
-  - First column: taxa ID
-- Taxonomy table:
-  - Rows aligned to taxa IDs in ASV/OTU table
-  - First column: taxa ID
-- Metadata:
-  - First column must contain sample IDs (internally mapped to `SampleID`)
-  - Remaining columns are metadata variables
+- Abundance table: rows = taxa/features, columns = sample IDs, first column = taxa ID
+- Taxonomy table: rows aligned to taxa IDs, first column = taxa ID
+- Metadata: first column = sample IDs (mapped to `SampleID`), remaining columns = metadata variables
 
 The app automatically:
 
-- Detects delimiter (tab or comma)
-- Intersects shared sample IDs between abundance table and metadata
-- Intersects shared taxa IDs between abundance table and taxonomy
-- Removes zero-sum taxa and samples
+- Detects delimiter (comma/tab)
+- Intersects shared sample IDs between abundance and metadata
+- Intersects shared taxa IDs between abundance and taxonomy
+- Removes zero-sum taxa/samples
 
 ## Example Data
 
-The repository includes example input files in `sample/`:
+Bundled files:
 
 - `sample/1_ASV_table.txt`
 - `sample/2_taxonomy_table.txt`
 - `sample/3_metadata.txt`
 
-You can use **Load Example** in the app or **Download Example** to export a zip.
-
-For QIIME2 `.qza` conversion, use the external converter page linked from **Top**:
+QZA conversion link (Top page):
 
 - `https://simplemicrobiome.mglab.org/convert/ui`
 
 ## Recommended Workflow
 
-1. Open **Data Loading** and upload the 3 files (or load the example).
-2. Move to **Preprocessing** and filter/select samples.
-3. Run one or more analysis modules:
-   - Visualization
-   - Diversity Analysis
-   - Differential Abundance
-   - Network Analysis
-4. Check the **Citation** tab for method references.
-
-## Project Structure
-
-```text
-SimpleMicrobiome/
-  app.R
-  modules/
-    mod_top.R
-    mod_fileload.R
-    mod_preprocessing.R
-    mod_barplot.R
-    mod_taxa_comparison.R
-    mod_alpha.R
-    mod_beta.R
-    mod_ancom.R
-    mod_maaslin2.R
-    mod_randomforest.R
-    mod_sparcc.R
-    mod_spieceasi.R
-    mod_citation.R
-  convert_service/  # Not uploaded to GitHub for security reasons
-    app.py
-    deploy/qiime-converter.service
-  sample/
-```
+1. Load data in **Data Loading**.
+2. Apply filters in **Preprocessing**.
+3. Run analysis modules in each menu (Taxa Profiles, Diversity, Differential Abundance, Network, Association).
+4. Check **Citation** for method references.
 
 ## Troubleshooting
 
-- If loading fails, verify:
-  - Delimiter (comma/tab) is consistent
-  - Sample IDs match between abundance table and metadata
-  - Taxa IDs match between abundance and taxonomy tables
-  - Input files contain headers
-- If a module returns empty results, check preprocessing filters and group sizes.
-
-## Citation
-
-Please cite this repository and the underlying method packages used in your analysis.
-Module-wise references are available directly in the app’s **Citation** tab.
+- Verify delimiter consistency and header rows.
+- Verify sample ID matching between abundance and metadata.
+- Verify taxa ID matching between abundance and taxonomy.
+- If a module output is empty, revisit preprocessing filters and group sizes.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License.  
 See [LICENSE](LICENSE) for details.

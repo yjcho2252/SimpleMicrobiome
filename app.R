@@ -19,6 +19,7 @@ library(igraph)
 library(ggraph)
 library(ggrepel)
 library(shapr)
+library(ggpattern)
 
 app_script_path <- tryCatch({
   normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)
@@ -204,18 +205,13 @@ server <- function(input, output, session) {
   
   active_tab <- reactive({ input$tab_panel_main })
   
-  observeEvent(ps_obj_initial(), {
-    req(ps_obj_initial())
-    updateTabsetPanel(session, inputId = "tab_panel_main", selected = "Preprocessing")
-  }, ignoreInit = TRUE)
-  
   preprocessing_data <- mod_preprocessing_server("mod_preprocessing", ps_obj_initial, active_tab)
   
   ps_obj_filtered_raw <- preprocessing_data$ps_filtered_raw
   
   mod_barplot_server("mod_barplot", ps_obj_filtered_raw, meta_vars)
-  mod_taxa_comparison_server("mod_taxa_comparison", ps_obj_filtered_raw, meta_vars)
-  mod_alpha_server("mod_alpha", ps_obj_filtered_raw, meta_vars)
+  mod_taxa_comparison_server("mod_taxa_comparison", ps_obj_filtered_raw, meta_vars, active_tab)
+  mod_alpha_server("mod_alpha", ps_obj_filtered_raw, meta_vars, active_tab)
   mod_beta_server("mod_beta", ps_obj_filtered_raw, meta_vars)
   mod_ancom_server("mod_ancom", ps_obj_filtered_raw)
   mod_maaslin2_server("mod_maaslin2", ps_obj_filtered_raw)

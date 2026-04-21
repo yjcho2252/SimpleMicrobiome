@@ -114,6 +114,51 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }
       requested
     }
+
+    apply_disambiguated_taxrank <- function(ps, tax_level) {
+      if (is.null(ps) || is.null(tax_level) || !nzchar(tax_level)) {
+        return(ps)
+      }
+      tt_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      if (is.null(tt_obj)) {
+        return(ps)
+      }
+      tt <- as.data.frame(tt_obj, stringsAsFactors = FALSE)
+      tax_cols <- colnames(tt)
+      if (!tax_level %in% tax_cols) {
+        return(ps)
+      }
+
+      target_raw <- as.character(tt[[tax_level]])
+      target_norm <- tolower(trimws(target_raw))
+      target_norm <- gsub("^[a-z]__", "", target_norm)
+      idx_placeholder <- !is.na(target_norm) & grepl("(uncultured|unassigned)", target_norm)
+      if (!any(idx_placeholder)) {
+        return(ps)
+      }
+
+      tax_ranks <- phyloseq::rank_names(ps)
+      rank_pos <- match(tax_level, tax_ranks)
+      parent_rank <- NULL
+      if (!is.na(rank_pos) && rank_pos > 1) {
+        parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
+        parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
+        if (length(parent_candidates) > 0) {
+          parent_rank <- parent_candidates[1]
+        }
+      }
+
+      if (is.null(parent_rank)) {
+        parent_val <- rep("UnclassifiedParent", nrow(tt))
+      } else {
+        parent_val <- as.character(tt[[parent_rank]])
+        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
+      }
+
+      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
+      phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
+      ps
+    }
     
     output$local_group_selector <- renderUI({
       req(meta_cols())
@@ -223,6 +268,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       plot_mode <- input$plot_mode
 
       ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) x / sum(x))
+      ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
       ps_glom <- phyloseq::tax_glom(ps_rel, taxrank = current_rank)
 
       tax_df <- as.data.frame(phyloseq::tax_table(ps_glom))
@@ -349,6 +395,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       plot_mode <- input$plot_mode
       
       ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) x / sum(x))
+      ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
       ps_glom <- phyloseq::tax_glom(ps_rel, taxrank = current_rank)
       
       tax_df <- as.data.frame(phyloseq::tax_table(ps_glom))
