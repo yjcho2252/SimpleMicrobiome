@@ -74,7 +74,10 @@ mod_biplot_ui <- function(id) {
           choices = NULL,
           selected = NULL,
           multiple = TRUE,
-          options = list(placeholder = "If selected, these taxa are drawn instead of Top taxa vectors")
+          options = list(
+            placeholder = "If selected, these taxa are drawn instead of Top taxa vectors",
+            plugins = list("remove_button")
+          )
         ),
         checkboxInput(ns("show_taxa_vectors"), "Show taxa vectors", value = TRUE),
         checkboxInput(ns("show_group_vectors"), "Show group vectors", value = TRUE),
@@ -119,19 +122,23 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       if (any(idx_placeholder)) {
         tax_ranks <- phyloseq::rank_names(ps_data)
         rank_pos <- match(rank_name, tax_ranks)
-        parent_rank <- NULL
+        parent_candidates <- character(0)
         if (!is.na(rank_pos) && rank_pos > 1) {
           parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
           parent_candidates <- parent_candidates[parent_candidates %in% colnames(tax_df)]
-          if (length(parent_candidates) > 0) parent_rank <- parent_candidates[1]
         }
-        if (is.null(parent_rank)) {
-          parent_val <- rep("UnclassifiedParent", nrow(tax_df))
-        } else {
-          parent_val <- as.character(tax_df[[parent_rank]])
-          parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
+        parent_val <- rep("UnclassifiedParent", nrow(tax_df))
+        if (length(parent_candidates) > 0) {
+          for (parent_rank in parent_candidates) {
+            candidate_val <- as.character(tax_df[[parent_rank]])
+            candidate_norm <- tolower(trimws(candidate_val))
+            candidate_norm <- gsub("^[a-z]__", "", candidate_norm)
+            candidate_is_placeholder <- is.na(candidate_norm) | !nzchar(candidate_norm) | grepl("(uncultured|unassigned)", candidate_norm)
+            use_idx <- idx_placeholder & parent_val == "UnclassifiedParent" & !candidate_is_placeholder
+            parent_val[use_idx] <- candidate_val[use_idx]
+          }
         }
-        rank_values[idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", rank_values[idx_placeholder])
+        rank_values[idx_placeholder] <- parent_val[idx_placeholder]
       }
 
       missing_idx <- is.na(rank_values) | !nzchar(rank_values)

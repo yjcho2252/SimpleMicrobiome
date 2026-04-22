@@ -195,23 +195,25 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
 
       tax_ranks <- phyloseq::rank_names(ps)
       rank_pos <- match(tax_level, tax_ranks)
-      parent_rank <- NULL
+      parent_candidates <- character(0)
       if (!is.na(rank_pos) && rank_pos > 1) {
         parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
         parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
-        if (length(parent_candidates) > 0) {
-          parent_rank <- parent_candidates[1]
+      }
+
+      parent_val <- rep("UnclassifiedParent", nrow(tt))
+      if (length(parent_candidates) > 0) {
+        for (parent_rank in parent_candidates) {
+          candidate_val <- as.character(tt[[parent_rank]])
+          candidate_norm <- tolower(trimws(candidate_val))
+          candidate_norm <- gsub("^[a-z]__", "", candidate_norm)
+          candidate_is_placeholder <- is.na(candidate_norm) | !nzchar(candidate_norm) | grepl("(uncultured|unassigned)", candidate_norm)
+          use_idx <- idx_placeholder & parent_val == "UnclassifiedParent" & !candidate_is_placeholder
+          parent_val[use_idx] <- candidate_val[use_idx]
         }
       }
 
-      if (is.null(parent_rank)) {
-        parent_val <- rep("UnclassifiedParent", nrow(tt))
-      } else {
-        parent_val <- as.character(tt[[parent_rank]])
-        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
-      }
-
-      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
+      tt[[tax_level]][idx_placeholder] <- parent_val[idx_placeholder]
       phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
       ps
     }
@@ -891,6 +893,22 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       metric_cols <- setdiff(colnames(imp_tbl), c(leading_cols, taxonomy_cols_present))
       imp_tbl <- imp_tbl[, c(leading_cols, taxonomy_cols_present, metric_cols), drop = FALSE]
       if (length(taxonomy_cols_present) > 0) {
+        rank_prefix_map <- c(
+          Kingdom = "k__",
+          Phylum = "p__",
+          Class = "c__",
+          Order = "o__",
+          Family = "f__",
+          Genus = "g__",
+          Species = "s__"
+        )
+        get_rank_unassigned_label <- function(rank_name) {
+          prefix <- rank_prefix_map[[rank_name]]
+          if (is.null(prefix) || !nzchar(prefix)) {
+            prefix <- paste0(substr(tolower(rank_name), 1, 1), "__")
+          }
+          paste0(prefix, "Unassigned")
+        }
         label_rank_order <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
         if (!identical(input$tax_level, "ASV") && input$tax_level %in% label_rank_order) {
           label_rank_order <- label_rank_order[seq_len(match(input$tax_level, label_rank_order))]
@@ -903,7 +921,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             v <- taxa_row[i]
             rk <- names(taxa_row)[i]
             if (is.na(v) || !nzchar(v)) {
-              paste0(rk, "__Unassigned")
+              get_rank_unassigned_label(rk)
             } else {
               v
             }
@@ -1891,3 +1909,5 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     )
   })
 }
+
+

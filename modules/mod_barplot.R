@@ -61,11 +61,11 @@ mod_barplot_ui <- function(id) {
                     choices = tax_ranks,
                     selected = "Genus"),        
         numericInput(ns("top_n_taxa"), "Number of Top Taxa to Display:",
-                     value = 10, min = 1, max = 50, step = 1),        
+                     value = 15, min = 1, max = 50, step = 1),        
         selectInput(ns("name_display_mode"), "Taxa Name Display:",
                     choices = c("Full Hierarchy" = "full",
                                 "Current Rank Only" = "current"),
-                    selected = "full"),
+                    selected = "current"),
         selectInput(ns("color_palette"), "Color Palette Selection:",
                     choices = palette_choices,
                     selected = "Paired"),
@@ -139,23 +139,25 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
 
       tax_ranks <- phyloseq::rank_names(ps)
       rank_pos <- match(tax_level, tax_ranks)
-      parent_rank <- NULL
+      parent_candidates <- character(0)
       if (!is.na(rank_pos) && rank_pos > 1) {
         parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
         parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
-        if (length(parent_candidates) > 0) {
-          parent_rank <- parent_candidates[1]
+      }
+
+      parent_val <- rep("UnclassifiedParent", nrow(tt))
+      if (length(parent_candidates) > 0) {
+        for (parent_rank in parent_candidates) {
+          candidate_val <- as.character(tt[[parent_rank]])
+          candidate_norm <- tolower(trimws(candidate_val))
+          candidate_norm <- gsub("^[a-z]__", "", candidate_norm)
+          candidate_is_placeholder <- is.na(candidate_norm) | !nzchar(candidate_norm) | grepl("(uncultured|unassigned)", candidate_norm)
+          use_idx <- idx_placeholder & parent_val == "UnclassifiedParent" & !candidate_is_placeholder
+          parent_val[use_idx] <- candidate_val[use_idx]
         }
       }
 
-      if (is.null(parent_rank)) {
-        parent_val <- rep("UnclassifiedParent", nrow(tt))
-      } else {
-        parent_val <- as.character(tt[[parent_rank]])
-        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
-      }
-
-      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
+      tt[[tax_level]][idx_placeholder] <- parent_val[idx_placeholder]
       phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
       ps
     }
@@ -215,10 +217,55 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       if (!current_rank %in% colnames(df_taxa)) {
         return(rep("Unassigned", nrow(df_taxa)))
       }
+      rank_prefix_map <- c(
+        Kingdom = "k__",
+        Phylum = "p__",
+        Class = "c__",
+        Order = "o__",
+        Family = "f__",
+        Genus = "g__",
+        Species = "s__"
+      )
+      get_rank_unassigned_label <- function(rank_name) {
+        prefix <- rank_prefix_map[[rank_name]]
+        if (is.null(prefix) || !nzchar(prefix)) {
+          prefix <- paste0(substr(tolower(rank_name), 1, 1), "__")
+        }
+        paste0(prefix, "Unassigned")
+      }
+
+      is_unassigned_val <- function(x) {
+        x <- as.character(x)
+        x_trim <- trimws(x)
+        is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_trim, ignore.case = TRUE)
+      }
 
       base_label <- as.character(df_taxa[[current_rank]])
-      base_label[is.na(base_label) | !nzchar(base_label)] <- paste0(current_rank, "__Unassigned")
+      out <- base_label
 
+      # For unassigned values at current rank, keep only the nearest parent rank label.
+      parent_ranks <- rank_order[rank_order %in% colnames(df_taxa)]
+      current_idx <- match(current_rank, parent_ranks)
+      if (!is.na(current_idx) && current_idx > 1) {
+        parent_ranks_above <- parent_ranks[seq_len(current_idx - 1)]
+        is_unassigned_idx <- is_unassigned_val(base_label)
+        if (any(is_unassigned_idx) && length(parent_ranks_above) > 0) {
+          parent_vals <- rep("UnclassifiedParent", nrow(df_taxa))
+          for (parent_rank in rev(parent_ranks_above)) {
+            candidate_vals <- as.character(df_taxa[[parent_rank]])
+            candidate_placeholder_idx <- is_unassigned_val(candidate_vals)
+            use_idx <- is_unassigned_idx & parent_vals == "UnclassifiedParent" & !candidate_placeholder_idx
+            parent_vals[use_idx] <- candidate_vals[use_idx]
+          }
+          out[is_unassigned_idx] <- parent_vals[is_unassigned_idx]
+        }
+      }
+
+      # Remove "__Unassigned" placeholders for display
+      out <- gsub("__Unassigned", "", out, fixed = TRUE)
+      out[is.na(out) | !nzchar(out)] <- get_rank_unassigned_label(current_rank)
+
+      # Handle duplicates with parent rank disambiguation
       parent_ranks <- rank_order[rank_order %in% colnames(df_taxa)]
       current_idx <- match(current_rank, parent_ranks)
       if (!is.na(current_idx) && current_idx > 1) {
@@ -233,25 +280,24 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         parent_ranks <- parent_ranks[fam_idx:length(parent_ranks)]
       }
 
-      out <- base_label
-      dup_vals <- unique(base_label[duplicated(base_label) | duplicated(base_label, fromLast = TRUE)])
-      if (length(dup_vals) == 0 || length(parent_ranks) == 0) return(out)
+      dup_vals <- unique(out[duplicated(out) | duplicated(out, fromLast = TRUE)])
+      if (length(dup_vals) > 0 && length(parent_ranks) > 0) {
+        for (val in dup_vals) {
+          idx <- which(out == val)
+          sub_df <- df_taxa[idx, , drop = FALSE]
+          suffix <- rep("", length(idx))
 
-      for (val in dup_vals) {
-        idx <- which(base_label == val)
-        sub_df <- df_taxa[idx, , drop = FALSE]
-        suffix <- rep("", length(idx))
-
-        for (r in rev(parent_ranks)) {
-          rv <- as.character(sub_df[[r]])
-          rv[is.na(rv) | !nzchar(rv)] <- paste0(r, "__Unassigned")
-          if (length(unique(rv)) > 1) {
-            suffix <- ifelse(nzchar(suffix), paste0(rv, ";", suffix), rv)
+          for (r in rev(parent_ranks)) {
+            rv <- as.character(sub_df[[r]])
+            rv[is.na(rv) | !nzchar(rv)] <- get_rank_unassigned_label(r)
+            if (length(unique(rv)) > 1) {
+              suffix <- ifelse(nzchar(suffix), paste0(rv, ";", suffix), rv)
+            }
           }
-        }
 
-        if (any(nzchar(suffix))) {
-          out[idx] <- paste0(val, " [", suffix, "]")
+          if (any(nzchar(suffix))) {
+            out[idx] <- paste0(val, " [", suffix, "]")
+          }
         }
       }
       out
@@ -273,13 +319,27 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
 
       tax_df <- as.data.frame(phyloseq::tax_table(ps_glom))
       tax_ranks <- phyloseq::rank_names(ps_glom)
+      rank_prefix_map <- c(
+        Kingdom = "k__",
+        Phylum = "p__",
+        Class = "c__",
+        Order = "o__",
+        Family = "f__",
+        Genus = "g__",
+        Species = "s__"
+      )
       tax_df$Full_Taxa_Name <- apply(tax_df, 1, function(taxa) {
         valid_ranks <- taxa[tax_ranks]
         full_name_parts <- c()
         for (i in 1:length(valid_ranks)) {
           part <- valid_ranks[i]
           if (is.na(part) || part == "") {
-            part <- paste0(names(valid_ranks)[i], "__Unassigned")
+            rk <- names(valid_ranks)[i]
+            prefix <- rank_prefix_map[[rk]]
+            if (is.null(prefix) || !nzchar(prefix)) {
+              prefix <- paste0(substr(tolower(rk), 1, 1), "__")
+            }
+            part <- paste0(prefix, "Unassigned")
           }
           full_name_parts <- c(full_name_parts, part)
         }
@@ -400,13 +460,27 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       
       tax_df <- as.data.frame(phyloseq::tax_table(ps_glom))
       tax_ranks <- phyloseq::rank_names(ps_glom)
+      rank_prefix_map <- c(
+        Kingdom = "k__",
+        Phylum = "p__",
+        Class = "c__",
+        Order = "o__",
+        Family = "f__",
+        Genus = "g__",
+        Species = "s__"
+      )
       tax_df$Full_Taxa_Name <- apply(tax_df, 1, function(taxa) {
         valid_ranks <- taxa[tax_ranks]
         full_name_parts <- c()
         for (i in 1:length(valid_ranks)) {
           part <- valid_ranks[i]
           if (is.na(part) || part == "") {
-            part <- paste0(names(valid_ranks)[i], "__Unassigned")
+            rk <- names(valid_ranks)[i]
+            prefix <- rank_prefix_map[[rk]]
+            if (is.null(prefix) || !nzchar(prefix)) {
+              prefix <- paste0(substr(tolower(rk), 1, 1), "__")
+            }
+            part <- paste0(prefix, "Unassigned")
           }
           full_name_parts <- c(full_name_parts, part)
         }
@@ -781,3 +855,4 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     )
   })
 }
+

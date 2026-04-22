@@ -206,23 +206,25 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
 
       tax_ranks <- phyloseq::rank_names(ps)
       rank_pos <- match(tax_level, tax_ranks)
-      parent_rank <- NULL
+      parent_candidates <- character(0)
       if (!is.na(rank_pos) && rank_pos > 1) {
         parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
         parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
-        if (length(parent_candidates) > 0) {
-          parent_rank <- parent_candidates[1]
+      }
+
+      parent_val <- rep("UnclassifiedParent", nrow(tt))
+      if (length(parent_candidates) > 0) {
+        for (parent_rank in parent_candidates) {
+          candidate_val <- as.character(tt[[parent_rank]])
+          candidate_norm <- tolower(trimws(candidate_val))
+          candidate_norm <- gsub("^[a-z]__", "", candidate_norm)
+          candidate_is_placeholder <- is.na(candidate_norm) | !nzchar(candidate_norm) | grepl("(uncultured|unassigned)", candidate_norm)
+          use_idx <- idx_placeholder & parent_val == "UnclassifiedParent" & !candidate_is_placeholder
+          parent_val[use_idx] <- candidate_val[use_idx]
         }
       }
 
-      if (is.null(parent_rank)) {
-        parent_val <- rep("UnclassifiedParent", nrow(tt))
-      } else {
-        parent_val <- as.character(tt[[parent_rank]])
-        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
-      }
-
-      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
+      tt[[tax_level]][idx_placeholder] <- parent_val[idx_placeholder]
       phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
       ps
     }
@@ -1456,3 +1458,5 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     
   })
 }
+
+

@@ -135,23 +135,25 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
       tax_ranks <- phyloseq::rank_names(ps)
       rank_pos <- match(tax_level, tax_ranks)
-      parent_rank <- NULL
+      parent_candidates <- character(0)
       if (!is.na(rank_pos) && rank_pos > 1) {
         parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
         parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
-        if (length(parent_candidates) > 0) {
-          parent_rank <- parent_candidates[1]
+      }
+
+      parent_val <- rep("UnclassifiedParent", nrow(tt))
+      if (length(parent_candidates) > 0) {
+        for (parent_rank in parent_candidates) {
+          candidate_val <- as.character(tt[[parent_rank]])
+          candidate_norm <- tolower(trimws(candidate_val))
+          candidate_norm <- gsub("^[a-z]__", "", candidate_norm)
+          candidate_is_placeholder <- is.na(candidate_norm) | !nzchar(candidate_norm) | grepl("(uncultured|unassigned)", candidate_norm)
+          use_idx <- idx_placeholder & parent_val == "UnclassifiedParent" & !candidate_is_placeholder
+          parent_val[use_idx] <- candidate_val[use_idx]
         }
       }
 
-      if (is.null(parent_rank)) {
-        parent_val <- rep("UnclassifiedParent", nrow(tt))
-      } else {
-        parent_val <- as.character(tt[[parent_rank]])
-        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
-      }
-
-      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
+      tt[[tax_level]][idx_placeholder] <- parent_val[idx_placeholder]
       phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
       ps
     }
@@ -937,6 +939,30 @@ mod_maaslin2_server <- function(id, ps_obj) {
         is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_trim, ignore.case = TRUE)
       }
 
+      is_raw_placeholder_taxa <- function(x) {
+        x <- as.character(x)
+        x_trim <- trimws(x)
+        x_norm <- tolower(gsub("^[a-z]__", "", x_trim))
+        is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_norm, ignore.case = TRUE)
+      }
+
+      # Extract current rank only from potential full hierarchy
+      extract_current_rank <- function(x, rank_name) {
+        x <- as.character(x)
+        
+        # If contains ";", extract the part corresponding to current rank
+        if (grepl(";", x, fixed = TRUE)) {
+          parts <- strsplit(x, ";", fixed = TRUE)[[1]]
+          parts <- trimws(parts)
+          # Return the last non-empty part (assumed to be current rank)
+          parts <- parts[nzchar(parts)]
+          if (length(parts) > 0) return(parts[length(parts)])
+        }
+        
+        # Keep original rank prefix (e.g., f__, g__) if present.
+        x
+      }
+
       rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
       out <- if (identical(tax_level, "ASV")) {
         if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep(NA_character_, nrow(df))
@@ -944,12 +970,29 @@ mod_maaslin2_server <- function(id, ps_obj) {
         label_vec <- rep(NA_character_, nrow(df))
         if (tax_level %in% rank_order) {
           selected_idx <- match(tax_level, rank_order)
-          fallback_ranks <- rev(rank_order[seq_len(selected_idx)])
-          fallback_ranks <- fallback_ranks[fallback_ranks %in% colnames(df)]
-          for (rk in fallback_ranks) {
-            rk_vals <- as.character(df[[rk]])
-            use_idx <- is.na(label_vec) | is_unassigned_taxa(label_vec)
-            label_vec[use_idx] <- rk_vals[use_idx]
+          raw_rank_vals <- as.character(df[[tax_level]])
+          current_rank_vals <- sapply(raw_rank_vals, function(x) extract_current_rank(x, tax_level), USE.NAMES = FALSE)
+          
+          # Initialize with extracted current rank value
+          label_vec <- current_rank_vals
+
+          # For unassigned current taxa, use the nearest parent rank label.
+          is_unassigned_idx <- is_unassigned_taxa(label_vec)
+          if (any(is_unassigned_idx)) {
+            # Get parent ranks in order
+            parent_ranks <- rev(rank_order[seq_len(selected_idx - 1)])
+            parent_ranks <- parent_ranks[parent_ranks %in% colnames(df)]
+            if (length(parent_ranks) > 0) {
+              parent_vals <- rep("UnclassifiedParent", nrow(df))
+              for (parent_rank in parent_ranks) {
+                candidate_vals <- as.character(df[[parent_rank]])
+                candidate_vals <- sapply(candidate_vals, function(x) extract_current_rank(x, parent_rank), USE.NAMES = FALSE)
+                candidate_placeholder_idx <- is_unassigned_taxa(candidate_vals)
+                use_idx <- is_unassigned_idx & parent_vals == "UnclassifiedParent" & !candidate_placeholder_idx
+                parent_vals[use_idx] <- candidate_vals[use_idx]
+              }
+              label_vec[is_unassigned_idx] <- parent_vals[is_unassigned_idx]
+            }
           }
         }
         label_vec
@@ -957,8 +1000,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
       fallback_taxa <- if ("taxa_label" %in% colnames(df)) as.character(df$taxa_label) else rep("", nrow(df))
       fallback_feature <- if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep("", nrow(df))
-      out[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)] <- fallback_taxa[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)]
-      out[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)] <- fallback_feature[is.na(out) | !nzchar(out) | is_unassigned_taxa(out)]
+      out[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)] <- fallback_taxa[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)]
+      out[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)] <- fallback_feature[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)]
       out
     }
 
@@ -1161,4 +1204,5 @@ mod_maaslin2_server <- function(id, ps_obj) {
     )
   })
 }
+
 
