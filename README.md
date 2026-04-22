@@ -91,7 +91,7 @@ Bundled files:
 - `sample/2_taxonomy_table.txt`
 - `sample/3_metadata.txt`
 
-QZA conversion link (Top page):
+QZA conversion link (table.qza/taxonomy.qza):
 
 - `https://simplemicrobiome.mglab.org/convert/ui`
 

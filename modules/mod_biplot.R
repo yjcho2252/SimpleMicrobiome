@@ -87,6 +87,7 @@ mod_biplot_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         actionButton(ns("run_biplot"), "Run Biplot", class = "btn-danger", style = "font-size: 12px;")
       ),
       mainPanel(
@@ -371,6 +372,10 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     biplot_plot <- reactive({
       req(biplot_payload())
       payload <- biplot_payload()
+      base_size <- input$base_size
+      if (is.null(base_size) || !is.finite(base_size)) {
+        base_size <- 11
+      }
       site_df <- payload$site_df
       taxa_df <- payload$species_df
       if (length(input$selected_taxa) > 0 && nrow(payload$species_all_df) > 0) {
@@ -381,7 +386,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
       p <- ggplot2::ggplot(site_df, ggplot2::aes(x = Axis1, y = Axis2, color = Group)) +
         ggplot2::geom_point(size = 3, alpha = 0.9) +
-        ggplot2::theme_bw() +
+        ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(
           title = paste0("Association Biplot (dbRDA, ", payload$metric_label, ")"),
           x = paste0("CAP1", if (is.finite(payload$axis1_var)) paste0(" (", payload$axis1_var, "%)") else ""),

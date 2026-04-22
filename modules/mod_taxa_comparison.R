@@ -118,6 +118,7 @@ mod_taxa_comparison_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width (px):", value = 400, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height (px):", value = 500, min = 300, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         hr(),
         h5(icon("download"), "Download Plot"),
         div(
@@ -543,6 +544,10 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         "log_tss" = "Log TSS (log10(% + 1))",
         "CLR Abundance"
       )
+      base_size <- input$base_size
+      if (is.null(base_size) || !is.finite(base_size)) {
+        base_size <- 11
+      }
       group_levels <- levels(factor(df$Group))
       num_groups <- length(group_levels)
       plot_type <- input$plot_type
@@ -594,12 +599,13 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           limits = c(0, NA),
           expand = ggplot2::expansion(mult = c(0, 0.08))
         ) +
-        ggplot2::theme_bw() +
+        ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(title = paste0("Taxa Comparison: ", input$tax_level),
                       x = if (is_secondary) secondary_col else input$group_var, y = y_label) +
         ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
         ggplot2::theme(
-          axis.text.x = ggplot2::element_text(angle = 25, hjust = 1),
+          plot.title = ggplot2::element_text(size = base_size + 2),
+          axis.text.x = ggplot2::element_text(angle = 25, hjust = 1, size = max(6, base_size - 1)),
           legend.position = "none",
           strip.background = ggplot2::element_rect(fill = "white"),
           plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8)

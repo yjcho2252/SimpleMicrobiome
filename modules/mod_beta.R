@@ -55,6 +55,7 @@ mod_beta_ui <- function(id) {
         h4(icon("sliders"), "Plot Settings"),
         numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 600, min = 300, max = 1500, step = 50),
         numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 450, min = 300, max = 1500, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
@@ -939,6 +940,10 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     pcoa_plot_reactive <- reactive({
       req(ps_plot_obj(), primary_group_var(), ord <- pcoa_ordination_reactive(), input$dot_size)
       ps_data_for_plot <- ps_plot_obj()
+      base_size <- input$base_size
+      if (is.null(base_size) || !is.finite(base_size)) {
+        base_size <- 11
+      }
       
       if (!is.null(ord$values) && "Eigenvalues" %in% colnames(ord$values)) {
         eigenvalues <- ord$values$Eigenvalues
@@ -972,7 +977,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         p <- p + ggplot2::stat_ellipse(ggplot2::aes_string(group = primary_group_var()))
       }
       
-      p <- p + ggplot2::theme_bw() +
+      p <- p + ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(title = paste("PCoA -", distance_label()),
                       color = primary_group_var(),
                       shape = if (is.null(plot_shape_var())) NULL else plot_shape_var(),
@@ -1149,6 +1154,10 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     nmds_plot_reactive <- reactive({
       req(ps_plot_obj(), primary_group_var(), ord <- nmds_ordination_reactive(), input$dot_size)
       ps_data_for_plot <- ps_plot_obj()
+      base_size <- input$base_size
+      if (is.null(base_size) || !is.finite(base_size)) {
+        base_size <- 11
+      }
       
       if (is.null(plot_shape_var())) {
         p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var())
@@ -1170,7 +1179,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         p <- p + ggplot2::stat_ellipse(ggplot2::aes_string(group = primary_group_var()))
       }
       
-      p <- p + ggplot2::theme_bw() +
+      p <- p + ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(title = paste0("NMDS - ", distance_label(), " (Stress: ", round(ord$stress, 3), ")"),
                       color = primary_group_var(),
                       shape = if (is.null(plot_shape_var())) NULL else plot_shape_var())

@@ -103,6 +103,7 @@ mod_heatmap_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Cell Size"),
         numericInput(ns("cell_width"), "Cell width (px)", value = 30, min = 6, max = 80, step = 1),
         numericInput(ns("cell_height"), "Cell height (px)", value = 10, min = 6, max = 80, step = 1),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         numericInput(ns("sig_text_size"), "Significance mark size", value = 3, min = 1, max = 10, step = 0.2),
         actionButton(ns("run_heatmap"), "Run Heatmap", class = "btn-danger", style = "font-size: 12px;")
       ),
@@ -619,6 +620,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       if (!is.finite(sig_text_size)) sig_text_size <- 3
       sig_text_size <- max(1, min(10, sig_text_size))
       sig_fontsize_pt <- as.numeric(sig_text_size) * 2.8
+      base_size <- as.numeric(input$base_size)
+      if (!is.finite(base_size)) base_size <- 11
+      base_size <- max(6, min(30, base_size))
 
       dims_cell <- cell_dims_px()
       cell_width_pt <- dims_cell$cell_width * 0.75
@@ -685,13 +689,17 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         row_names_side = if (show_row_dend_opt) "right" else "left",
         column_names_side = "bottom",
         column_names_rot = 90,
-        row_names_gp = grid::gpar(fontsize = 8),
-        column_names_gp = grid::gpar(fontsize = 8),
-        heatmap_legend_param = list(title = "Value"),
+        row_names_gp = grid::gpar(fontsize = max(6, base_size - 2)),
+        column_names_gp = grid::gpar(fontsize = max(6, base_size - 2)),
+        heatmap_legend_param = list(
+          title = "Value",
+          title_gp = grid::gpar(fontsize = base_size),
+          labels_gp = grid::gpar(fontsize = max(6, base_size - 1))
+        ),
         width = grid::unit(ncol(assoc_mat) * cell_width_pt, "pt"),
         height = grid::unit(nrow(assoc_mat) * cell_height_pt, "pt"),
         column_title = title_text,
-        column_title_gp = grid::gpar(fontsize = 11, fontface = "plain"),
+        column_title_gp = grid::gpar(fontsize = base_size + 1, fontface = "plain"),
         cell_fun = function(j, i, x, y, width, height, fill) {
           if (identical(sig_mat[i, j], "*")) {
             grid::grid.text("*", x = x, y = y - grid::unit(2.5, "pt"), gp = grid::gpar(fontsize = sig_fontsize_pt))

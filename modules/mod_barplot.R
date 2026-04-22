@@ -73,6 +73,8 @@ mod_barplot_ui <- function(id) {
                      value = 1000, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height (px):",
                      value = 600, min = 300, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:",
+                     value = 11, min = 6, max = 30, step = 1),
 
         
         hr(),
@@ -444,7 +446,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     
     barplot_reactive <- reactive({
       req(ps_obj(), group_var(), input$tax_level, input$name_display_mode, 
-          input$plot_mode, input$top_n_taxa, input$color_palette)
+          input$plot_mode, input$top_n_taxa, input$color_palette, input$base_size)
       
       current_rank <- input$tax_level
       primary_var <- group_var()
@@ -453,6 +455,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       facet_var <- primary_var 
       topN <- input$top_n_taxa
       plot_mode <- input$plot_mode
+      base_size <- input$base_size
       
       ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) x / sum(x))
       ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
@@ -804,16 +807,21 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }
       
       p <- p +
-        ggplot2::theme_bw() +
+        ggplot2::theme_bw(base_size = base_size) +
         ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.03))) +
         ggplot2::coord_cartesian(clip = "off") +
         ggplot2::theme(
-          plot.title = ggplot2::element_text(size = 14, face = "bold"),
-          axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = if(plot_mode == "Group_Mean") 10 else 8),
+          plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
+          axis.text.x = ggplot2::element_text(
+            angle = 90,
+            hjust = 1,
+            vjust = 0.5,
+            size = if (plot_mode == "Group_Mean") base_size else max(6, base_size - 2)
+          ),
           panel.grid.major = ggplot2::element_line(color = "white", linewidth = 0.1),
           panel.grid.minor = ggplot2::element_line(color = "white", linewidth = 0.1),
           axis.title.x = ggplot2::element_blank(),
-          legend.title = ggplot2::element_text(size = 10),
+          legend.title = ggplot2::element_text(size = base_size),
           plot.margin = ggplot2::margin(6, 10, 4, 5.5)
         ) +
         ggplot2::labs(

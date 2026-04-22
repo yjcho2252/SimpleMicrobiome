@@ -77,6 +77,7 @@ mod_alpha_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width:", value = 800, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height:", value = 600, min = 300, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         
         hr(),
         h5(icon("download"), "Download"),
@@ -202,6 +203,10 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       if (is.null(palette_key) || !palette_key %in% c("set2", "dark2", "paired", "gray")) {
         palette_key <- "set2"
       }
+      base_size <- input$base_size
+      if (is.null(base_size) || !is.finite(base_size)) {
+        base_size <- 11
+      }
       n_groups <- max(1, length(group_levels))
       fill_values <- switch(
         palette_key,
@@ -218,7 +223,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       names(pattern_angle_values) <- group_levels
       
       p <- ggplot2::ggplot(alpha_long, ggplot2::aes_string(x = x_axis_col, y = "Value", fill = x_axis_col)) +
-        ggplot2::theme_bw() +
+        ggplot2::theme_bw(base_size = base_size) +
         ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
         ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.08))) +
         ggplot2::coord_cartesian(clip = "off") +
