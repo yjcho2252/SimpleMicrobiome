@@ -119,61 +119,61 @@ mod_randomforest_ui <- function(id) {
           style = "max-width: 100%;",
           tabsetPanel(
             id = ns("rf_active_tab"),
-          tabPanel(
-            "RF Table",
-            downloadButton(
-              ns("download_rf_table"),
-              "Download Table (TSV)",
-              style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+            tabPanel(
+              "RF Table",
+              downloadButton(
+                ns("download_rf_table"),
+                "Download Table (TSV)",
+                style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+              ),
+              DTOutput(ns("importance_table"))
             ),
-            DTOutput(ns("importance_table"))
-          ),
-          tabPanel(
-            "RF Bar plot",
-            downloadButton(
-              ns("download_rf_barplot"),
-              "Download Plot (PNG)",
-              style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+            tabPanel(
+              "RF Bar plot",
+              downloadButton(
+                ns("download_rf_barplot"),
+                "Download Plot (PNG)",
+                style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+              ),
+              div(
+                style = "display: flex; justify-content: center; margin-top: 8px;",
+                uiOutput(ns("importance_plot_ui"))
+              )
             ),
-            div(
-              style = "display: flex; justify-content: center; margin-top: 8px;",
-              uiOutput(ns("importance_plot_ui"))
+            tabPanel(
+              "ROC / AUC",
+              downloadButton(
+                ns("download_rf_rocplot"),
+                "Download ROC (PNG)",
+                style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+              ),
+              div(
+                style = "display: flex; justify-content: center; margin-top: 8px;",
+                plotOutput(ns("roc_plot"), width = "1160px", height = "500px")
+              ),
+              verbatimTextOutput(ns("roc_auc_text"))
+            ),
+            tabPanel(
+              "SHAP Table",
+              downloadButton(
+                ns("download_rf_shap_summary"),
+                "Download SHAP Summary (TSV)",
+                style = "width: 220px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+              ),
+              DTOutput(ns("shap_summary_table"))
+            ),
+            tabPanel(
+              "SHAP Bar plot",
+              downloadButton(
+                ns("download_rf_shap_plot"),
+                "Download SHAP Plot (PNG)",
+                style = "width: 210px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+              ),
+              div(
+                style = "display: flex; justify-content: center; margin-top: 8px;",
+                uiOutput(ns("shap_summary_plot_ui"))
+              )
             )
-          ),
-          tabPanel(
-            "ROC / AUC",
-            downloadButton(
-              ns("download_rf_rocplot"),
-              "Download ROC (PNG)",
-              style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-            ),
-            div(
-              style = "display: flex; justify-content: center; margin-top: 8px;",
-              plotOutput(ns("roc_plot"), width = "1160px", height = "500px")
-            ),
-            verbatimTextOutput(ns("roc_auc_text"))
-          ),
-          tabPanel(
-            "SHAP Table",
-            downloadButton(
-              ns("download_rf_shap_summary"),
-              "Download SHAP Summary (TSV)",
-              style = "width: 220px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-            ),
-            DTOutput(ns("shap_summary_table"))
-          ),
-          tabPanel(
-            "SHAP Bar plot",
-            downloadButton(
-              ns("download_rf_shap_plot"),
-              "Download SHAP Plot (PNG)",
-              style = "width: 210px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-            ),
-            div(
-              style = "display: flex; justify-content: center; margin-top: 8px;",
-              uiOutput(ns("shap_summary_plot_ui"))
-            )
-          )
           )
         ),
         uiOutput(ns("rf_legend_box")),
@@ -795,434 +795,434 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             }
           }
 
-      perm_raw <- randomForest::importance(rf_fit, type = 1, scale = TRUE)
-      perm_df <- as.data.frame(perm_raw)
-      perm_df$Feature <- rownames(perm_df)
+          perm_raw <- randomForest::importance(rf_fit, type = 1, scale = TRUE)
+          perm_df <- as.data.frame(perm_raw)
+          perm_df$Feature <- rownames(perm_df)
 
-      if ("MeanDecreaseAccuracy" %in% colnames(perm_df)) {
-        perm_col <- "MeanDecreaseAccuracy"
-      } else if ("%IncMSE" %in% colnames(perm_df)) {
-        perm_col <- "%IncMSE"
-      } else {
-        perm_col <- colnames(perm_df)[1]
-      }
+          if ("MeanDecreaseAccuracy" %in% colnames(perm_df)) {
+            perm_col <- "MeanDecreaseAccuracy"
+          } else if ("%IncMSE" %in% colnames(perm_df)) {
+            perm_col <- "%IncMSE"
+          } else {
+            perm_col <- colnames(perm_df)[1]
+          }
 
-      imp_tbl <- perm_df %>%
-        dplyr::select(Feature, PermutationImportance = all_of(perm_col)) %>%
-        dplyr::arrange(dplyr::desc(PermutationImportance))
+          imp_tbl <- perm_df %>%
+            dplyr::select(Feature, PermutationImportance = all_of(perm_col)) %>%
+            dplyr::arrange(dplyr::desc(PermutationImportance))
 
-      imp_tbl <- imp_tbl %>%
-        dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel"))
-
-      if (!is.null(taxonomy_info)) {
-        taxonomy_cols <- intersect(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), colnames(taxonomy_info))
-        if (length(taxonomy_cols) > 0) {
           imp_tbl <- imp_tbl %>%
-            dplyr::left_join(
-              taxonomy_info %>% dplyr::select(FeatureID, dplyr::all_of(taxonomy_cols)),
-              by = "FeatureID"
-            )
-        }
-      }
+            dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel"))
 
-      if (is_classification) {
-        y_group <- factor(as.character(y))
-        if (nlevels(y_group) == 2) {
-          g1 <- levels(y_group)[1]
-          g2 <- levels(y_group)[2]
-          g1_idx <- which(y_group == g1)
-          g2_idx <- which(y_group == g2)
-          g1_mean <- colMeans(x[g1_idx, , drop = FALSE], na.rm = TRUE)
-          g2_mean <- colMeans(x[g2_idx, , drop = FALSE], na.rm = TRUE)
-          diff_vec <- g2_mean - g1_mean
-          mean_diff_df <- data.frame(
-            Feature = names(diff_vec),
-            Group1Mean = as.numeric(g1_mean[names(diff_vec)]),
-            Group2Mean = as.numeric(g2_mean[names(diff_vec)]),
-            Group1Median = as.numeric(apply(x[g1_idx, , drop = FALSE], 2, stats::median, na.rm = TRUE)[names(diff_vec)]),
-            Group2Median = as.numeric(apply(x[g2_idx, , drop = FALSE], 2, stats::median, na.rm = TRUE)[names(diff_vec)]),
-            MeanDifference = as.numeric(diff_vec),
-            stringsAsFactors = FALSE
-          )
-          fc_vec <- (g2_mean + 1e-09) / (g1_mean + 1e-09)
-          pval_vec <- vapply(names(diff_vec), function(feat) {
-            suppressWarnings(tryCatch(
-              stats::wilcox.test(x[g1_idx, feat], x[g2_idx, feat])$p.value,
-              error = function(e) NA_real_
-            ))
-          }, numeric(1))
-          direction_vec <- ifelse(diff_vec > 0, paste0("Higher in ", g2), paste0("Higher in ", g1))
-          direction_vec[abs(diff_vec) < .Machine$double.eps] <- "No difference"
-          mean_diff_df$FoldChange <- as.numeric(fc_vec[names(diff_vec)])
-          mean_diff_df$Log2FoldChange <- log2(mean_diff_df$FoldChange)
-          mean_diff_df$UnivariatePValue <- as.numeric(pval_vec[names(diff_vec)])
-          mean_diff_df$Direction <- as.character(direction_vec[names(diff_vec)])
-          colnames(mean_diff_df)[2] <- paste0("Mean_", g1)
-          colnames(mean_diff_df)[3] <- paste0("Mean_", g2)
-          colnames(mean_diff_df)[4] <- paste0("Median_", g1)
-          colnames(mean_diff_df)[5] <- paste0("Median_", g2)
-          colnames(mean_diff_df)[6] <- paste0("Diff_", g2, "_minus_", g1)
-          imp_tbl <- imp_tbl %>% dplyr::left_join(mean_diff_df, by = "Feature")
-        } else {
-          group_means <- sapply(levels(y_group), function(gr) {
-            colMeans(x[y_group == gr, , drop = FALSE], na.rm = TRUE)
-          }, simplify = "matrix")
-          if (is.null(dim(group_means))) {
-            group_means <- matrix(group_means, ncol = 1)
-            rownames(group_means) <- colnames(x)
+          if (!is.null(taxonomy_info)) {
+            taxonomy_cols <- intersect(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), colnames(taxonomy_info))
+            if (length(taxonomy_cols) > 0) {
+              imp_tbl <- imp_tbl %>%
+                dplyr::left_join(
+                  taxonomy_info %>% dplyr::select(FeatureID, dplyr::all_of(taxonomy_cols)),
+                  by = "FeatureID"
+                )
+            }
           }
-          max_mean <- apply(group_means, 1, max, na.rm = TRUE)
-          min_mean <- apply(group_means, 1, min, na.rm = TRUE)
-          diff_vec <- max_mean - min_mean
-          max_group_idx <- apply(group_means, 1, function(v) {
-            if (all(is.na(v))) return(NA_integer_)
-            idx <- which(v == max(v, na.rm = TRUE))
-            if (length(idx) == 1) idx else NA_integer_
-          })
-          direction_vec <- rep("No dominant group", length(max_group_idx))
-          valid_idx <- which(!is.na(max_group_idx))
-          if (length(valid_idx) > 0) {
-            direction_vec[valid_idx] <- paste0("Higher in ", colnames(group_means)[max_group_idx[valid_idx]])
-          }
-          mean_diff_df <- data.frame(
-            Feature = names(diff_vec),
-            MaxGroupMean = as.numeric(max_mean[names(diff_vec)]),
-            MinGroupMean = as.numeric(min_mean[names(diff_vec)]),
-            MeanDifference_MaxMinusMin = as.numeric(diff_vec),
-            Direction = as.character(direction_vec[names(diff_vec)]),
-            UnivariatePValue = as.numeric(vapply(names(diff_vec), function(feat) {
-              suppressWarnings(tryCatch(
-                stats::kruskal.test(x[, feat] ~ y_group)$p.value,
-                error = function(e) NA_real_
-              ))
-            }, numeric(1))),
-            stringsAsFactors = FALSE
-          )
-          group_mean_df <- as.data.frame(group_means, stringsAsFactors = FALSE)
-          group_mean_df$Feature <- rownames(group_mean_df)
-          colnames(group_mean_df) <- c(paste0("Mean_", colnames(group_means)), "Feature")
-          mean_diff_df <- mean_diff_df %>% dplyr::left_join(group_mean_df, by = "Feature")
-          imp_tbl <- imp_tbl %>% dplyr::left_join(mean_diff_df, by = "Feature")
-        }
-      } else {
-        pred_all <- as.numeric(stats::predict(rf_fit, newdata = x))
-        corr_vec <- vapply(seq_len(ncol(x)), function(j) {
-          suppressWarnings(stats::cor(x[[j]], pred_all, use = "complete.obs", method = "spearman"))
-        }, numeric(1))
-        corr_df <- data.frame(
-          Feature = colnames(x),
-          FeaturePredictionCorrelation = as.numeric(corr_vec),
-          stringsAsFactors = FALSE
-        )
-        imp_tbl <- imp_tbl %>% dplyr::left_join(corr_df, by = "Feature")
-      }
 
-      leading_cols <- c("Feature", "FeatureID")
-      taxonomy_cols_present <- intersect(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), colnames(imp_tbl))
-      metric_cols <- setdiff(colnames(imp_tbl), c(leading_cols, taxonomy_cols_present))
-      imp_tbl <- imp_tbl[, c(leading_cols, taxonomy_cols_present, metric_cols), drop = FALSE]
-      if (length(taxonomy_cols_present) > 0) {
-        rank_prefix_map <- c(
-          Kingdom = "k__",
-          Phylum = "p__",
-          Class = "c__",
-          Order = "o__",
-          Family = "f__",
-          Genus = "g__",
-          Species = "s__"
-        )
-        get_rank_unassigned_label <- function(rank_name) {
-          prefix <- rank_prefix_map[[rank_name]]
-          if (is.null(prefix) || !nzchar(prefix)) {
-            prefix <- paste0(substr(tolower(rank_name), 1, 1), "__")
-          }
-          paste0(prefix, "Unassigned")
-        }
-        label_rank_order <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
-        if (!identical(input$tax_level, "ASV") && input$tax_level %in% label_rank_order) {
-          label_rank_order <- label_rank_order[seq_len(match(input$tax_level, label_rank_order))]
-        }
-        label_ranks_present <- intersect(label_rank_order, taxonomy_cols_present)
-        tax_mat <- as.data.frame(imp_tbl[, label_ranks_present, drop = FALSE], stringsAsFactors = FALSE)
-        for (cc in colnames(tax_mat)) tax_mat[[cc]] <- as.character(tax_mat[[cc]])
-        taxa_label <- apply(tax_mat, 1, function(taxa_row) {
-          parts <- vapply(seq_along(taxa_row), function(i) {
-            v <- taxa_row[i]
-            rk <- names(taxa_row)[i]
-            if (is.na(v) || !nzchar(v)) {
-              get_rank_unassigned_label(rk)
+          if (is_classification) {
+            y_group <- factor(as.character(y))
+            if (nlevels(y_group) == 2) {
+              g1 <- levels(y_group)[1]
+              g2 <- levels(y_group)[2]
+              g1_idx <- which(y_group == g1)
+              g2_idx <- which(y_group == g2)
+              g1_mean <- colMeans(x[g1_idx, , drop = FALSE], na.rm = TRUE)
+              g2_mean <- colMeans(x[g2_idx, , drop = FALSE], na.rm = TRUE)
+              diff_vec <- g2_mean - g1_mean
+              mean_diff_df <- data.frame(
+                Feature = names(diff_vec),
+                Group1Mean = as.numeric(g1_mean[names(diff_vec)]),
+                Group2Mean = as.numeric(g2_mean[names(diff_vec)]),
+                Group1Median = as.numeric(apply(x[g1_idx, , drop = FALSE], 2, stats::median, na.rm = TRUE)[names(diff_vec)]),
+                Group2Median = as.numeric(apply(x[g2_idx, , drop = FALSE], 2, stats::median, na.rm = TRUE)[names(diff_vec)]),
+                MeanDifference = as.numeric(diff_vec),
+                stringsAsFactors = FALSE
+              )
+              fc_vec <- (g2_mean + 1e-09) / (g1_mean + 1e-09)
+              pval_vec <- vapply(names(diff_vec), function(feat) {
+                suppressWarnings(tryCatch(
+                  stats::wilcox.test(x[g1_idx, feat], x[g2_idx, feat])$p.value,
+                  error = function(e) NA_real_
+                ))
+              }, numeric(1))
+              direction_vec <- ifelse(diff_vec > 0, paste0("Higher in ", g2), paste0("Higher in ", g1))
+              direction_vec[abs(diff_vec) < .Machine$double.eps] <- "No difference"
+              mean_diff_df$FoldChange <- as.numeric(fc_vec[names(diff_vec)])
+              mean_diff_df$Log2FoldChange <- log2(mean_diff_df$FoldChange)
+              mean_diff_df$UnivariatePValue <- as.numeric(pval_vec[names(diff_vec)])
+              mean_diff_df$Direction <- as.character(direction_vec[names(diff_vec)])
+              colnames(mean_diff_df)[2] <- paste0("Mean_", g1)
+              colnames(mean_diff_df)[3] <- paste0("Mean_", g2)
+              colnames(mean_diff_df)[4] <- paste0("Median_", g1)
+              colnames(mean_diff_df)[5] <- paste0("Median_", g2)
+              colnames(mean_diff_df)[6] <- paste0("Diff_", g2, "_minus_", g1)
+              imp_tbl <- imp_tbl %>% dplyr::left_join(mean_diff_df, by = "Feature")
             } else {
-              v
-            }
-          }, character(1))
-          paste(parts, collapse = ";")
-        })
-        taxa_label[is.na(taxa_label) | !nzchar(taxa_label)] <- imp_tbl$FeatureID[is.na(taxa_label) | !nzchar(taxa_label)]
-        imp_tbl$taxa_label <- taxa_label
-      } else {
-        imp_tbl$taxa_label <- imp_tbl$FeatureID
-      }
-
-      shap_values_long <- NULL
-      shap_summary_tbl <- NULL
-      shap_class_summary <- NULL
-      shap_local_default <- NULL
-      shap_target_class_used <- NULL
-      shap_baseline <- NA_real_
-      shap_status <- "SHAP is available for classification only."
-      shap_approach_used <- NA_character_
-      shap_iterative_used <- TRUE
-      shap_max_n_coalitions_used <- 256L
-      shap_fallback_used <- FALSE
-      shap_model_scope <- "Full RF model features"
-      shap_boot_n <- 100L
-      shap_perm_n <- 200L
-
-      if (is_classification) {
-        if (!requireNamespace("shapr", quietly = TRUE)) {
-          shap_status <- "Package 'shapr' is not installed. Install it to see SHAP results."
-        } else {
-          shap_target_class_used <- input$shap_target_class
-          if (is.null(shap_target_class_used) || !shap_target_class_used %in% levels(y)) {
-            shap_target_class_used <- if (nlevels(y) >= 2) levels(y)[2] else levels(y)[1]
-          }
-
-          build_predict_target_prob <- function(feature_frame) {
-            function(model, newdata) {
-              nd <- as.data.frame(newdata, check.names = FALSE)
-              missing_cols <- setdiff(colnames(feature_frame), colnames(nd))
-              if (length(missing_cols) > 0) {
-                fill_vals <- colMeans(feature_frame, na.rm = TRUE)
-                for (cc in missing_cols) nd[[cc]] <- as.numeric(fill_vals[[cc]])
+              group_means <- sapply(levels(y_group), function(gr) {
+                colMeans(x[y_group == gr, , drop = FALSE], na.rm = TRUE)
+              }, simplify = "matrix")
+              if (is.null(dim(group_means))) {
+                group_means <- matrix(group_means, ncol = 1)
+                rownames(group_means) <- colnames(x)
               }
-              nd <- nd[, colnames(feature_frame), drop = FALSE]
-              prob <- stats::predict(model, newdata = nd, type = "prob")
-              prob <- as.data.frame(prob, check.names = FALSE)
-              as.numeric(prob[[shap_target_class_used]])
+              max_mean <- apply(group_means, 1, max, na.rm = TRUE)
+              min_mean <- apply(group_means, 1, min, na.rm = TRUE)
+              diff_vec <- max_mean - min_mean
+              max_group_idx <- apply(group_means, 1, function(v) {
+                if (all(is.na(v))) return(NA_integer_)
+                idx <- which(v == max(v, na.rm = TRUE))
+                if (length(idx) == 1) idx else NA_integer_
+              })
+              direction_vec <- rep("No dominant group", length(max_group_idx))
+              valid_idx <- which(!is.na(max_group_idx))
+              if (length(valid_idx) > 0) {
+                direction_vec[valid_idx] <- paste0("Higher in ", colnames(group_means)[max_group_idx[valid_idx]])
+              }
+              mean_diff_df <- data.frame(
+                Feature = names(diff_vec),
+                MaxGroupMean = as.numeric(max_mean[names(diff_vec)]),
+                MinGroupMean = as.numeric(min_mean[names(diff_vec)]),
+                MeanDifference_MaxMinusMin = as.numeric(diff_vec),
+                Direction = as.character(direction_vec[names(diff_vec)]),
+                UnivariatePValue = as.numeric(vapply(names(diff_vec), function(feat) {
+                  suppressWarnings(tryCatch(
+                    stats::kruskal.test(x[, feat] ~ y_group)$p.value,
+                    error = function(e) NA_real_
+                  ))
+                }, numeric(1))),
+                stringsAsFactors = FALSE
+              )
+              group_mean_df <- as.data.frame(group_means, stringsAsFactors = FALSE)
+              group_mean_df$Feature <- rownames(group_mean_df)
+              colnames(group_mean_df) <- c(paste0("Mean_", colnames(group_means)), "Feature")
+              mean_diff_df <- mean_diff_df %>% dplyr::left_join(group_mean_df, by = "Feature")
+              imp_tbl <- imp_tbl %>% dplyr::left_join(mean_diff_df, by = "Feature")
             }
-          }
-          build_model_specs <- function(feature_frame) {
-            function(model) {
-              feature_labels <- colnames(feature_frame)
-              feature_classes <- vapply(feature_frame, function(col) class(col)[1], character(1))
-              factor_levels <- lapply(feature_frame, function(col) if (is.factor(col)) levels(col) else character(0))
-              list(labels = feature_labels, classes = feature_classes[feature_labels], factor_levels = factor_levels[feature_labels])
-            }
-          }
-          run_shapr_explain <- function(model_obj, x_train_df, x_test_df) {
-            predict_target_prob <- build_predict_target_prob(x_train_df)
-            get_model_specs_rf <- build_model_specs(x_train_df)
-            shap_baseline <<- mean(predict_target_prob(model_obj, x_train_df), na.rm = TRUE)
-            shapr_ns <- asNamespace("shapr")
-            explain_fn <- get("explain", envir = shapr_ns)
-            call_candidates <- list(
-              list(x_explain = x_test_df, model = model_obj, x_train = x_train_df, predict_model = predict_target_prob),
-              list(x_explain = x_test_df, model = model_obj, x = x_train_df, predict_model = predict_target_prob)
+          } else {
+            pred_all <- as.numeric(stats::predict(rf_fit, newdata = x))
+            corr_vec <- vapply(seq_len(ncol(x)), function(j) {
+              suppressWarnings(stats::cor(x[[j]], pred_all, use = "complete.obs", method = "spearman"))
+            }, numeric(1))
+            corr_df <- data.frame(
+              Feature = colnames(x),
+              FeaturePredictionCorrelation = as.numeric(corr_vec),
+              stringsAsFactors = FALSE
             )
-            approaches <- c("empirical", "independence")
-            explanation <- NULL
-            explain_errors <- character(0)
-            for (args_i in call_candidates) {
-              for (ap in approaches) {
-                args_now <- args_i
-                args_now$approach <- ap
-                args_now$iterative <- TRUE
-                args_now$max_n_coalitions <- 256
-                args_now$get_model_specs <- get_model_specs_rf
-                args_now$phi0 <- shap_baseline
-                args_now$prediction_zero <- shap_baseline
-                call_res <- tryCatch(do.call(explain_fn, args_now), error = function(e) e)
-                if (!inherits(call_res, "error")) {
-                  explanation <- call_res
-                  shap_approach_used <<- ap
-                  break
-                }
-                msg <- gsub("\u001b\\[[0-9;]*m", "", conditionMessage(call_res))
-                explain_errors <- c(explain_errors, paste0("[", ap, "] ", msg))
-              }
-              if (!is.null(explanation)) break
-            }
-            if (is.null(explanation)) {
-              stop(paste("No compatible shapr::explain() signature found.", paste(unique(explain_errors), collapse = " | ")))
-            }
-            explanation
+            imp_tbl <- imp_tbl %>% dplyr::left_join(corr_df, by = "Feature")
           }
-          parse_shap_output <- function(explanation, x_test_df, class_vec) {
-            shap_matrix <- NULL
-            if (!is.null(explanation$shapley_values)) {
-              shap_matrix <- as.data.frame(explanation$shapley_values, check.names = FALSE)
-            } else if (!is.null(explanation$dt) && is.data.frame(explanation$dt)) {
-              dt_df <- as.data.frame(explanation$dt, check.names = FALSE)
-              maybe_cols <- intersect(colnames(x_test_df), colnames(dt_df))
-              if (length(maybe_cols) == ncol(x_test_df)) {
-                shap_matrix <- dt_df[, maybe_cols, drop = FALSE]
+
+          leading_cols <- c("Feature", "FeatureID")
+          taxonomy_cols_present <- intersect(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), colnames(imp_tbl))
+          metric_cols <- setdiff(colnames(imp_tbl), c(leading_cols, taxonomy_cols_present))
+          imp_tbl <- imp_tbl[, c(leading_cols, taxonomy_cols_present, metric_cols), drop = FALSE]
+          if (length(taxonomy_cols_present) > 0) {
+            rank_prefix_map <- c(
+              Kingdom = "k__",
+              Phylum = "p__",
+              Class = "c__",
+              Order = "o__",
+              Family = "f__",
+              Genus = "g__",
+              Species = "s__"
+            )
+            get_rank_unassigned_label <- function(rank_name) {
+              prefix <- rank_prefix_map[[rank_name]]
+              if (is.null(prefix) || !nzchar(prefix)) {
+                prefix <- paste0(substr(tolower(rank_name), 1, 1), "__")
               }
+              paste0(prefix, "Unassigned")
             }
-            if (is.null(shap_matrix) && is.data.frame(explanation)) {
-              exp_df <- as.data.frame(explanation, check.names = FALSE)
-              maybe_cols <- intersect(colnames(x_test_df), colnames(exp_df))
-              if (length(maybe_cols) == ncol(x_test_df)) {
-                shap_matrix <- exp_df[, maybe_cols, drop = FALSE]
+            label_rank_order <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
+            if (!identical(input$tax_level, "ASV") && input$tax_level %in% label_rank_order) {
+              label_rank_order <- label_rank_order[seq_len(match(input$tax_level, label_rank_order))]
+            }
+            label_ranks_present <- intersect(label_rank_order, taxonomy_cols_present)
+            tax_mat <- as.data.frame(imp_tbl[, label_ranks_present, drop = FALSE], stringsAsFactors = FALSE)
+            for (cc in colnames(tax_mat)) tax_mat[[cc]] <- as.character(tax_mat[[cc]])
+            taxa_label <- apply(tax_mat, 1, function(taxa_row) {
+              parts <- vapply(seq_along(taxa_row), function(i) {
+                v <- taxa_row[i]
+                rk <- names(taxa_row)[i]
+                if (is.na(v) || !nzchar(v)) {
+                  get_rank_unassigned_label(rk)
+                } else {
+                  v
+                }
+              }, character(1))
+              paste(parts, collapse = ";")
+            })
+            taxa_label[is.na(taxa_label) | !nzchar(taxa_label)] <- imp_tbl$FeatureID[is.na(taxa_label) | !nzchar(taxa_label)]
+            imp_tbl$taxa_label <- taxa_label
+          } else {
+            imp_tbl$taxa_label <- imp_tbl$FeatureID
+          }
+
+          shap_values_long <- NULL
+          shap_summary_tbl <- NULL
+          shap_class_summary <- NULL
+          shap_local_default <- NULL
+          shap_target_class_used <- NULL
+          shap_baseline <- NA_real_
+          shap_status <- "SHAP is available for classification only."
+          shap_approach_used <- NA_character_
+          shap_iterative_used <- TRUE
+          shap_max_n_coalitions_used <- 256L
+          shap_fallback_used <- FALSE
+          shap_model_scope <- "Full RF model features"
+          shap_boot_n <- 100L
+          shap_perm_n <- 200L
+
+          if (is_classification) {
+            if (!requireNamespace("shapr", quietly = TRUE)) {
+              shap_status <- "Package 'shapr' is not installed. Install it to see SHAP results."
+            } else {
+              shap_target_class_used <- input$shap_target_class
+              if (is.null(shap_target_class_used) || !shap_target_class_used %in% levels(y)) {
+                shap_target_class_used <- if (nlevels(y) >= 2) levels(y)[2] else levels(y)[1]
               }
-            }
-            if (is.null(shap_matrix) && is.list(explanation)) {
-              for (nm in names(explanation)) {
-                obj <- explanation[[nm]]
-                if (is.null(obj) || !is.data.frame(obj)) next
-                obj_df <- as.data.frame(obj, check.names = FALSE)
-                maybe_cols <- intersect(colnames(x_test_df), colnames(obj_df))
-                if (length(maybe_cols) == ncol(x_test_df)) {
-                  shap_matrix <- obj_df[, maybe_cols, drop = FALSE]
-                  break
+
+              build_predict_target_prob <- function(feature_frame) {
+                function(model, newdata) {
+                  nd <- as.data.frame(newdata, check.names = FALSE)
+                  missing_cols <- setdiff(colnames(feature_frame), colnames(nd))
+                  if (length(missing_cols) > 0) {
+                    fill_vals <- colMeans(feature_frame, na.rm = TRUE)
+                    for (cc in missing_cols) nd[[cc]] <- as.numeric(fill_vals[[cc]])
+                  }
+                  nd <- nd[, colnames(feature_frame), drop = FALSE]
+                  prob <- stats::predict(model, newdata = nd, type = "prob")
+                  prob <- as.data.frame(prob, check.names = FALSE)
+                  as.numeric(prob[[shap_target_class_used]])
                 }
               }
-            }
-            if (is.null(shap_matrix) && is.list(explanation) && !is.null(explanation$dt) && is.data.frame(explanation$dt)) {
-              dt <- as.data.frame(explanation$dt, check.names = FALSE)
-              long_candidates <- c("feature", "Feature", "variable", "name")
-              value_candidates <- c("phi", "Phi", "shapley_value", "value", "contribution")
-              feat_col <- long_candidates[long_candidates %in% colnames(dt)]
-              val_col <- value_candidates[value_candidates %in% colnames(dt)]
-              if (length(feat_col) > 0 && length(val_col) > 0) {
-                feat_col <- feat_col[1]
-                val_col <- val_col[1]
-                id_candidates <- c("id", "index", "row_id", "sample_id", "SampleID")
-                id_col <- id_candidates[id_candidates %in% colnames(dt)]
-                if (length(id_col) > 0) {
-                  id_col <- id_col[1]
-                  dt_sub <- dt[, c(id_col, feat_col, val_col), drop = FALSE]
-                  colnames(dt_sub) <- c("SampleID", "Feature", "SHAP")
-                  dt_sub$SampleID <- as.character(dt_sub$SampleID)
-                  wide <- tryCatch(
-                    tidyr::pivot_wider(dt_sub, names_from = Feature, values_from = SHAP),
-                    error = function(e) NULL
-                  )
-                  if (!is.null(wide)) {
-                    wide <- as.data.frame(wide, check.names = FALSE)
-                    rn <- as.character(wide$SampleID)
-                    wide$SampleID <- NULL
-                    maybe_cols <- intersect(colnames(x_test_df), colnames(wide))
-                    if (length(maybe_cols) > 0) {
-                      shap_matrix <- wide[, maybe_cols, drop = FALSE]
-                      rownames(shap_matrix) <- rn
+              build_model_specs <- function(feature_frame) {
+                function(model) {
+                  feature_labels <- colnames(feature_frame)
+                  feature_classes <- vapply(feature_frame, function(col) class(col)[1], character(1))
+                  factor_levels <- lapply(feature_frame, function(col) if (is.factor(col)) levels(col) else character(0))
+                  list(labels = feature_labels, classes = feature_classes[feature_labels], factor_levels = factor_levels[feature_labels])
+                }
+              }
+              run_shapr_explain <- function(model_obj, x_train_df, x_test_df) {
+                predict_target_prob <- build_predict_target_prob(x_train_df)
+                get_model_specs_rf <- build_model_specs(x_train_df)
+                shap_baseline <<- mean(predict_target_prob(model_obj, x_train_df), na.rm = TRUE)
+                shapr_ns <- asNamespace("shapr")
+                explain_fn <- get("explain", envir = shapr_ns)
+                call_candidates <- list(
+                  list(x_explain = x_test_df, model = model_obj, x_train = x_train_df, predict_model = predict_target_prob),
+                  list(x_explain = x_test_df, model = model_obj, x = x_train_df, predict_model = predict_target_prob)
+                )
+                approaches <- c("empirical", "independence")
+                explanation <- NULL
+                explain_errors <- character(0)
+                for (args_i in call_candidates) {
+                  for (ap in approaches) {
+                    args_now <- args_i
+                    args_now$approach <- ap
+                    args_now$iterative <- TRUE
+                    args_now$max_n_coalitions <- 256
+                    args_now$get_model_specs <- get_model_specs_rf
+                    args_now$phi0 <- shap_baseline
+                    args_now$prediction_zero <- shap_baseline
+                    call_res <- tryCatch(do.call(explain_fn, args_now), error = function(e) e)
+                    if (!inherits(call_res, "error")) {
+                      explanation <- call_res
+                      shap_approach_used <<- ap
+                      break
+                    }
+                    msg <- gsub("\u001b\\[[0-9;]*m", "", conditionMessage(call_res))
+                    explain_errors <- c(explain_errors, paste0("[", ap, "] ", msg))
+                  }
+                  if (!is.null(explanation)) break
+                }
+                if (is.null(explanation)) {
+                  stop(paste("No compatible shapr::explain() signature found.", paste(unique(explain_errors), collapse = " | ")))
+                }
+                explanation
+              }
+              parse_shap_output <- function(explanation, x_test_df, class_vec) {
+                shap_matrix <- NULL
+                if (!is.null(explanation$shapley_values)) {
+                  shap_matrix <- as.data.frame(explanation$shapley_values, check.names = FALSE)
+                } else if (!is.null(explanation$dt) && is.data.frame(explanation$dt)) {
+                  dt_df <- as.data.frame(explanation$dt, check.names = FALSE)
+                  maybe_cols <- intersect(colnames(x_test_df), colnames(dt_df))
+                  if (length(maybe_cols) == ncol(x_test_df)) {
+                    shap_matrix <- dt_df[, maybe_cols, drop = FALSE]
+                  }
+                }
+                if (is.null(shap_matrix) && is.data.frame(explanation)) {
+                  exp_df <- as.data.frame(explanation, check.names = FALSE)
+                  maybe_cols <- intersect(colnames(x_test_df), colnames(exp_df))
+                  if (length(maybe_cols) == ncol(x_test_df)) {
+                    shap_matrix <- exp_df[, maybe_cols, drop = FALSE]
+                  }
+                }
+                if (is.null(shap_matrix) && is.list(explanation)) {
+                  for (nm in names(explanation)) {
+                    obj <- explanation[[nm]]
+                    if (is.null(obj) || !is.data.frame(obj)) next
+                    obj_df <- as.data.frame(obj, check.names = FALSE)
+                    maybe_cols <- intersect(colnames(x_test_df), colnames(obj_df))
+                    if (length(maybe_cols) == ncol(x_test_df)) {
+                      shap_matrix <- obj_df[, maybe_cols, drop = FALSE]
+                      break
                     }
                   }
                 }
+                if (is.null(shap_matrix) && is.list(explanation) && !is.null(explanation$dt) && is.data.frame(explanation$dt)) {
+                  dt <- as.data.frame(explanation$dt, check.names = FALSE)
+                  long_candidates <- c("feature", "Feature", "variable", "name")
+                  value_candidates <- c("phi", "Phi", "shapley_value", "value", "contribution")
+                  feat_col <- long_candidates[long_candidates %in% colnames(dt)]
+                  val_col <- value_candidates[value_candidates %in% colnames(dt)]
+                  if (length(feat_col) > 0 && length(val_col) > 0) {
+                    feat_col <- feat_col[1]
+                    val_col <- val_col[1]
+                    id_candidates <- c("id", "index", "row_id", "sample_id", "SampleID")
+                    id_col <- id_candidates[id_candidates %in% colnames(dt)]
+                    if (length(id_col) > 0) {
+                      id_col <- id_col[1]
+                      dt_sub <- dt[, c(id_col, feat_col, val_col), drop = FALSE]
+                      colnames(dt_sub) <- c("SampleID", "Feature", "SHAP")
+                      dt_sub$SampleID <- as.character(dt_sub$SampleID)
+                      wide <- tryCatch(
+                        tidyr::pivot_wider(dt_sub, names_from = Feature, values_from = SHAP),
+                        error = function(e) NULL
+                      )
+                      if (!is.null(wide)) {
+                        wide <- as.data.frame(wide, check.names = FALSE)
+                        rn <- as.character(wide$SampleID)
+                        wide$SampleID <- NULL
+                        maybe_cols <- intersect(colnames(x_test_df), colnames(wide))
+                        if (length(maybe_cols) > 0) {
+                          shap_matrix <- wide[, maybe_cols, drop = FALSE]
+                          rownames(shap_matrix) <- rn
+                        }
+                      }
+                    }
+                  }
+                }
+                if (is.null(shap_matrix)) {
+                  top_names <- if (is.list(explanation)) paste(names(explanation), collapse = ", ") else class(explanation)[1]
+                  stop(paste0("Could not parse SHAP values from shapr output. Available fields: ", top_names))
+                }
+                shap_matrix$SampleID <- rownames(x_test_df)
+                if (is.null(shap_matrix$SampleID)) shap_matrix$SampleID <- paste0("Sample_", seq_len(nrow(shap_matrix)))
+                shap_values_long <- shap_matrix %>%
+                  tidyr::pivot_longer(cols = -SampleID, names_to = "Feature", values_to = "SHAP") %>%
+                  dplyr::left_join(data.frame(SampleID = rownames(x_test_df), ActualClass = as.character(class_vec), stringsAsFactors = FALSE), by = "SampleID")
+                list(shap_values_long = shap_values_long)
+              }
+              shap_try <- tryCatch({
+                x_train_df <- as.data.frame(x_train, check.names = FALSE)
+                x_test_df <- as.data.frame(x_test, check.names = FALSE)
+                explanation <- run_shapr_explain(rf_fit, x_train_df, x_test_df)
+                parsed <- parse_shap_output(explanation, x_test_df, y_test)
+                shap_values_long <- parsed$shap_values_long
+                shap_summary_tbl <- build_shap_summary_metrics(
+                  shap_values_long = shap_values_long,
+                  feature_map = feature_map,
+                  imp_tbl = imp_tbl,
+                  seed_val = as.integer(input$seed),
+                  n_boot = shap_boot_n,
+                  n_perm = shap_perm_n
+                )
+                shap_class_summary <- shap_values_long %>%
+                  dplyr::group_by(ActualClass, Feature) %>%
+                  dplyr::summarise(MeanAbsSHAP = mean(abs(SHAP), na.rm = TRUE), MeanSHAP = mean(SHAP, na.rm = TRUE), .groups = "drop") %>%
+                  dplyr::arrange(ActualClass, dplyr::desc(MeanAbsSHAP))
+                first_sample <- shap_values_long$SampleID[1]
+                shap_local_default <- shap_values_long %>%
+                  dplyr::filter(SampleID == first_sample) %>%
+                  dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel")) %>%
+                  dplyr::arrange(dplyr::desc(abs(SHAP)))
+                NULL
+              }, error = function(e) conditionMessage(e))
+              if (!is.null(shap_try) && grepl("solve\\(\\): solution not found", shap_try)) {
+                shap_try <- tryCatch({
+                  shap_fallback_used <- TRUE
+                  top_n <- min(30L, ncol(x_train))
+                  shap_model_scope <- paste0("Fallback RF model (top ", top_n, " features)")
+                  top_feats <- imp_tbl %>% dplyr::slice_max(order_by = PermutationImportance, n = top_n, with_ties = FALSE) %>% dplyr::pull(Feature)
+                  x_train_small <- as.data.frame(x_train[, top_feats, drop = FALSE], check.names = FALSE)
+                  x_test_small <- as.data.frame(x_test[, top_feats, drop = FALSE], check.names = FALSE)
+                  rf_shap <- randomForest::randomForest(
+                    x = x_train_small, y = y_train,
+                    ntree = max(200L, floor(as.integer(input$ntree) / 2)),
+                    mtry = max(1L, floor(sqrt(ncol(x_train_small)))),
+                    importance = FALSE
+                  )
+                  explanation <- run_shapr_explain(rf_shap, x_train_small, x_test_small)
+                  parsed <- parse_shap_output(explanation, x_test_small, y_test)
+                  shap_values_long <- parsed$shap_values_long
+                  shap_summary_tbl <- build_shap_summary_metrics(
+                    shap_values_long = shap_values_long,
+                    feature_map = feature_map,
+                    imp_tbl = imp_tbl,
+                    seed_val = as.integer(input$seed),
+                    n_boot = shap_boot_n,
+                    n_perm = shap_perm_n
+                  )
+                  shap_class_summary <- shap_values_long %>%
+                    dplyr::group_by(ActualClass, Feature) %>%
+                    dplyr::summarise(MeanAbsSHAP = mean(abs(SHAP), na.rm = TRUE), MeanSHAP = mean(SHAP, na.rm = TRUE), .groups = "drop") %>%
+                    dplyr::arrange(ActualClass, dplyr::desc(MeanAbsSHAP))
+                  first_sample <- shap_values_long$SampleID[1]
+                  shap_local_default <- shap_values_long %>%
+                    dplyr::filter(SampleID == first_sample) %>%
+                    dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel")) %>%
+                    dplyr::arrange(dplyr::desc(abs(SHAP)))
+                  shap_status <<- paste0("SHAP computed with fallback model (top ", top_n, " features).")
+                  NULL
+                }, error = function(e) conditionMessage(e))
+              }
+
+              if (is.null(shap_try)) {
+                shap_status <- paste0("SHAP computed on test samples: ", length(unique(shap_values_long$SampleID)))
+              } else {
+                shap_status <- paste0("SHAP calculation failed: ", shap_try)
               }
             }
-            if (is.null(shap_matrix)) {
-              top_names <- if (is.list(explanation)) paste(names(explanation), collapse = ", ") else class(explanation)[1]
-              stop(paste0("Could not parse SHAP values from shapr output. Available fields: ", top_names))
-            }
-            shap_matrix$SampleID <- rownames(x_test_df)
-            if (is.null(shap_matrix$SampleID)) shap_matrix$SampleID <- paste0("Sample_", seq_len(nrow(shap_matrix)))
-            shap_values_long <- shap_matrix %>%
-              tidyr::pivot_longer(cols = -SampleID, names_to = "Feature", values_to = "SHAP") %>%
-              dplyr::left_join(data.frame(SampleID = rownames(x_test_df), ActualClass = as.character(class_vec), stringsAsFactors = FALSE), by = "SampleID")
-            list(shap_values_long = shap_values_long)
-          }
-          shap_try <- tryCatch({
-            x_train_df <- as.data.frame(x_train, check.names = FALSE)
-            x_test_df <- as.data.frame(x_test, check.names = FALSE)
-            explanation <- run_shapr_explain(rf_fit, x_train_df, x_test_df)
-            parsed <- parse_shap_output(explanation, x_test_df, y_test)
-            shap_values_long <- parsed$shap_values_long
-            shap_summary_tbl <- build_shap_summary_metrics(
-              shap_values_long = shap_values_long,
-              feature_map = feature_map,
-              imp_tbl = imp_tbl,
-              seed_val = as.integer(input$seed),
-              n_boot = shap_boot_n,
-              n_perm = shap_perm_n
-            )
-            shap_class_summary <- shap_values_long %>%
-              dplyr::group_by(ActualClass, Feature) %>%
-              dplyr::summarise(MeanAbsSHAP = mean(abs(SHAP), na.rm = TRUE), MeanSHAP = mean(SHAP, na.rm = TRUE), .groups = "drop") %>%
-              dplyr::arrange(ActualClass, dplyr::desc(MeanAbsSHAP))
-            first_sample <- shap_values_long$SampleID[1]
-            shap_local_default <- shap_values_long %>%
-              dplyr::filter(SampleID == first_sample) %>%
-              dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel")) %>%
-              dplyr::arrange(dplyr::desc(abs(SHAP)))
-            NULL
-          }, error = function(e) conditionMessage(e))
-          if (!is.null(shap_try) && grepl("solve\\(\\): solution not found", shap_try)) {
-            shap_try <- tryCatch({
-              shap_fallback_used <- TRUE
-              top_n <- min(30L, ncol(x_train))
-              shap_model_scope <- paste0("Fallback RF model (top ", top_n, " features)")
-              top_feats <- imp_tbl %>% dplyr::slice_max(order_by = PermutationImportance, n = top_n, with_ties = FALSE) %>% dplyr::pull(Feature)
-              x_train_small <- as.data.frame(x_train[, top_feats, drop = FALSE], check.names = FALSE)
-              x_test_small <- as.data.frame(x_test[, top_feats, drop = FALSE], check.names = FALSE)
-              rf_shap <- randomForest::randomForest(
-                x = x_train_small, y = y_train,
-                ntree = max(200L, floor(as.integer(input$ntree) / 2)),
-                mtry = max(1L, floor(sqrt(ncol(x_train_small)))),
-                importance = FALSE
-              )
-              explanation <- run_shapr_explain(rf_shap, x_train_small, x_test_small)
-              parsed <- parse_shap_output(explanation, x_test_small, y_test)
-              shap_values_long <- parsed$shap_values_long
-              shap_summary_tbl <- build_shap_summary_metrics(
-                shap_values_long = shap_values_long,
-                feature_map = feature_map,
-                imp_tbl = imp_tbl,
-                seed_val = as.integer(input$seed),
-                n_boot = shap_boot_n,
-                n_perm = shap_perm_n
-              )
-              shap_class_summary <- shap_values_long %>%
-                dplyr::group_by(ActualClass, Feature) %>%
-                dplyr::summarise(MeanAbsSHAP = mean(abs(SHAP), na.rm = TRUE), MeanSHAP = mean(SHAP, na.rm = TRUE), .groups = "drop") %>%
-                dplyr::arrange(ActualClass, dplyr::desc(MeanAbsSHAP))
-              first_sample <- shap_values_long$SampleID[1]
-              shap_local_default <- shap_values_long %>%
-                dplyr::filter(SampleID == first_sample) %>%
-                dplyr::left_join(feature_map, by = c("Feature" = "FeatureModel")) %>%
-                dplyr::arrange(dplyr::desc(abs(SHAP)))
-              shap_status <<- paste0("SHAP computed with fallback model (top ", top_n, " features).")
-              NULL
-            }, error = function(e) conditionMessage(e))
           }
 
-          if (is.null(shap_try)) {
-            shap_status <- paste0("SHAP computed on test samples: ", length(unique(shap_values_long$SampleID)))
-          } else {
-            shap_status <- paste0("SHAP calculation failed: ", shap_try)
-          }
-        }
-      }
-
-      shap_section_text <- paste0(
-        "SHAP status: ", shap_status,
-        if (!is.null(shap_target_class_used) && nzchar(shap_target_class_used)) {
-          paste0("\nSHAP target class: ", shap_target_class_used)
-        } else "",
-        if (is.finite(shap_baseline)) {
-          paste0("\nSHAP baseline probability: ", sprintf("%.6f", shap_baseline))
-        } else "",
-        if (is_classification) {
-          paste0(
-            "\nSHAP options:",
-            "\n- package: shapr",
-            "\n- approach used: ", ifelse(is.na(shap_approach_used), "NA", shap_approach_used),
-            "\n- iterative: ", ifelse(isTRUE(shap_iterative_used), "TRUE", "FALSE"),
-            "\n- max_n_coalitions: ", as.integer(shap_max_n_coalitions_used),
-            "\n- model scope: ", shap_model_scope,
-            "\n- fallback used: ", ifelse(isTRUE(shap_fallback_used), "TRUE", "FALSE"),
-            "\n- stability bootstrap reps: ", as.integer(shap_boot_n),
-            "\n- empirical p-value permutations: ", as.integer(shap_perm_n)
+          shap_section_text <- paste0(
+            "SHAP status: ", shap_status,
+            if (!is.null(shap_target_class_used) && nzchar(shap_target_class_used)) {
+              paste0("\nSHAP target class: ", shap_target_class_used)
+            } else "",
+            if (is.finite(shap_baseline)) {
+              paste0("\nSHAP baseline probability: ", sprintf("%.6f", shap_baseline))
+            } else "",
+            if (is_classification) {
+              paste0(
+                "\nSHAP options:",
+                "\n- package: shapr",
+                "\n- approach used: ", ifelse(is.na(shap_approach_used), "NA", shap_approach_used),
+                "\n- iterative: ", ifelse(isTRUE(shap_iterative_used), "TRUE", "FALSE"),
+                "\n- max_n_coalitions: ", as.integer(shap_max_n_coalitions_used),
+                "\n- model scope: ", shap_model_scope,
+                "\n- fallback used: ", ifelse(isTRUE(shap_fallback_used), "TRUE", "FALSE"),
+                "\n- stability bootstrap reps: ", as.integer(shap_boot_n),
+                "\n- empirical p-value permutations: ", as.integer(shap_perm_n)
+              )
+            } else ""
           )
-        } else ""
-      )
 
-      metrics_text <- paste0(
-        metrics_text,
-        "\n\n--------------------\n[RF]\n",
-        rf_options_text,
-        "\n\n--------------------\n[SHAP]\n",
-        shap_section_text
-      )
+          metrics_text <- paste0(
+            metrics_text,
+            "\n\n--------------------\n[RF]\n",
+            rf_options_text,
+            "\n\n--------------------\n[SHAP]\n",
+            shap_section_text
+          )
 
           model_result(list(
             metrics = metrics_text,

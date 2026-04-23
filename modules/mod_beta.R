@@ -120,8 +120,8 @@ mod_beta_ui <- function(id) {
           numericInput(ns("envfit_p_cutoff"), "p-value cutoff:", value = 0.05, min = 0.001, max = 1, step = 0.01),
           checkboxInput(ns("show_envfit_vectors"), "Overlay EnvFit vectors on plots", value = TRUE),
           actionButton(ns("run_envfit"), "Run EnvFit", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
-        tags$script(HTML(
-          "Shiny.addCustomMessageHandler('toggle-envfit-run-btn', function(msg) {
+          tags$script(HTML(
+            "Shiny.addCustomMessageHandler('toggle-envfit-run-btn', function(msg) {
                var btn = document.getElementById(msg.id);
                if (!btn) return;
                btn.disabled = !!msg.disabled;
@@ -161,18 +161,18 @@ mod_beta_ui <- function(id) {
           tabsetPanel(
             id = ns("beta_tabs"),
             tabPanel("PCoA",
-                     uiOutput(ns("pcoa_plot_ui"))
+              uiOutput(ns("pcoa_plot_ui"))
             ),
             tabPanel("NMDS",
-                     uiOutput(ns("nmds_plot_ui")),
-                     tags$div(
-                       style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
-                       actionButton(
-                         ns("redraw_nmds"),
-                         "Redraw Plot",
-                         style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
-                       )
-                     )
+              uiOutput(ns("nmds_plot_ui")),
+              tags$div(
+                style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
+                actionButton(
+                  ns("redraw_nmds"),
+                  "Redraw Plot",
+                  style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
+                )
+              )
             )
           )
         ),
@@ -1047,16 +1047,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result)) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
-        plot_data$SampleID <- as.character(plot_data$SampleID)
-        plot_data <- dplyr::left_join(plot_data, clu_df, by = "SampleID")
-        if ("Cluster" %in% colnames(plot_data)) {
-          plot_data$ClusterLabel <- ifelse(is.na(plot_data$Cluster), "", paste0("C", plot_data$Cluster))
-          p <- p + ggplot2::geom_text(
-            data = plot_data,
-            mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = ClusterLabel),
-            color = "black", size = text_size_cluster, vjust = -0.8, show.legend = FALSE
-          )
-        }
+          plot_data$SampleID <- as.character(plot_data$SampleID)
+          plot_data <- dplyr::left_join(plot_data, clu_df, by = "SampleID")
+          if ("Cluster" %in% colnames(plot_data)) {
+            plot_data$ClusterLabel <- ifelse(is.na(plot_data$Cluster), "", paste0("C", plot_data$Cluster))
+            p <- p + ggplot2::geom_text(
+              data = plot_data,
+              mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = ClusterLabel),
+              color = "black", size = text_size_cluster, vjust = -0.8, show.legend = FALSE
+            )
+          }
         }
       }
 
@@ -1079,40 +1079,40 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           vec_point <- vec_df[taxa_flag, , drop = FALSE]
 
           if (nrow(vec_arrow) > 0) {
-          vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
-          vec_arrow$yend_plot <- pmin(pmax(vec_arrow$yend, y_min), y_max)
-          p <- p +
-            ggplot2::geom_segment(
-              data = vec_arrow,
-              ggplot2::aes(x = x, y = y, xend = xend_plot, yend = yend_plot),
-              inherit.aes = FALSE,
-              arrow = grid::arrow(length = grid::unit(0.18, "cm")),
-              color = "#2E7D32",
-              linewidth = 0.6
-            )
-          if (requireNamespace("ggrepel", quietly = TRUE)) {
-            p <- p + ggrepel::geom_text_repel(
-              data = vec_arrow,
-              ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
-              inherit.aes = FALSE,
-              color = "#1B5E20",
-              size = text_size_env_arrow,
-              min.segment.length = 0,
-              box.padding = 0.2,
-              point.padding = 0.15,
-              max.overlaps = Inf
-            )
-          } else {
-            p <- p + ggplot2::geom_text(
-              data = vec_arrow,
-              ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
-              inherit.aes = FALSE,
-              color = "#1B5E20",
-              size = text_size_env_arrow,
-              hjust = -0.05,
-              check_overlap = TRUE
-            )
-          }
+            vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
+            vec_arrow$yend_plot <- pmin(pmax(vec_arrow$yend, y_min), y_max)
+            p <- p +
+              ggplot2::geom_segment(
+                data = vec_arrow,
+                ggplot2::aes(x = x, y = y, xend = xend_plot, yend = yend_plot),
+                inherit.aes = FALSE,
+                arrow = grid::arrow(length = grid::unit(0.18, "cm")),
+                color = "#2E7D32",
+                linewidth = 0.6
+              )
+            if (requireNamespace("ggrepel", quietly = TRUE)) {
+              p <- p + ggrepel::geom_text_repel(
+                data = vec_arrow,
+                ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
+                inherit.aes = FALSE,
+                color = "#1B5E20",
+                size = text_size_env_arrow,
+                min.segment.length = 0,
+                box.padding = 0.2,
+                point.padding = 0.15,
+                max.overlaps = Inf
+              )
+            } else {
+              p <- p + ggplot2::geom_text(
+                data = vec_arrow,
+                ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
+                inherit.aes = FALSE,
+                color = "#1B5E20",
+                size = text_size_env_arrow,
+                hjust = -0.05,
+                check_overlap = TRUE
+              )
+            }
           }
 
           if (nrow(vec_point) > 0) {
@@ -1276,16 +1276,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result)) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
-        plot_data$SampleID <- as.character(plot_data$SampleID)
-        plot_data <- dplyr::left_join(plot_data, clu_df, by = "SampleID")
-        if ("Cluster" %in% colnames(plot_data)) {
-          plot_data$ClusterLabel <- ifelse(is.na(plot_data$Cluster), "", paste0("C", plot_data$Cluster))
-          p <- p + ggplot2::geom_text(
-            data = plot_data,
-            mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = ClusterLabel),
-            color = "black", size = text_size_cluster, vjust = -0.8, show.legend = FALSE
-          )
-        }
+          plot_data$SampleID <- as.character(plot_data$SampleID)
+          plot_data <- dplyr::left_join(plot_data, clu_df, by = "SampleID")
+          if ("Cluster" %in% colnames(plot_data)) {
+            plot_data$ClusterLabel <- ifelse(is.na(plot_data$Cluster), "", paste0("C", plot_data$Cluster))
+            p <- p + ggplot2::geom_text(
+              data = plot_data,
+              mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = ClusterLabel),
+              color = "black", size = text_size_cluster, vjust = -0.8, show.legend = FALSE
+            )
+          }
         }
       }
 
@@ -1308,40 +1308,40 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           vec_point <- vec_df[taxa_flag, , drop = FALSE]
 
           if (nrow(vec_arrow) > 0) {
-          vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
-          vec_arrow$yend_plot <- pmin(pmax(vec_arrow$yend, y_min), y_max)
-          p <- p +
-            ggplot2::geom_segment(
-              data = vec_arrow,
-              ggplot2::aes(x = x, y = y, xend = xend_plot, yend = yend_plot),
-              inherit.aes = FALSE,
-              arrow = grid::arrow(length = grid::unit(0.18, "cm")),
-              color = "#2E7D32",
-              linewidth = 0.6
-            )
-          if (requireNamespace("ggrepel", quietly = TRUE)) {
-            p <- p + ggrepel::geom_text_repel(
-              data = vec_arrow,
-              ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
-              inherit.aes = FALSE,
-              color = "#1B5E20",
-              size = text_size_env_arrow,
-              min.segment.length = 0,
-              box.padding = 0.2,
-              point.padding = 0.15,
-              max.overlaps = Inf
-            )
-          } else {
-            p <- p + ggplot2::geom_text(
-              data = vec_arrow,
-              ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
-              inherit.aes = FALSE,
-              color = "#1B5E20",
-              size = text_size_env_arrow,
-              hjust = -0.05,
-              check_overlap = TRUE
-            )
-          }
+            vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
+            vec_arrow$yend_plot <- pmin(pmax(vec_arrow$yend, y_min), y_max)
+            p <- p +
+              ggplot2::geom_segment(
+                data = vec_arrow,
+                ggplot2::aes(x = x, y = y, xend = xend_plot, yend = yend_plot),
+                inherit.aes = FALSE,
+                arrow = grid::arrow(length = grid::unit(0.18, "cm")),
+                color = "#2E7D32",
+                linewidth = 0.6
+              )
+            if (requireNamespace("ggrepel", quietly = TRUE)) {
+              p <- p + ggrepel::geom_text_repel(
+                data = vec_arrow,
+                ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
+                inherit.aes = FALSE,
+                color = "#1B5E20",
+                size = text_size_env_arrow,
+                min.segment.length = 0,
+                box.padding = 0.2,
+                point.padding = 0.15,
+                max.overlaps = Inf
+              )
+            } else {
+              p <- p + ggplot2::geom_text(
+                data = vec_arrow,
+                ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
+                inherit.aes = FALSE,
+                color = "#1B5E20",
+                size = text_size_env_arrow,
+                hjust = -0.05,
+                check_overlap = TRUE
+              )
+            }
           }
 
           if (nrow(vec_point) > 0) {

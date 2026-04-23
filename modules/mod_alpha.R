@@ -181,8 +181,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       if (is_secondary) {
         validate(need(secondary_col %in% colnames(meta_data), paste0("Secondary grouping variable '", input$secondary_group_var, "' was not found in metadata.")))
       }
-      valid_cols <- if(is_secondary) c(primary_col, secondary_col) else primary_col
-      valid_samples <- complete.cases(meta_data[, valid_cols, drop=FALSE])
+      valid_cols <- if (is_secondary) c(primary_col, secondary_col) else primary_col
+      valid_samples <- complete.cases(meta_data[, valid_cols, drop = FALSE])
       physeq_filtered <- phyloseq::prune_samples(valid_samples, physeq_rarefied)
       meta_filtered <- meta_data[valid_samples, , drop = FALSE]
       alpha_df <- phyloseq::estimate_richness(physeq_filtered, measures = input$alpha_methods)
@@ -458,8 +458,12 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         }
       )
     },
-    height = function() { input$plot_height },
-    width = function() { input$plot_width })
+    height = function() { 
+      input$plot_height 
+    },
+    width = function() { 
+      input$plot_width 
+    })
     
     output$rarefy_size_text <- renderText({
       req(rarefaction_size())
@@ -467,15 +471,19 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
     })
     
     output$download_alpha_plot <- downloadHandler(
-      filename = function() { paste0("alpha_plot_", Sys.Date(), ".png") },
+      filename = function() { 
+        paste0("alpha_plot_", Sys.Date(), ".png") 
+      },
       content = function(file) {
         ggplot2::ggsave(file, plot = alpha_plot_reactive(), device = "png", 
-                        width = input$plot_width/72, height = input$plot_height/72, dpi = 300)
+                        width = input$plot_width / 72, height = input$plot_height / 72, dpi = 300)
       }
     )
     
     output$download_alpha_data <- downloadHandler(
-      filename = function() { paste0("alpha_data_", Sys.Date(), ".tsv") },
+      filename = function() { 
+        paste0("alpha_data_", Sys.Date(), ".tsv") 
+      },
       content = function(file) {
         utils::write.table(alpha_long_reactive(), file, sep = "\t", row.names = FALSE, quote = FALSE)
       }

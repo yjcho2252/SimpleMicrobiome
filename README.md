@@ -83,18 +83,6 @@ The app automatically:
 - Intersects shared taxa IDs between abundance and taxonomy
 - Removes zero-sum taxa/samples
 
-## Example Data
-
-Bundled files:
-
-- `sample/1_ASV_table.txt`
-- `sample/2_taxonomy_table.txt`
-- `sample/3_metadata.txt`
-
-QZA conversion link (table.qza/taxonomy.qza):
-
-- `https://simplemicrobiome.mglab.org/convert/ui`
-
 ## Recommended Workflow
 
 1. Load data in **Data Loading**.
