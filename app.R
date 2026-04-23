@@ -154,7 +154,7 @@ ui <- page_navbar(
   nav_menu(
     title = "Taxa Profiles",
     icon = icon("chart-line"),
-    nav_panel("Taxa Barplot", icon = icon("chart-bar"), mod_barplot_ui("mod_barplot")),
+    nav_panel("Taxa Bar plot", icon = icon("chart-bar"), mod_barplot_ui("mod_barplot")),
     nav_panel("Taxa Comparison", icon = icon("square-poll-vertical"), mod_taxa_comparison_ui("mod_taxa_comparison"))
   ),
   

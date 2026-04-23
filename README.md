@@ -18,7 +18,7 @@ Public app: https://simplemicrobiome.mglab.org/
 - **Preprocessing**
   - Sample/taxa filtering before downstream analyses
 - **Taxa Profiles**
-  - Taxa Barplot
+  - Taxa Bar plot
   - Taxa Comparison (including optional longitudinal/paired overlay and paired test mode when enabled)
 - **Diversity**
   - Alpha Diversity

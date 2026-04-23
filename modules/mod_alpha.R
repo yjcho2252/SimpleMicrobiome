@@ -2,6 +2,14 @@
 mod_alpha_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -25,10 +33,11 @@ mod_alpha_ui <- function(id) {
                            ),
                            selected = c("Chao1", "Shannon")),
         hr(),
+        h5(icon("sliders"), "Plot Settings"),
         selectInput(
           ns("plot_type"),
           "Plot Type:",
-          choices = c("Boxplot" = "boxplot", "Barplot (mean ± SE)" = "barplot"),
+          choices = c("Box plot" = "boxplot", "Bar plot" = "barplot"),
           selected = "boxplot"
         ),
         selectInput(
@@ -42,7 +51,7 @@ mod_alpha_ui <- function(id) {
           ),
           selected = "set2"
         ),
-        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Barplot)", value = FALSE),
+        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
         
         hr(),
         h4(icon("sliders"), "P-value Options"),
@@ -50,16 +59,16 @@ mod_alpha_ui <- function(id) {
           "#%s { margin-bottom: 2px; } #%s { margin-top: 0; margin-bottom: 4px; }",
           ns("show_p_val"), ns("only_sig")
         ))),
-        checkboxInput(ns("show_p_val"), "Show P-value Comparison Bars", value = TRUE),
+        checkboxInput(ns("show_p_val"), "Show P-value Bars", value = TRUE),
         
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("only_sig"), "Show Only Significant (p < 0.05)", value = TRUE)
+          checkboxInput(ns("only_sig"), "Show Significant Marks", value = TRUE)
         ),
         
         selectInput(ns("stat_method"), "Statistical Method:",
-                    choices = c("Wilcoxon (Non-parametric)" = "wilcox.test", 
-                                "T-test (Parametric)" = "t.test"),
+                    choices = c("Wilcoxon" = "wilcox.test", 
+                                "T-test" = "t.test"),
                     selected = "wilcox.test"),
         selectInput(
           ns("p_adjust_method"),
@@ -67,7 +76,7 @@ mod_alpha_ui <- function(id) {
           choices = c(
             "None" = "none",
             "Holm" = "holm",
-            "Benjamini-Hochberg (FDR)" = "BH",
+            "BH" = "BH",
             "Bonferroni" = "bonferroni"
           ),
           selected = "BH"
@@ -75,8 +84,8 @@ mod_alpha_ui <- function(id) {
         
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
-        numericInput(ns("plot_width"), "Plot Width:", value = 800, min = 300, step = 50),
-        numericInput(ns("plot_height"), "Plot Height:", value = 600, min = 300, step = 50),
+        numericInput(ns("plot_width"), "Plot Width:", value = 600, min = 300, step = 50),
+        numericInput(ns("plot_height"), "Plot Height:", value = 400, min = 300, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         
         hr(),
@@ -96,7 +105,9 @@ mod_alpha_ui <- function(id) {
         )
       ),
       mainPanel(
+        h4("Alpha Diversity"),
         plotOutput(ns("alpha_plot_out"), height = "auto"), 
+        uiOutput(ns("alpha_legend_box")),
         br(),
         textOutput(ns("rarefy_size_text"))
       )
@@ -132,15 +143,20 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
     output$local_group_selector <- renderUI({
       req(meta_cols())
       group_choices <- setdiff(meta_cols(), "SampleID")
-      selectInput(session$ns("group_var"), "Primary Grouping Variable:", 
+      selectInput(session$ns("group_var"), "Primary Group:", 
                   choices = group_choices, selected = group_choices[1]) 
     })
     
     output$secondary_group_selector <- renderUI({
-      req(input$group_var)
-      resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
-      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, resolved_primary))
-      selectInput(session$ns("secondary_group_var"), "Secondary Grouping Variable (Optional):",
+      req(meta_cols())
+      primary_input <- input$group_var
+      if (is.null(primary_input) || !nzchar(primary_input)) {
+        group_base <- setdiff(meta_cols(), "SampleID")
+        primary_input <- if (length(group_base) > 0) group_base[1] else NULL
+      }
+      resolved_primary <- resolve_meta_colname(primary_input, meta_cols())
+      group_choices <- setdiff(meta_cols(), c("SampleID", primary_input, resolved_primary))
+      selectInput(session$ns("secondary_group_var"), "Secondary Group (Optional):",
                   choices = c("(None)" = "none", group_choices), selected = "none")
     })
     
@@ -225,9 +241,18 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       p <- ggplot2::ggplot(alpha_long, ggplot2::aes_string(x = x_axis_col, y = "Value", fill = x_axis_col)) +
         ggplot2::theme_bw(base_size = base_size) +
         ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
+        ggplot2::labs(
+          title = "Alpha Diversity Comparison",
+          y = "Alpha Diversity"
+        ) +
         ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.08))) +
         ggplot2::coord_cartesian(clip = "off") +
-        ggplot2::theme(plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8))
+        ggplot2::theme(
+          plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
+          axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
+          plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8)
+        )
 
       if (plot_type == "barplot") {
         if (use_pattern) {
@@ -352,7 +377,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
             method = input$stat_method,
             label = current_label,
             step.increase = 0.14,
-            label.y.npc = 1.22,
+            label.y.npc = 1.16,
+            vjust = 0.25,
             hide.ns = input$only_sig,
             digits = 3,
             size = max(2, base_size / 3.2)
@@ -366,14 +392,42 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       return(
         p + ggplot2::theme(
           legend.position = "none",
-          strip.background = ggplot2::element_rect(fill = "white")
+          strip.background = ggplot2::element_rect(fill = "grey85", color = "grey20")
         )
       )
     })
     
-    output$alpha_plot_out <- renderPlot({ alpha_plot_reactive() },
-                                        height = function() { input$plot_height },
-                                        width = function() { input$plot_width })
+    output$alpha_plot_out <- renderPlot({
+      ps_now <- ps_obj()
+      if (is.null(ps_now)) {
+        graphics::plot.new()
+        graphics::text(
+          0.5, 0.5,
+          "Applying selected samples and preparing alpha diversity plot.\nPlease wait..."
+        )
+        return(invisible(NULL))
+      }
+      if (phyloseq::nsamples(ps_now) == 0) {
+        graphics::plot.new()
+        graphics::text(
+          0.5, 0.5,
+          "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+        )
+        return(invisible(NULL))
+      }
+      tryCatch(
+        alpha_plot_reactive(),
+        error = function(e) {
+          graphics::plot.new()
+          graphics::text(
+            0.5, 0.5,
+            paste0("Alpha diversity plot is not ready yet. Please wait...\n", conditionMessage(e))
+          )
+        }
+      )
+    },
+    height = function() { input$plot_height },
+    width = function() { input$plot_width })
     
     output$rarefy_size_text <- renderText({
       req(rarefaction_size())
@@ -394,5 +448,76 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         utils::write.table(alpha_long_reactive(), file, sep = "\t", row.names = FALSE, quote = FALSE)
       }
     )
+
+    output$alpha_legend_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 800 else input$plot_width
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("alpha_figure_legend"))
+        )
+      )
+    })
+
+    output$alpha_figure_legend <- renderUI({
+      req(input$alpha_methods, input$plot_type)
+      selected_indices <- input$alpha_methods
+      if (is.null(selected_indices) || length(selected_indices) == 0) {
+        selected_indices <- c("Chao1", "Shannon")
+      }
+      meta_data <- tryCatch(
+        as(phyloseq::sample_data(ps_obj()), "data.frame"),
+        error = function(e) NULL
+      )
+      primary_col <- if (!is.null(meta_data)) resolve_meta_colname(input$group_var, colnames(meta_data)) else NULL
+      secondary_col <- if (!is.null(meta_data)) resolve_meta_colname(input$secondary_group_var, colnames(meta_data)) else NULL
+      is_secondary <- !is.null(secondary_col) && secondary_col != "none" && !is.null(meta_data) && secondary_col %in% colnames(meta_data)
+      x_axis_col <- if (is_secondary) secondary_col else primary_col
+      n_groups <- if (!is.null(meta_data) && !is.null(x_axis_col) && x_axis_col %in% colnames(meta_data)) {
+        length(unique(stats::na.omit(meta_data[[x_axis_col]])))
+      } else {
+        0
+      }
+      sig_sentence <- if (n_groups >= 3) {
+        " Pairwise significance is annotated above each comparison."
+      } else {
+        ""
+      }
+      index_label <- paste(selected_indices, collapse = ", ")
+      plot_type_label <- if (identical(input$plot_type, "barplot")) {
+        "bar plots summarize group means with standard error bars"
+      } else {
+        "box plots summarize group distributions with overlaid sample points"
+      }
+      tags$div(
+        tags$div(
+          style = "font-weight: 600; margin-bottom: 4px;",
+          "Alpha diversity comparison plot"
+        ),
+        tags$div(
+          paste0(
+            "This figure shows alpha diversity indices ",
+            index_label,
+            " across groups; ",
+            plot_type_label,
+            ".",
+            sig_sentence
+          )
+        )
+      )
+    })
   })
 }

@@ -28,6 +28,12 @@ mod_beta_ui <- function(id) {
       .beta-result-card p {
         margin-bottom: 0.4rem;
       }
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
     ")),
     sidebarLayout(
       sidebarPanel(
@@ -35,9 +41,8 @@ mod_beta_ui <- function(id) {
         h4(icon("project-diagram"), "Beta Diversity"),
         hr(),
         
-        uiOutput(ns("primary_group_selector")),       
-        
-        uiOutput(ns("secondary_group_selector")),
+        selectInput(ns("primary_group_var"), "Primary Variable (Color):", choices = character(0), selected = NULL),
+        selectInput(ns("secondary_group_var"), "Secondary Variable (Shape):", choices = c("None"), selected = "None"),
         selectInput(
           ns("distance_metric"),
           "Distance metric:",
@@ -53,8 +58,8 @@ mod_beta_ui <- function(id) {
         hr(),
         
         h4(icon("sliders"), "Plot Settings"),
-        numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 600, min = 300, max = 1500, step = 50),
-        numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 450, min = 300, max = 1500, step = 50),
+        numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 500, min = 300, max = 1500, step = 50),
+        numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 400, min = 300, max = 1500, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
@@ -115,66 +120,66 @@ mod_beta_ui <- function(id) {
           numericInput(ns("envfit_p_cutoff"), "p-value cutoff:", value = 0.05, min = 0.001, max = 1, step = 0.01),
           checkboxInput(ns("show_envfit_vectors"), "Overlay EnvFit vectors on plots", value = TRUE),
           actionButton(ns("run_envfit"), "Run EnvFit", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
-          tags$script(HTML(
-            "Shiny.addCustomMessageHandler('toggle-envfit-run-btn', function(msg) {
+        tags$script(HTML(
+          "Shiny.addCustomMessageHandler('toggle-envfit-run-btn', function(msg) {
                var btn = document.getElementById(msg.id);
                if (!btn) return;
                btn.disabled = !!msg.disabled;
                if (msg.label) btn.textContent = msg.label;
-             });"
+            });
+            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
+              var el = document.getElementById(msg.id);
+              if (!el) return;
+              el.style.width = msg.width;
+              el.style.maxWidth = '100%';
+            });"
           ))
+        ),
+        hr(),
+        h5(icon("download"), "Download"),
+        div(
+          style = "display: flex; gap: 4px; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_pcoa"),
+            "Download PCoA (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_nmds"),
+            "Download NMDS (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
         )
       ),
       
       mainPanel(
         width = 9,
-        tabsetPanel(
-          id = ns("beta_tabs"),
-          tabPanel("PCoA",
-                   h4(icon("chart-line"), "PCoA Ordination", style = "margin-top: 12px;"),
-                   uiOutput(ns("pcoa_plot_ui")),
-                   tags$div(style = "margin-top: 12px;",
-                            downloadButton(
-                              ns("download_pcoa"),
-                              "Download PCoA Plot (PNG)",
-                              style = "width: 240px; height: 40px; font-size: 12px; display: flex; align-items: center; justify-content: center;"
-                            ))
-          ),
-          tabPanel("NMDS",
-                   h4(icon("chart-line"), "NMDS Ordination", style = "margin-top: 12px;"),
-                   uiOutput(ns("nmds_plot_ui")),
-                   tags$div(
-                     style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
-                     downloadButton(
-                       ns("download_nmds"),
-                       "Download NMDS Plot (PNG)",
-                       style = "width: 240px; height: 40px; font-size: 12px; display: flex; align-items: center; justify-content: center;"
-                     ),
-                     actionButton(
-                       ns("redraw_nmds"),
-                       "Redraw Plot",
-                       style = "width: 240px; height: 40px; font-size: 12px;"
+        h4("Beta Diversity"),
+        tags$div(
+          id = ns("beta_tab_container"),
+          style = "max-width: 100%;",
+          tabsetPanel(
+            id = ns("beta_tabs"),
+            tabPanel("PCoA",
+                     uiOutput(ns("pcoa_plot_ui"))
+            ),
+            tabPanel("NMDS",
+                     uiOutput(ns("nmds_plot_ui")),
+                     tags$div(
+                       style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
+                       actionButton(
+                         ns("redraw_nmds"),
+                         "Redraw Plot",
+                         style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
+                       )
                      )
-                   )
+            )
           )
         ),
+        uiOutput(ns("beta_legend_box")),
         
-        hr(),
-        h4(icon("flask"), "Statistical Test: PERMANOVA Results"),
-        div(
-          class = "beta-result-card",
-          htmlOutput(ns("permanova_results_out"))
-        ),
-        h4(icon("object-group"), "Clustering Results"),
-        div(
-          class = "beta-result-card",
-          verbatimTextOutput(ns("clustering_results_out"))
-        ),
-        h4(icon("arrows-to-dot"), "EnvFit Results"),
-        div(
-          class = "beta-result-card",
-          verbatimTextOutput(ns("envfit_results_out"))
-        )
+        uiOutput(ns("beta_results_separator")),
+        uiOutput(ns("beta_results_boxes"))
       )
     )
   )
@@ -183,6 +188,15 @@ mod_beta_ui <- function(id) {
 ## Server
 mod_beta_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
+    observe({
+      width_px <- suppressWarnings(as.integer(input$plot_width_px))
+      if (!is.finite(width_px) || is.na(width_px) || width_px <= 0) width_px <- 600L
+      session$sendCustomMessage(
+        "set-tab-container-width",
+        list(id = session$ns("beta_tab_container"), width = paste0(width_px, "px"))
+      )
+    })
+
     apply_disambiguated_taxrank <- function(ps, tax_level) {
       if (is.null(ps) || identical(tax_level, "ASV")) {
         return(ps)
@@ -244,21 +258,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       requested
     }
     
-    output$primary_group_selector <- renderUI({
+    observe({
       req(meta_cols())
       group_choices <- setdiff(meta_cols(), "SampleID")
-      selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
-      selectInput(session$ns("primary_group_var"), "Select Primary Variable (Color):",
-                  choices = group_choices, selected = selected_col)
-    })
-    
-    output$secondary_group_selector <- renderUI({
-      req(meta_cols(), input$primary_group_var)
-      resolved_primary <- resolve_meta_colname(input$primary_group_var, meta_cols())
-      group_choices <- c("None", setdiff(meta_cols(), c("SampleID", input$primary_group_var, resolved_primary)))
-      selected_col <- if (length(group_choices) > 1) group_choices[2] else group_choices[1]
-      selectInput(session$ns("secondary_group_var"), "Select Secondary Variable (Shape):",
-                  choices = group_choices, selected = "None")
+      current_primary <- input$primary_group_var
+      if (is.null(current_primary) || !current_primary %in% group_choices) {
+        current_primary <- if (length(group_choices) > 0) group_choices[1] else NULL
+      }
+      updateSelectInput(session, "primary_group_var", choices = group_choices, selected = current_primary)
+
+      resolved_primary <- resolve_meta_colname(current_primary, meta_cols())
+      secondary_choices <- c("None", setdiff(meta_cols(), c("SampleID", current_primary, resolved_primary)))
+      current_secondary <- input$secondary_group_var
+      if (is.null(current_secondary) || !current_secondary %in% secondary_choices) {
+        current_secondary <- "None"
+      }
+      updateSelectInput(session, "secondary_group_var", choices = secondary_choices, selected = current_secondary)
     })
     
     primary_group_var <- reactive({
@@ -911,16 +926,26 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     
     output$pcoa_plot_ui <- renderUI({ 
       req(input$plot_width_px, input$plot_height_px)
-      plotOutput(session$ns("pcoa_plot_out"),
-                 height = paste0(input$plot_height_px, "px"),
-                 width = paste0(input$plot_width_px, "px"))
+      tags$div(
+        style = "margin-top: 12px;",
+        plotOutput(
+          session$ns("pcoa_plot_out"),
+          height = paste0(input$plot_height_px, "px"),
+          width = paste0(input$plot_width_px, "px")
+        )
+      )
     })
     
     output$nmds_plot_ui <- renderUI({ 
       req(input$plot_width_px, input$plot_height_px)
-      plotOutput(session$ns("nmds_plot_out"),
-                 height = paste0(input$plot_height_px, "px"),
-                 width = paste0(input$plot_width_px, "px"))
+      tags$div(
+        style = "margin-top: 12px;",
+        plotOutput(
+          session$ns("nmds_plot_out"),
+          height = paste0(input$plot_height_px, "px"),
+          width = paste0(input$plot_width_px, "px")
+        )
+      )
     })
     
     axis_limits <- reactive({
@@ -982,11 +1007,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       
       p <- p + ggplot2::theme_bw(base_size = base_size) +
-        ggplot2::labs(title = paste("PCoA -", distance_label()),
+        ggplot2::labs(title = paste0("PCoA - ", distance_label(), " (", input$beta_tax_level, " Level)"),
                       color = primary_group_var(),
                       shape = if (is.null(plot_shape_var())) NULL else plot_shape_var(),
                       x = x_axis_label,
-                      y = y_axis_label)
+                      y = y_axis_label) +
+        ggplot2::theme(
+          plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
+          axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
+        )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
       
@@ -1137,7 +1167,27 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       return(p)
     })
     
-    output$pcoa_plot_out <- renderPlot({ pcoa_plot_reactive() })
+    output$pcoa_plot_out <- renderPlot({
+      tryCatch(
+        pcoa_plot_reactive(),
+        error = function(e) {
+          msg <- conditionMessage(e)
+          if (grepl("No samples are currently selected|at least one sample", msg, ignore.case = TRUE)) {
+            graphics::plot.new()
+            graphics::text(
+              0.5, 0.5,
+              "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+            )
+          } else {
+            graphics::plot.new()
+            graphics::text(
+              0.5, 0.5,
+              paste0("PCoA plot is not ready yet. Please wait...\n", msg)
+            )
+          }
+        }
+      )
+    })
     
     output$download_pcoa <- downloadHandler(
       filename = function() { paste0("PCoA_", gsub("-", "", distance_label()), "_", Sys.Date(), ".png") },
@@ -1188,9 +1238,14 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       
       p <- p + ggplot2::theme_bw(base_size = base_size) +
-        ggplot2::labs(title = paste0("NMDS - ", distance_label(), " (Stress: ", round(ord$stress, 3), ")"),
+        ggplot2::labs(title = paste0("NMDS - ", distance_label(), " (", input$beta_tax_level, " Level, Stress: ", round(ord$stress, 3), ")"),
                       color = primary_group_var(),
-                      shape = if (is.null(plot_shape_var())) NULL else plot_shape_var())
+                      shape = if (is.null(plot_shape_var())) NULL else plot_shape_var()) +
+        ggplot2::theme(
+          plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
+          axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
+        )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
       
@@ -1341,7 +1396,27 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       return(p)
     })
     
-    output$nmds_plot_out <- renderPlot({ nmds_plot_reactive() })
+    output$nmds_plot_out <- renderPlot({
+      tryCatch(
+        nmds_plot_reactive(),
+        error = function(e) {
+          msg <- conditionMessage(e)
+          if (grepl("No samples are currently selected|at least one sample", msg, ignore.case = TRUE)) {
+            graphics::plot.new()
+            graphics::text(
+              0.5, 0.5,
+              "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+            )
+          } else {
+            graphics::plot.new()
+            graphics::text(
+              0.5, 0.5,
+              paste0("NMDS plot is not ready yet. Please wait...\n", msg)
+            )
+          }
+        }
+      )
+    })
     
     output$download_nmds <- downloadHandler(
       filename = function() { paste0("NMDS_", gsub("-", "", distance_label()), "_", Sys.Date(), ".png") },
@@ -1383,6 +1458,89 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         "<strong>R-squared:</strong> ", format(permanova_result$R2, digits = 3, nsmall = 3), "<br>",
         "<strong>P-value:</strong> ", format(permanova_result$Pval, digits = 3)
       ))
+    })
+
+    output$beta_legend_box <- renderUI({
+      req(input$plot_width_px)
+      box_width <- if (is.null(input$plot_width_px) || !is.finite(input$plot_width_px)) 500 else input$plot_width_px
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("beta_figure_legend"))
+        )
+      )
+    })
+
+    output$beta_results_separator <- renderUI({
+      req(input$plot_width_px)
+      box_width <- if (is.null(input$plot_width_px) || !is.finite(input$plot_width_px)) 500 else input$plot_width_px
+      tags$hr(
+        style = paste(
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "margin: 14px 0 12px 0;",
+          "border-top: 1px solid #d1d5db;"
+        )
+      )
+    })
+
+    output$beta_figure_legend <- renderUI({
+      req(input$beta_tabs, input$distance_metric, input$beta_tax_level)
+      ord_label <- if (identical(input$beta_tabs, "NMDS")) "NMDS beta diversity ordination plot" else "PCoA beta diversity ordination plot"
+      metric_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison distance" else "Bray-Curtis distance"
+      tax_level_label <- tolower(input$beta_tax_level)
+      tags$div(
+        tags$div(
+          style = "font-weight: 600; margin-bottom: 4px;",
+          ord_label
+        ),
+        tags$div(
+          paste0(
+            "This figure shows beta diversity structure based on ",
+            metric_label,
+            " at ",
+            tax_level_label,
+            " level. Points represent samples and are colored by group."
+          )
+        )
+      )
+    })
+
+    output$beta_results_boxes <- renderUI({
+      req(input$plot_width_px)
+      box_width <- if (is.null(input$plot_width_px) || !is.finite(input$plot_width_px)) 500 else input$plot_width_px
+      tags$div(
+        tags$h5(icon("flask"), "Statistical Test: PERMANOVA Results"),
+        tags$div(
+          class = "beta-result-card",
+          style = paste0("width: ", box_width, "px; max-width: 100%;"),
+          htmlOutput(session$ns("permanova_results_out"))
+        ),
+        tags$h5(icon("object-group"), "Clustering Results"),
+        tags$div(
+          class = "beta-result-card",
+          style = paste0("width: ", box_width, "px; max-width: 100%;"),
+          verbatimTextOutput(session$ns("clustering_results_out"))
+        ),
+        tags$h5(icon("arrows-to-dot"), "EnvFit Results"),
+        tags$div(
+          class = "beta-result-card",
+          style = paste0("width: ", box_width, "px; max-width: 100%;"),
+          verbatimTextOutput(session$ns("envfit_results_out"))
+        )
+      )
     })
 
     output$clustering_results_out <- renderText({
@@ -1475,5 +1633,3 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     
   })
 }
-
-

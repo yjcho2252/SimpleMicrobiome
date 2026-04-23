@@ -7,6 +7,35 @@ library(phyloseq)
 mod_taxa_comparison_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .taxa-result-card {
+        height: 130px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.45;
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        border-radius: 10px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        margin-bottom: 10px;
+      }
+      .taxa-result-card pre {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -25,19 +54,20 @@ mod_taxa_comparison_ui <- function(id) {
           tags$span(
             style = "display: inline-flex; align-items: center; gap: 4px;",
             icon("timeline"),
-            "Longitudinal Options"
+            "Within-Subject Pairing"
           )
         ),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("enable_longitudinal")),
           selectInput(
             ns("subject_id_var"),
-            "Subject ID Variable:",
+            "Subject Identifier:",
             choices = character(0),
             selected = NULL
           )
         ),
         hr(),
+        h5(icon("sliders"), "Plot Settings"),
         selectInput(
           ns("tax_level"),
           "Taxonomic Level:",
@@ -72,7 +102,7 @@ mod_taxa_comparison_ui <- function(id) {
         selectInput(
           ns("plot_type"),
           "Plot Type:",
-          choices = c("Boxplot" = "boxplot", "Barplot (mean ± SE)" = "barplot"),
+          choices = c("Box plot" = "boxplot", "Bar plot" = "barplot"),
           selected = "boxplot"
         ),
         selectInput(
@@ -86,20 +116,20 @@ mod_taxa_comparison_ui <- function(id) {
           ),
           selected = "set2"
         ),
-        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Barplot)", value = FALSE),
+        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
         hr(),
         h4(icon("sliders"), "P-value Options"),
-        checkboxInput(ns("show_p_val"), "Show P-value Comparison Bars", value = TRUE),
+        checkboxInput(ns("show_p_val"), "Show P-value Bars", value = TRUE),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("only_sig"), "Show Only Significant (p < 0.05)", value = TRUE)
+          checkboxInput(ns("only_sig"), "Show Significant Marks", value = TRUE)
         ),
         selectInput(
           ns("stat_method"),
           "Statistical Method:",
           choices = c(
-            "Wilcoxon (Non-parametric)" = "wilcox.test",
-            "t-test (Parametric)" = "t.test"
+            "Wilcoxon" = "wilcox.test",
+            "T-test" = "t.test"
           ),
           selected = "t.test"
         ),
@@ -109,13 +139,20 @@ mod_taxa_comparison_ui <- function(id) {
           choices = c(
             "None" = "none",
             "Holm" = "holm",
-            "Benjamini-Hochberg (FDR)" = "BH",
+            "BH (FDR)" = "BH",
             "Bonferroni" = "bonferroni"
           ),
           selected = "BH"
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+        checkboxInput(ns("manual_facet_layout"), "Manual facet rows/cols", value = FALSE),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("manual_facet_layout")),
+          numericInput(ns("facet_ncol"), "Facet Columns (ncol):", value = 0, min = 0, step = 1),
+          numericInput(ns("facet_nrow"), "Facet Rows (nrow):", value = 0, min = 0, step = 1),
+          tags$small("Use 0 to keep automatic value for each field.")
+        ),
         numericInput(ns("plot_width"), "Plot Width (px):", value = 400, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height (px):", value = 500, min = 300, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
@@ -125,12 +162,12 @@ mod_taxa_comparison_ui <- function(id) {
           style = "display: flex; gap: 4px; flex-wrap: nowrap;",
           downloadButton(
             ns("download_taxa_plot"),
-            "Download Plot (PNG)",
+            "Plot (PNG)",
             style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
           ),
           downloadButton(
             ns("download_taxa_data"),
-            "Download Data (TSV)",
+            "Data (TSV)",
             style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
           )
         ),
@@ -140,22 +177,24 @@ mod_taxa_comparison_ui <- function(id) {
           style = "display: flex; gap: 4px; flex-wrap: nowrap;",
           downloadButton(
             ns("download_raw_matrix"),
-            "Raw Counts Matrix (TSV)",
+            "Raw Counts (TSV)",
             style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
           ),
           downloadButton(
             ns("download_rel_matrix"),
-            "Relative Abundance Matrix (TSV)",
+            "Relative Abundance (TSV)",
             style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
           )
         )
       ),
       mainPanel(
         width = 9,
+        h4("Taxa Comparison"),
         plotOutput(ns("taxa_comparison_plot"), height = "auto"),
-        hr(),
+        uiOutput(ns("taxa_legend_box")),
+        uiOutput(ns("taxa_status_separator")),
         h5(icon("circle-info"), "Comparison Status"),
-        verbatimTextOutput(ns("comparison_status"))
+        uiOutput(ns("comparison_status_box"))
       )
     )
   )
@@ -176,6 +215,82 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         return(matched[1])
       }
       requested
+    }
+
+    size_update_in_progress <- reactiveVal(FALSE)
+
+    compute_taxa_comparison_auto_dims <- function(n_facet_cols, n_bars_per_facet, n_facet_rows) {
+      width <- min(max(300, 220 + n_facet_cols * n_bars_per_facet * 10), 2200)
+      height <- min(max(360, 220 + n_facet_rows * 200), 1600)
+      list(width = width, height = height)
+    }
+
+    get_manual_facet_layout <- function(is_secondary, n_taxa) {
+      if (isTRUE(is_secondary) || !isTRUE(input$manual_facet_layout)) {
+        return(list(ncol = NULL, nrow = NULL))
+      }
+      manual_ncol <- input$facet_ncol
+      manual_nrow <- input$facet_nrow
+      manual_ncol <- if (!is.null(manual_ncol) && is.finite(manual_ncol) && manual_ncol > 0) as.integer(manual_ncol) else NULL
+      manual_nrow <- if (!is.null(manual_nrow) && is.finite(manual_nrow) && manual_nrow > 0) as.integer(manual_nrow) else NULL
+      if (!is.null(manual_ncol)) {
+        manual_ncol <- min(manual_ncol, max(1L, as.integer(n_taxa)))
+      }
+      if (!is.null(manual_nrow)) {
+        manual_nrow <- min(manual_nrow, max(1L, as.integer(n_taxa)))
+      }
+      # Prevent facet_wrap errors when manual nrow/ncol capacity is smaller than panel count.
+      if (!is.null(manual_ncol) && !is.null(manual_nrow)) {
+        capacity <- as.integer(manual_ncol * manual_nrow)
+        if (capacity < as.integer(n_taxa)) {
+          manual_nrow <- as.integer(ceiling(as.integer(n_taxa) / max(1L, manual_ncol)))
+        }
+      }
+      list(ncol = manual_ncol, nrow = manual_nrow)
+    }
+
+    measure_facet_layout <- function(df, is_secondary, manual_ncol = NULL, manual_nrow = NULL) {
+      if (nrow(df) == 0) {
+        return(list(n_facet_cols = 1L, n_facet_rows = 1L))
+      }
+      if (isTRUE(is_secondary)) {
+        return(list(
+          n_facet_cols = max(1L, as.integer(dplyr::n_distinct(df$Taxa))),
+          n_facet_rows = max(1L, as.integer(dplyr::n_distinct(df$PrimaryGroup)))
+        ))
+      }
+
+      p_layout <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot)) +
+        ggplot2::geom_blank() +
+        ggplot2::facet_wrap(~ Taxa, scales = "free_y", ncol = manual_ncol, nrow = manual_nrow)
+      layout_df <- ggplot2::ggplot_build(p_layout)$layout$layout
+      if (is.null(layout_df) || nrow(layout_df) == 0) {
+        return(list(n_facet_cols = 1L, n_facet_rows = 1L))
+      }
+      list(
+        n_facet_cols = max(1L, as.integer(max(layout_df$COL, na.rm = TRUE))),
+        n_facet_rows = max(1L, as.integer(max(layout_df$ROW, na.rm = TRUE)))
+      )
+    }
+
+    maybe_auto_adjust_taxa_plot_size <- function(width, height, force = FALSE) {
+      if (size_update_in_progress()) {
+        return()
+      }
+      current_width <- suppressWarnings(as.numeric(input$plot_width))
+      current_height <- suppressWarnings(as.numeric(input$plot_height))
+      if (!isTRUE(force) &&
+          is.finite(current_width) && is.finite(current_height) &&
+          as.integer(current_width) == as.integer(width) &&
+          as.integer(current_height) == as.integer(height)) {
+        return()
+      }
+      size_update_in_progress(TRUE)
+      updateNumericInput(session, "plot_width", value = width)
+      updateNumericInput(session, "plot_height", value = height)
+      session$onFlushed(function() {
+        size_update_in_progress(FALSE)
+      }, once = TRUE)
     }
 
     apply_disambiguated_taxrank <- function(ps, tax_level) {
@@ -241,19 +356,24 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
       selectInput(
         session$ns("group_var"),
-        "Primary Grouping Variable:",
+        "Primary Group:",
         choices = group_choices,
         selected = selected_col
       )
     })
 
     output$secondary_group_selector <- renderUI({
-      req(meta_cols(), input$group_var)
-      resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
-      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, resolved_primary))
+      req(meta_cols())
+      primary_input <- input$group_var
+      if (is.null(primary_input) || !nzchar(primary_input)) {
+        base_choices <- setdiff(meta_cols(), "SampleID")
+        primary_input <- if (length(base_choices) > 0) base_choices[1] else NULL
+      }
+      resolved_primary <- resolve_meta_colname(primary_input, meta_cols())
+      group_choices <- setdiff(meta_cols(), c("SampleID", primary_input, resolved_primary))
       selectInput(
         session$ns("secondary_group_var"),
-        "Secondary Grouping Variable (Optional):",
+        "Secondary Group (Optional):",
         choices = c("(None)" = "none", group_choices),
         selected = "none"
       )
@@ -511,7 +631,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         input$taxa_selected
       }
       
-      validate(need(length(selected_taxa) > 0, "Select at least one taxa in 'Taxa to Compare'."))
+      validate(need(length(selected_taxa) > 0, ""))
       
       df_sub <- df[df$Taxa %in% selected_taxa, , drop = FALSE]
       
@@ -524,6 +644,44 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       
       df_sub
     })
+
+    observeEvent(taxa_plot_data(), {
+      req(taxa_plot_data())
+      df <- taxa_plot_data()
+      if (nrow(df) == 0) {
+        return()
+      }
+      n_bars_per_facet <- dplyr::n_distinct(df$Group)
+      is_secondary <- !is.null(input$secondary_group_var) && input$secondary_group_var != "none"
+      n_taxa <- dplyr::n_distinct(df$Taxa)
+      manual_layout <- get_manual_facet_layout(is_secondary, n_taxa)
+      measured_layout <- measure_facet_layout(df, is_secondary, manual_layout$ncol, manual_layout$nrow)
+      n_facet_cols <- measured_layout$n_facet_cols
+      n_facet_rows <- measured_layout$n_facet_rows
+      dims <- compute_taxa_comparison_auto_dims(n_facet_cols, n_bars_per_facet, n_facet_rows)
+      maybe_auto_adjust_taxa_plot_size(dims$width, dims$height)
+    }, ignoreInit = FALSE)
+
+    observeEvent(
+      list(input$taxa_selected, input$group_var, input$secondary_group_var, input$manual_facet_layout, input$facet_ncol, input$facet_nrow),
+      {
+        req(taxa_plot_data())
+        df <- taxa_plot_data()
+        if (nrow(df) == 0) {
+          return()
+        }
+        n_bars_per_facet <- dplyr::n_distinct(df$Group)
+        is_secondary <- !is.null(input$secondary_group_var) && input$secondary_group_var != "none"
+        n_taxa <- dplyr::n_distinct(df$Taxa)
+        manual_layout <- get_manual_facet_layout(is_secondary, n_taxa)
+        measured_layout <- measure_facet_layout(df, is_secondary, manual_layout$ncol, manual_layout$nrow)
+        n_facet_cols <- measured_layout$n_facet_cols
+        n_facet_rows <- measured_layout$n_facet_rows
+        dims <- compute_taxa_comparison_auto_dims(n_facet_cols, n_bars_per_facet, n_facet_rows)
+        maybe_auto_adjust_taxa_plot_size(dims$width, dims$height, force = TRUE)
+      },
+      ignoreInit = TRUE
+    )
     
     taxa_plot_reactive <- reactive({
       req(isTRUE(is_active_tab()))
@@ -554,6 +712,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot")) {
         plot_type <- "boxplot"
       }
+      plot_title <- paste0(input$tax_level, "-Level Taxa Comparison")
       palette_key <- input$color_palette
       if (is.null(palette_key) || !palette_key %in% c("set2", "dark2", "paired", "gray")) {
         palette_key <- "set2"
@@ -600,14 +759,16 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           expand = ggplot2::expansion(mult = c(0, 0.08))
         ) +
         ggplot2::theme_bw(base_size = base_size) +
-        ggplot2::labs(title = paste0("Taxa Comparison: ", input$tax_level),
+        ggplot2::labs(title = plot_title,
                       x = if (is_secondary) secondary_col else input$group_var, y = y_label) +
         ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
         ggplot2::theme(
-          plot.title = ggplot2::element_text(size = base_size + 2),
-          axis.text.x = ggplot2::element_text(angle = 25, hjust = 1, size = max(6, base_size - 1)),
+          plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
+          axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
+          axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5, size = max(6, base_size - 1)),
           legend.position = "none",
-          strip.background = ggplot2::element_rect(fill = "white"),
+          strip.background = ggplot2::element_rect(fill = "grey85", color = "grey20"),
           plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8)
         ) +
         ggplot2::coord_cartesian(clip = "off")
@@ -698,7 +859,18 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       if (is_secondary) {
         p <- p + ggplot2::facet_grid(PrimaryGroup ~ Taxa, scales = "free_y")
       } else {
-        p <- p + ggplot2::facet_wrap(~ Taxa, scales = "free_y")
+        n_taxa <- dplyr::n_distinct(df$Taxa)
+        manual_layout <- get_manual_facet_layout(is_secondary = FALSE, n_taxa = n_taxa)
+        if (!is.null(manual_layout$ncol) || !is.null(manual_layout$nrow)) {
+          p <- p + ggplot2::facet_wrap(
+            ~ Taxa,
+            scales = "free_y",
+            ncol = manual_layout$ncol,
+            nrow = manual_layout$nrow
+          )
+        } else {
+          p <- p + ggplot2::facet_wrap(~ Taxa, scales = "free_y")
+        }
       }
 
       if (has_subject) {
@@ -750,7 +922,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         if (!is.finite(y_max) || y_max <= 0) {
           y_max <- 1
         }
-        pairwise_label_y <- y_max * 1.08
+        pairwise_label_y <- y_max * 1.04
 
         compute_pairwise_p <- function(sub_data, comp_levels) {
           if (!all(comp_levels %in% unique(as.character(sub_data$Group)))) {
@@ -862,6 +1034,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             label = current_label,
             step.increase = 0.14,
             label.y = pairwise_label_y,
+            vjust = 0.25,
             hide.ns = isTRUE(input$only_sig),
             digits = 3,
             size = max(2, base_size / 3.2)
@@ -882,7 +1055,33 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
     })
     
     output$taxa_comparison_plot <- renderPlot({
-      taxa_plot_reactive()
+      ps_now <- ps_obj()
+      if (is.null(ps_now)) {
+        graphics::plot.new()
+        graphics::text(
+          0.5, 0.5,
+          "Applying selected samples and preparing taxa comparison.\nPlease wait..."
+        )
+        return(invisible(NULL))
+      }
+      if (phyloseq::nsamples(ps_now) == 0) {
+        graphics::plot.new()
+        graphics::text(
+          0.5, 0.5,
+          "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+        )
+        return(invisible(NULL))
+      }
+      tryCatch(
+        taxa_plot_reactive(),
+        error = function(e) {
+          graphics::plot.new()
+          graphics::text(
+            0.5, 0.5,
+            paste0("Taxa comparison is not ready yet. Please wait...\n", conditionMessage(e))
+          )
+        }
+      )
     }, height = function() { req(input$plot_height); input$plot_height },
        width = function() { req(input$plot_width); input$plot_width })
 
@@ -943,12 +1142,12 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         c(
           paste0("Primary grouping variable: ", input$group_var),
           paste0("Secondary grouping variable: ", if (is_secondary) secondary_col else "(None)"),
-          paste0("Plot type: ", if (plot_type == "barplot") "Barplot (mean ± SE)" else "Boxplot"),
+          paste0("Plot type: ", if (plot_type == "barplot") "Bar plot" else "Box plot"),
           paste0("ggpattern: ", pattern_status),
           paste0("Pairing condition axis: ", if (is_secondary) "Secondary group" else "Primary group"),
           paste0("Selected taxa count: ", dplyr::n_distinct(df$Taxa)),
           paste0("Group levels compared: ", paste(group_levels, collapse = ", ")),
-          paste0("Longitudinal option: ", if (isTRUE(input$enable_longitudinal)) "On" else "Off"),
+          paste0("Within-subject pairing: ", if (isTRUE(input$enable_longitudinal)) "On" else "Off"),
           paste0("Subject ID variable: ", if (has_subject) input$subject_id_var else "Not applied"),
           paste0("Comparison mode: ", if (has_subject) "Paired / repeated" else "Independent groups"),
           paste0("Pairwise test: ", method_label, if (has_subject) " with paired = TRUE" else ""),
@@ -956,6 +1155,16 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           paste0("Overall test: ", overall_label)
         ),
         collapse = "\n"
+      )
+    })
+
+    output$comparison_status_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 400 else input$plot_width
+      tags$div(
+        class = "taxa-result-card",
+        style = paste(sprintf("width: %spx;", box_width), "max-width: 100%; box-sizing: border-box;"),
+        verbatimTextOutput(session$ns("comparison_status"))
       )
     })
     
@@ -1023,6 +1232,88 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         readr::write_tsv(tax_matrices()$rel, file)
       }
     )
+
+    output$taxa_legend_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 400 else input$plot_width
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("taxa_figure_legend"))
+        )
+      )
+    })
+
+    output$taxa_status_separator <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 400 else input$plot_width
+      tags$hr(
+        style = paste(
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "margin: 14px 0 12px 0;",
+          "border-top: 1px solid #d1d5db;"
+        )
+      )
+    })
+
+    output$taxa_figure_legend <- renderUI({
+      req(input$tax_level, input$plot_type, input$abundance_mode)
+      tax_level_label <- tolower(input$tax_level)
+      figure_title <- paste0(input$tax_level, "-Level Taxa Comparison")
+      plot_type_label <- if (identical(input$plot_type, "barplot")) {
+        "bar plots summarize group means with standard error bars"
+      } else {
+        "box plots summarize group distributions with overlaid sample points"
+      }
+      abundance_label <- if (identical(input$abundance_mode, "relative")) {
+        "relative abundance"
+      } else if (identical(input$abundance_mode, "log_tss")) {
+        "log-transformed relative abundance"
+      } else {
+        "centered log-ratio transformed abundance"
+      }
+      longitudinal_sentence <- if (isTRUE(input$enable_longitudinal) &&
+        !is.null(input$subject_id_var) &&
+        nzchar(input$subject_id_var)) {
+        paste0(
+          " Within-subject pairing is applied using ",
+          input$subject_id_var,
+          " as the subject identifier."
+        )
+      } else {
+        ""
+      }
+      tags$div(
+        tags$div(
+          style = "font-weight: 600; margin-bottom: 4px;",
+          figure_title
+        ),
+        tags$div(
+          paste0(
+            "This figure compares microbial taxa at ",
+            tax_level_label,
+            " level across groups; ",
+            plot_type_label,
+            ". The y-axis represents ",
+            abundance_label,
+            ". Pairwise significance is annotated above each comparison.",
+            longitudinal_sentence
+          )
+        )
+      )
+    })
   })
 }
-

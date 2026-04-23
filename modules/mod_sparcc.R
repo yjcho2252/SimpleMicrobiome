@@ -3,6 +3,29 @@ mod_sparcc_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
+      .simple-result-card {
+        width: 600px;
+        max-width: 100%;
+        height: 130px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.45;
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        border-radius: 10px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        margin-bottom: 10px;
+      }
+      .simple-result-card pre {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
       .tabbable > .nav-tabs {
         flex-wrap: nowrap;
         overflow-x: auto;
@@ -13,11 +36,17 @@ mod_sparcc_ui <- function(id) {
         padding: 5px 8px;
         white-space: nowrap;
       }
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
     ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("diagram-project"), "SparCC Network"),
+        h4(icon("diagram-project"), "SparCC"),
         hr(),
         selectInput(ns("group_var"), "1. Group panel", choices = c("All"), selected = "All"),
         selectizeInput(
@@ -37,11 +66,8 @@ mod_sparcc_ui <- function(id) {
           choices = c("Single network", "Compare two groups"),
           selected = "Single network"
         ),
-        tags$hr(),
-        tags$small(strong("Current Comparison")),
-        verbatimTextOutput(ns("comparison_status"), placeholder = TRUE),
         selectInput(ns("tax_level"), "4. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
-        numericInput(ns("prevalence_filter_pct"), "5. Prevalence filter cutoff (%)", value = 10, min = 0, max = 100, step = 1),
+        numericInput(ns("prevalence_filter_pct"), "5. Prevalence filter (%)", value = 10, min = 0, max = 100, step = 1),
         selectInput(ns("node_size_by"), "6. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
         selectInput(ns("node_color_by"), "7. Node color", choices = c("None"), selected = "None"),
         tags$details(
@@ -66,36 +92,61 @@ mod_sparcc_ui <- function(id) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              if (msg.label) btn.textContent = msg.label;
+           });
+           Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
+             var el = document.getElementById(msg.id);
+             if (!el) return;
+             el.style.width = msg.width;
+             el.style.maxWidth = '100%';
            });"
         ))
       ),
       mainPanel(
-        tabsetPanel(
+        h4("SparCC Network"),
+        tags$div(
+          id = ns("sparcc_tab_container"),
+          style = "max-width: 100%;",
+          tabsetPanel(
+            id = ns("sparcc_active_tab"),
           tabPanel(
-            "Network Plot (All)",
+            "All",
             downloadButton(ns("download_network_plot_all"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-            plotOutput(ns("network_plot_all"), height = "auto")
+            tags$div(
+              style = "margin-top: 8px;",
+              plotOutput(ns("network_plot_all"), height = "auto")
+            )
           ),
           tabPanel(
-            "Network Plot (Connected)",
+            "Connected",
             downloadButton(ns("download_network_plot_connected"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-            plotOutput(ns("network_plot_connected"), height = "auto")
+            tags$div(
+              style = "margin-top: 8px;",
+              plotOutput(ns("network_plot_connected"), height = "auto")
+            )
           ),
           tabPanel(
-            "Edge Table",
+            "Table",
             downloadButton(ns("download_edge_table_all"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
             DTOutput(ns("edge_table_all"))
           ),
-          tabPanel("SparCC Summary", verbatimTextOutput(ns("network_summary"))),
+          tabPanel("Summary", verbatimTextOutput(ns("network_summary"))),
           tabPanel(
             "Comparison Network",
             downloadButton(ns("download_comparison_network_plot"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-            plotOutput(ns("comparison_network_plot"), height = "auto")
+            tags$div(
+              style = "margin-top: 8px;",
+              plotOutput(ns("comparison_network_plot"), height = "auto")
+            )
           ),
           tabPanel("Differential Edges", DTOutput(ns("comparison_edge_table"))),
           tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary"))),
           tabPanel("Hub Table", DTOutput(ns("hub_table")))
-        )
+          )
+        ),
+        uiOutput(ns("sparcc_legend_box")),
+        uiOutput(ns("sparcc_status_separator")),
+        h5(icon("circle-info"), "SparCC Status"),
+        uiOutput(ns("sparcc_status_box"))
       )
     )
   )
@@ -104,6 +155,23 @@ mod_sparcc_ui <- function(id) {
 ## Server
 mod_sparcc_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
+    draw_wait_message <- function(message_text) {
+      old_par <- graphics::par(no.readonly = TRUE)
+      on.exit(graphics::par(old_par), add = TRUE)
+      graphics::par(mar = c(0, 0, 0, 0))
+      graphics::plot.new()
+      graphics::text(0.5, 0.5, message_text)
+    }
+
+    observe({
+      width_px <- suppressWarnings(as.integer(input$plot_width))
+      if (!is.finite(width_px) || is.na(width_px) || width_px <= 0) width_px <- 800L
+      session$sendCustomMessage(
+        "set-tab-container-width",
+        list(id = session$ns("sparcc_tab_container"), width = paste0(width_px, "px"))
+      )
+    })
+
     apply_disambiguated_taxrank <- function(ps, tax_level) {
       if (is.null(ps) || identical(tax_level, "ASV")) {
         return(ps)
@@ -265,15 +333,19 @@ mod_sparcc_server <- function(id, ps_obj) {
       list(otu_mat = otu_mat, sample_df = sample_df, taxa_annotation = taxa_annotation)
     })
 
+    network_running <- reactiveVal(FALSE)
+
     network_result <- eventReactive(input$run_network_btn, {
       req(build_network_inputs())
       validate(
         need(requireNamespace("NetCoMi", quietly = TRUE), "NetCoMi package is not installed. Please install 'NetCoMi'."),
         need(requireNamespace("igraph", quietly = TRUE), "igraph package is not installed. Please install 'igraph'.")
       )
+      network_running(TRUE)
 
       session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, label = "Running..."))
       on.exit({
+        network_running(FALSE)
         session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, label = "Run SparCC"))
       }, add = TRUE)
 
@@ -917,14 +989,23 @@ mod_sparcc_server <- function(id, ps_obj) {
         ggplot2::scale_size(name = "Node degree", range = c(2.5, 7)) +
         ggplot2::theme_void() +
         ggplot2::theme(
+          panel.border = ggplot2::element_rect(color = "grey70", fill = NA, linewidth = 0.4),
           plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
           legend.title = ggplot2::element_text(size = 9),
           legend.text = ggplot2::element_text(size = 8)
         ) +
-        ggplot2::ggtitle("Differential Network (Two-Group Comparison)")
+        ggplot2::ggtitle(paste0(input$tax_level, "-Level SparCC Differential Network (Two-Group Comparison)"))
     }
 
     output$comparison_network_plot <- renderPlot({
+      if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
+        draw_wait_message("Click 'Run SparCC' to start analysis.")
+        return(invisible(NULL))
+      }
+      if (isTRUE(network_running())) {
+        draw_wait_message("SparCC analysis is running. Please wait...")
+        return(invisible(NULL))
+      }
       req(network_result())
       validate(need(identical(input$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to view differential network."))
       edge_tbl <- comparison_edge_table()
@@ -935,7 +1016,19 @@ mod_sparcc_server <- function(id, ps_obj) {
       if (length(only_status) >= 1) palette[only_status[1]] <- "#1F78B4"
       if (length(only_status) >= 2) palette[only_status[2]] <- "#E31A1C"
       draw_comparison_network_plot(edge_tbl, palette)
-    }, height = function() input$plot_height, width = function() input$plot_width)
+    },
+    height = function() {
+      if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
+        200
+      } else {
+        h <- suppressWarnings(as.numeric(input$plot_height))
+        if (!is.finite(h) || is.na(h) || h <= 0) 550 else h
+      }
+    },
+    width = function() {
+      w <- suppressWarnings(as.numeric(input$plot_width))
+      if (!is.finite(w) || is.na(w) || w <= 0) 800 else w
+    })
 
     output$download_comparison_network_plot <- downloadHandler(
       filename = function() paste0("sparcc_differential_network_", Sys.Date(), ".png"),
@@ -1122,7 +1215,13 @@ mod_sparcc_server <- function(id, ps_obj) {
           legend.title = ggplot2::element_text(size = 9),
           legend.text = ggplot2::element_text(size = 8)
         ) +
-        ggplot2::ggtitle(if (connected_only) "NetCoMi SparCC Network (Connected)" else "NetCoMi SparCC Network (All)")
+        ggplot2::ggtitle(
+          if (connected_only) {
+            paste0("NetCoMi SparCC ", input$tax_level, "-Level Network (Connected)")
+          } else {
+            paste0("NetCoMi SparCC ", input$tax_level, "-Level Network (All)")
+          }
+        )
 
       if (identical(color_var, "None")) {
         p <- p + ggplot2::scale_fill_manual(values = c("All Nodes" = "#F1C40F"), guide = "none")
@@ -1151,14 +1250,54 @@ mod_sparcc_server <- function(id, ps_obj) {
     })
 
     output$network_plot_all <- renderPlot({
+      if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
+        draw_wait_message("Click 'Run SparCC' to start analysis.")
+        return(invisible(NULL))
+      }
+      if (isTRUE(network_running())) {
+        draw_wait_message("SparCC analysis is running. Please wait...")
+        return(invisible(NULL))
+      }
       req(network_result())
       draw_network_plot(network_result(), connected_only = FALSE)
-    }, height = function() input$plot_height, width = function() input$plot_width)
+    },
+    height = function() {
+      if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
+        200
+      } else {
+        h <- suppressWarnings(as.numeric(input$plot_height))
+        if (!is.finite(h) || is.na(h) || h <= 0) 550 else h
+      }
+    },
+    width = function() {
+      w <- suppressWarnings(as.numeric(input$plot_width))
+      if (!is.finite(w) || is.na(w) || w <= 0) 800 else w
+    })
 
     output$network_plot_connected <- renderPlot({
+      if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
+        draw_wait_message("Click 'Run SparCC' to start analysis.")
+        return(invisible(NULL))
+      }
+      if (isTRUE(network_running())) {
+        draw_wait_message("SparCC analysis is running. Please wait...")
+        return(invisible(NULL))
+      }
       req(network_result())
       draw_network_plot(network_result(), connected_only = TRUE)
-    }, height = function() input$plot_height, width = function() input$plot_width)
+    },
+    height = function() {
+      if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
+        200
+      } else {
+        h <- suppressWarnings(as.numeric(input$plot_height))
+        if (!is.finite(h) || is.na(h) || h <= 0) 550 else h
+      }
+    },
+    width = function() {
+      w <- suppressWarnings(as.numeric(input$plot_width))
+      if (!is.finite(w) || is.na(w) || w <= 0) 800 else w
+    })
     output$edge_table_all <- renderDT({ datatable(edge_table_all(), options = list(scrollX = TRUE)) })
     output$comparison_edge_table <- renderDT({
       datatable(comparison_edge_table(), options = list(scrollX = TRUE, pageLength = 15))
@@ -1198,6 +1337,93 @@ mod_sparcc_server <- function(id, ps_obj) {
       filename = function() paste0("sparcc_edges_all_", Sys.Date(), ".tsv"),
       content = function(file) readr::write_tsv(edge_table_all(), file)
     )
+
+    output$sparcc_legend_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 800 else input$plot_width
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("sparcc_figure_legend"))
+        )
+      )
+    })
+
+    output$sparcc_status_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 800 else input$plot_width
+      tags$div(
+        class = "simple-result-card",
+        style = paste0("width: ", box_width, "px; max-width: 100%;"),
+        verbatimTextOutput(session$ns("comparison_status"))
+      )
+    })
+
+    output$sparcc_status_separator <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 800 else input$plot_width
+      tags$hr(
+        style = paste(
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "margin: 14px 0 12px 0;",
+          "border-top: 1px solid #d1d5db;"
+        )
+      )
+    })
+
+    output$sparcc_figure_legend <- renderUI({
+      req(input$tax_level, input$analysis_mode)
+      active_tab <- if (is.null(input$sparcc_active_tab) || !nzchar(input$sparcc_active_tab)) "Network Plot (All)" else input$sparcc_active_tab
+      title_text <- paste0("SparCC ", active_tab)
+      body_text <- if (identical(active_tab, "Network Plot (All)")) {
+        "This panel shows all nodes and edges passing the minimum absolute edge-weight threshold. Edge color indicates sign (positive/negative), edge width indicates absolute weight, and node size reflects the selected node-size metric."
+      } else if (identical(active_tab, "Network Plot (Connected)")) {
+        "This panel shows the connected component view after edge filtering, excluding isolated nodes to emphasize connected structure."
+      } else if (identical(active_tab, "Comparison Network")) {
+        "This panel visualizes differential edges between two selected groups. It is available only when analysis mode is set to Compare two groups."
+      } else if (identical(active_tab, "Edge Table")) {
+        "This table lists filtered edges and associated statistics for all estimated group networks."
+      } else if (identical(active_tab, "Differential Edges")) {
+        "This table reports edge-level differences between two groups in comparison mode."
+      } else if (identical(active_tab, "Hub Table")) {
+        "This table summarizes hub candidates based on node centrality metrics."
+      } else {
+        "This panel summarizes network-level topology and run metadata."
+      }
+      tags$div(
+        tags$div(
+          style = "font-weight: 600; margin-bottom: 4px;",
+          title_text
+        ),
+        tags$div(
+          paste0(
+            body_text,
+            " Settings: taxonomic level = ",
+            input$tax_level,
+            ", analysis mode = ",
+            input$analysis_mode,
+            ", prevalence cutoff = ",
+            input$prevalence_filter_pct,
+            "%, minimum |edge weight| = ",
+            input$min_edge_weight,
+            "."
+          )
+        )
+      )
+    })
   })
 }
 

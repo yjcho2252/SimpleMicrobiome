@@ -32,7 +32,7 @@ mod_citation_server <- function(id) {
       "Data Loading / Preprocessing" = c(
         "McMurdie, P. J., & Holmes, S. (2013). phyloseq: An R package for reproducible interactive analysis and graphics of microbiome census data. PLOS ONE, 8(4), e61217. https://doi.org/10.1371/journal.pone.0061217"
       ),
-      "Taxa Barplot" = c(
+      "Taxa Bar plot" = c(
         "Wickham, H. (2016). ggplot2: Elegant graphics for data analysis. Springer. https://ggplot2.tidyverse.org"
       ),
       "Taxa Comparison" = c(

@@ -25,6 +25,12 @@ mod_biplot_ui <- function(id) {
         line-height: 1.45;
         white-space: pre-wrap;
       }
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
     ")),
     sidebarLayout(
       sidebarPanel(
@@ -46,7 +52,7 @@ mod_biplot_ui <- function(id) {
         ),
         numericInput(
           ns("prevalence_filter_pct"),
-          "4. Prevalence filter cutoff (%)",
+          "4. Prevalence filter (%)",
           value = 10,
           min = 0,
           max = 100,
@@ -83,12 +89,29 @@ mod_biplot_ui <- function(id) {
         checkboxInput(ns("show_group_vectors"), "Show group vectors", value = TRUE),
         checkboxInput(ns("show_group_centroid"), "Show group centroids", value = TRUE),
         checkboxInput(ns("show_sample_names"), "Show sample names", value = FALSE),
+        numericInput(ns("dot_size"), "Dot Size (point size):", value = 3, min = 0.5, max = 10, step = 0.5),
+        checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         actionButton(ns("run_biplot"), "Run Biplot", class = "btn-danger", style = "font-size: 12px;"),
+        hr(),
+        h5(icon("download"), "Download"),
+        tags$div(
+          style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_biplot_png"),
+            "Download Plot (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_biplot_scores"),
+            "Download Scores (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
+        ),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-biplot-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);
@@ -100,16 +123,11 @@ mod_biplot_ui <- function(id) {
       ),
       mainPanel(
         h4("Association Biplot"),
-        tags$div(
-          style = "display: flex; gap: 10px; align-items: center; margin-bottom: 10px;",
-          downloadButton(ns("download_biplot_png"), "Download Biplot (PNG)"),
-          downloadButton(ns("download_biplot_scores"), "Download Scores (TSV)")
-        ),
         plotOutput(ns("biplot_plot"), height = "auto"),
-        div(
-          class = "simple-result-card",
-          verbatimTextOutput(ns("biplot_status"))
-        )
+        uiOutput(ns("biplot_legend_box")),
+        uiOutput(ns("biplot_status_separator")),
+        h5(icon("circle-info"), "Biplot Status"),
+        uiOutput(ns("biplot_status_box"))
       )
     )
   )
@@ -169,16 +187,22 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       updateSelectInput(session, "group_var", choices = group_choices, selected = sel)
     }, ignoreInit = FALSE)
 
+    biplot_running <- reactiveVal(FALSE)
+
     biplot_payload <- eventReactive(input$run_biplot, {
+      biplot_running(TRUE)
       session$sendCustomMessage(
         "toggle-biplot-run-btn",
         list(id = session$ns("run_biplot"), disabled = TRUE, label = "Running...")
       )
       on.exit(
-        session$sendCustomMessage(
-          "toggle-biplot-run-btn",
-          list(id = session$ns("run_biplot"), disabled = FALSE, label = "Run Biplot")
-        ),
+        {
+          biplot_running(FALSE)
+          session$sendCustomMessage(
+            "toggle-biplot-run-btn",
+            list(id = session$ns("run_biplot"), disabled = FALSE, label = "Run Biplot")
+          )
+        },
         add = TRUE
       )
       req(ps_obj(), input$group_var, input$tax_level, input$distance_metric)
@@ -395,6 +419,10 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       if (is.null(base_size) || !is.finite(base_size)) {
         base_size <- 11
       }
+      dot_size <- input$dot_size
+      if (is.null(dot_size) || !is.finite(dot_size)) {
+        dot_size <- 3
+      }
       text_size_taxa <- max(2.2, base_size / 3.6)
       text_size_group_vector <- max(2.3, base_size / 3.4)
       text_size_sample <- max(2.1, base_size / 4.0)
@@ -407,14 +435,28 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       group_arrow_df <- payload$group_arrow_df
 
       p <- ggplot2::ggplot(site_df, ggplot2::aes(x = Axis1, y = Axis2, color = Group)) +
-        ggplot2::geom_point(size = 3, alpha = 0.9) +
         ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(
-          title = paste0("Association Biplot (dbRDA, ", payload$metric_label, ")"),
+          title = paste0(input$tax_level, "-Level Association Biplot (dbRDA, ", payload$metric_label, ")"),
           x = paste0("CAP1", if (is.finite(payload$axis1_var)) paste0(" (", payload$axis1_var, "%)") else ""),
           y = paste0("CAP2", if (is.finite(payload$axis2_var)) paste0(" (", payload$axis2_var, "%)") else ""),
           color = input$group_var
+        ) +
+        ggplot2::theme(
+          plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
+          axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
         )
+      if (isTRUE(input$show_dot_outline)) {
+        outline_size <- dot_size + 0.4
+        p <- p + ggplot2::geom_point(
+          color = "black",
+          size = outline_size,
+          alpha = 0.9,
+          show.legend = FALSE
+        )
+      }
+      p <- p + ggplot2::geom_point(size = dot_size, alpha = 0.9)
 
       if (isTRUE(input$show_group_centroid)) {
         centroid_df <- site_df %>%
@@ -535,11 +577,20 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
     output$biplot_plot <- renderPlot(
       {
+        if (is.null(input$run_biplot) || input$run_biplot < 1) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Click 'Run Biplot' to start analysis.")
+          return(invisible(NULL))
+        }
+        if (isTRUE(biplot_running())) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Biplot analysis is running. Please wait...")
+          return(invisible(NULL))
+        }
         biplot_plot()
       },
       width = function() input$plot_width,
-      height = function() input$plot_height,
-      res = 110
+      height = function() input$plot_height
     )
 
     output$biplot_status <- renderText({
@@ -565,6 +616,74 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           paste0("PERMANOVA R2 (adonis2): ", permanova_r2_txt)
         ),
         collapse = "\n"
+      )
+    })
+
+    output$biplot_status_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 700 else input$plot_width
+      tags$div(
+        class = "simple-result-card",
+        style = paste0("width: ", box_width, "px; max-width: 100%;"),
+        verbatimTextOutput(session$ns("biplot_status"))
+      )
+    })
+
+    output$biplot_legend_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 700 else input$plot_width
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("biplot_figure_legend"))
+        )
+      )
+    })
+
+    output$biplot_status_separator <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 700 else input$plot_width
+      tags$hr(
+        style = paste(
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "margin: 14px 0 12px 0;",
+          "border-top: 1px solid #d1d5db;"
+        )
+      )
+    })
+
+    output$biplot_figure_legend <- renderUI({
+      req(input$group_var, input$tax_level, input$distance_metric)
+      distance_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis"
+      body_text <- paste0(
+        "The dbRDA association biplot projects sample relationships on CAP1 and CAP2 using ",
+        distance_label,
+        " distance at ",
+        tolower(input$tax_level),
+        " level. Points are samples colored by ",
+        input$group_var,
+        ". ",
+        if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
+        if (isTRUE(input$show_group_vectors)) "Group vectors show fitted group-direction effects. " else "",
+        if (isTRUE(input$show_group_centroid)) "Cross markers indicate group centroids. " else "",
+        if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
+      )
+      tags$div(
+        tags$div(style = "font-weight: 600; margin-bottom: 4px;", "Association biplot"),
+        tags$div(body_text)
       )
     })
 

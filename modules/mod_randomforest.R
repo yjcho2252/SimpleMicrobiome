@@ -26,6 +26,12 @@ mod_randomforest_ui <- function(id) {
         line-height: 1.45;
         white-space: pre-wrap;
       }
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
     ")),
     sidebarLayout(
       sidebarPanel(
@@ -84,6 +90,7 @@ mod_randomforest_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 1160, min = 600, max = 3200, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         tags$div(
           style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;",
           actionButton(ns("run_rf"), "Run Random Forest", class = "btn-danger", style = "font-size: 12px;"),
@@ -95,12 +102,23 @@ mod_randomforest_ui <- function(id) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              if (msg.label) btn.textContent = msg.label;
+           });
+           Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
+             var el = document.getElementById(msg.id);
+             if (!el) return;
+             el.style.width = msg.width;
+             el.style.maxWidth = '100%';
            });"
         ))
       ),
       mainPanel(
         width = 10,
-        tabsetPanel(
+        h4("Random Forest"),
+        tags$div(
+          id = ns("rf_tab_container"),
+          style = "max-width: 100%;",
+          tabsetPanel(
+            id = ns("rf_active_tab"),
           tabPanel(
             "RF Table",
             downloadButton(
@@ -111,14 +129,14 @@ mod_randomforest_ui <- function(id) {
             DTOutput(ns("importance_table"))
           ),
           tabPanel(
-            "RF Barplot",
+            "RF Bar plot",
             downloadButton(
               ns("download_rf_barplot"),
               "Download Plot (PNG)",
               style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
             ),
             div(
-              style = "display: flex; justify-content: center;",
+              style = "display: flex; justify-content: center; margin-top: 8px;",
               uiOutput(ns("importance_plot_ui"))
             )
           ),
@@ -130,7 +148,7 @@ mod_randomforest_ui <- function(id) {
               style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
             ),
             div(
-              style = "display: flex; justify-content: center;",
+              style = "display: flex; justify-content: center; margin-top: 8px;",
               plotOutput(ns("roc_plot"), width = "1160px", height = "500px")
             ),
             verbatimTextOutput(ns("roc_auc_text"))
@@ -145,24 +163,23 @@ mod_randomforest_ui <- function(id) {
             DTOutput(ns("shap_summary_table"))
           ),
           tabPanel(
-            "SHAP Barplot",
+            "SHAP Bar plot",
             downloadButton(
               ns("download_rf_shap_plot"),
               "Download SHAP Plot (PNG)",
               style = "width: 210px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
             ),
             div(
-              style = "display: flex; justify-content: center;",
+              style = "display: flex; justify-content: center; margin-top: 8px;",
               uiOutput(ns("shap_summary_plot_ui"))
             )
           )
+          )
         ),
-        hr(),
+        uiOutput(ns("rf_legend_box")),
+        uiOutput(ns("rf_results_separator")),
         h4(icon("square-poll-vertical"), "Result"),
-        div(
-          class = "simple-result-card",
-          verbatimTextOutput(ns("rf_metrics"))
-        )
+        uiOutput(ns("rf_metrics_box"))
       )
     )
   )
@@ -171,6 +188,15 @@ mod_randomforest_ui <- function(id) {
 ## Server
 mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
   moduleServer(id, function(input, output, session) {
+    observe({
+      width_px <- suppressWarnings(as.integer(input$plot_width))
+      if (!is.finite(width_px) || is.na(width_px) || width_px <= 0) width_px <- 1160L
+      session$sendCustomMessage(
+        "set-tab-container-width",
+        list(id = session$ns("rf_tab_container"), width = paste0(width_px, "px"))
+      )
+    })
+
     apply_disambiguated_taxrank <- function(ps, tax_level) {
       if (is.null(ps) || identical(tax_level, "ASV")) {
         return(ps)
@@ -220,6 +246,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
 
     model_result <- reactiveVal(NULL)
     status_text <- reactiveVal("Waiting for model run.")
+    rf_running <- reactiveVal(FALSE)
     filtered_outcome_vars <- reactiveVal(character(0))
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
@@ -338,6 +365,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     observeEvent(input$run_rf, {
       req(ps_obj_filtered_raw(), input$outcome_var)
 
+      rf_running(TRUE)
       status_text("Running Random Forest...")
       model_result(NULL)
       session$sendCustomMessage("toggle-rf-run-btn", list(
@@ -346,6 +374,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         label = "Running..."
       ))
       on.exit({
+        rf_running(FALSE)
         session$sendCustomMessage("toggle-rf-run-btn", list(
           id = session$ns("run_rf"),
           disabled = FALSE,
@@ -1226,6 +1255,16 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       res$metrics
     })
 
+    output$rf_metrics_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1160 else input$plot_width
+      tags$div(
+        class = "simple-result-card",
+        style = paste0("width: ", box_width, "px; max-width: 100%;"),
+        verbatimTextOutput(session$ns("rf_metrics"))
+      )
+    })
+
     output$importance_table <- renderDT({
       res <- model_result()
       req(res)
@@ -1420,7 +1459,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       list(cell_mm = cell_mm, bar_width_pt = bar_width_pt)
     }
 
-    build_shap_plot <- function(res, top_n = 20, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120) {
+    build_shap_plot <- function(res, top_n = 20, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120, base_size = 11) {
       ss <- derive_shap_summary(res)
       validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
       ss <- as.data.frame(ss, check.names = FALSE)
@@ -1560,8 +1599,22 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
 
     output$shap_summary_plot <- renderPlot(
       {
+        if (is.null(input$run_rf) || input$run_rf < 1) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Click 'Run Random Forest' to start analysis.")
+          return(invisible(NULL))
+        }
+        if (isTRUE(rf_running())) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Random Forest is running. Please wait...")
+          return(invisible(NULL))
+        }
         res <- model_result()
-        req(res)
+        if (is.null(res)) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Random Forest results are not ready yet. Please wait...")
+          return(invisible(NULL))
+        }
         ss <- derive_shap_summary(res)
         validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP plot is not available."))
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
@@ -1570,7 +1623,8 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           top_n = 20,
           taxa_fontsize = 8,
           cell_mm = geom$cell_mm,
-          bar_width_pt = geom$bar_width_pt
+          bar_width_pt = geom$bar_width_pt,
+          base_size = input$base_size
         )
         ComplexHeatmap::draw(
           p,
@@ -1622,7 +1676,8 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           top_n = 25,
           taxa_fontsize = 7,
           cell_mm = geom$cell_mm,
-          bar_width_pt = geom$bar_width_pt
+          bar_width_pt = geom$bar_width_pt,
+          base_size = input$base_size
         )
         ComplexHeatmap::draw(
           p,
@@ -1633,7 +1688,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       }
     )
 
-    build_importance_plot <- function(res, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120) {
+    build_importance_plot <- function(res, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120, base_size = 11) {
       top_imp <- head(res$importance, 20)
       top_imp$taxa_label_plot <- as.character(top_imp$taxa_label)
       dup_label <- duplicated(top_imp$taxa_label_plot) | duplicated(top_imp$taxa_label_plot, fromLast = TRUE)
@@ -1748,14 +1803,29 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
 
     output$importance_plot <- renderPlot(
       {
+        if (is.null(input$run_rf) || input$run_rf < 1) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Click 'Run Random Forest' to start analysis.")
+          return(invisible(NULL))
+        }
+        if (isTRUE(rf_running())) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Random Forest is running. Please wait...")
+          return(invisible(NULL))
+        }
         res <- model_result()
-        req(res)
+        if (is.null(res)) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Random Forest results are not ready yet. Please wait...")
+          return(invisible(NULL))
+        }
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
         p <- build_importance_plot(
           res,
           taxa_fontsize = 8,
           cell_mm = geom$cell_mm,
-          bar_width_pt = geom$bar_width_pt
+          bar_width_pt = geom$bar_width_pt,
+          base_size = input$base_size
         )
         ComplexHeatmap::draw(
           p,
@@ -1790,7 +1860,8 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           res,
           taxa_fontsize = 7,
           cell_mm = geom$cell_mm,
-          bar_width_pt = geom$bar_width_pt
+          bar_width_pt = geom$bar_width_pt,
+          base_size = input$base_size
         )
         ComplexHeatmap::draw(
           p,
@@ -1874,14 +1945,28 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
 
     output$roc_plot <- renderPlot(
       {
+        if (is.null(input$run_rf) || input$run_rf < 1) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Click 'Run Random Forest' to start analysis.")
+          return(invisible(NULL))
+        }
+        if (isTRUE(rf_running())) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Random Forest is running. Please wait...")
+          return(invisible(NULL))
+        }
         res <- model_result()
-        req(res)
+        if (is.null(res)) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Random Forest results are not ready yet. Please wait...")
+          return(invisible(NULL))
+        }
         if (is.null(res$roc) || length(res$roc$curves) == 0) {
           graphics::plot.new()
           graphics::text(0.5, 0.5, "ROC curve is available for classification results only.")
           return(invisible(NULL))
         }
-        p <- build_roc_plot(res, base_size = 13)
+        p <- build_roc_plot(res, base_size = input$base_size)
         print(p)
       },
       width = 1160,
@@ -1902,12 +1987,100 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           grDevices::dev.off()
           return(invisible(NULL))
         }
-        p <- build_roc_plot(res, base_size = 18)
+        p <- build_roc_plot(res, base_size = input$base_size)
         print(p)
         grDevices::dev.off()
       }
     )
+
+    output$rf_legend_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1160 else input$plot_width
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("rf_figure_legend"))
+        )
+      )
+    })
+
+    output$rf_results_separator <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1160 else input$plot_width
+      tags$hr(
+        style = paste(
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "margin: 14px 0 12px 0;",
+          "border-top: 1px solid #d1d5db;"
+        )
+      )
+    })
+
+    output$rf_figure_legend <- renderUI({
+      req(input$outcome_var, input$tax_level, input$transform_method)
+      active_tab <- if (is.null(input$rf_active_tab) || !nzchar(input$rf_active_tab)) "RF Bar plot" else input$rf_active_tab
+      model_mode <- if (identical(input$outcome_type, "Auto")) "Auto-detected" else input$outcome_type
+      validation_label <- if (is.null(input$validation_mode) || !nzchar(input$validation_mode)) "Holdout split" else input$validation_mode
+
+      legend_title <- if (identical(active_tab, "ROC / AUC")) {
+        "Random Forest ROC/AUC plot"
+      } else if (identical(active_tab, "SHAP Bar plot")) {
+        "Random Forest SHAP importance plot"
+      } else if (identical(active_tab, "SHAP Table")) {
+        "Random Forest SHAP summary table"
+      } else if (identical(active_tab, "RF Table")) {
+        "Random Forest permutation importance table"
+      } else {
+        "Random Forest permutation importance plot"
+      }
+
+      legend_body <- if (identical(active_tab, "ROC / AUC")) {
+        "ROC curves summarize one-vs-rest classification performance for each class. AUC values in the legend and macro AUC indicate overall discriminative performance."
+      } else if (identical(active_tab, "SHAP Bar plot")) {
+        "The SHAP plot shows the top taxa ranked by mean absolute SHAP value. Larger bars indicate stronger contribution of each taxon to model predictions."
+      } else if (identical(active_tab, "SHAP Table")) {
+        "This table summarizes SHAP statistics per feature, including class-specific contributions when available."
+      } else if (identical(active_tab, "RF Table")) {
+        "This table reports feature-level permutation importance and associated abundance summaries used to interpret model drivers."
+      } else {
+        "The RF bar plot ranks taxa by permutation importance. Higher values indicate larger performance drop when that feature is permuted, implying stronger predictive contribution."
+      }
+
+      tags$div(
+        tags$div(
+          style = "font-weight: 600; margin-bottom: 4px;",
+          legend_title
+        ),
+        tags$div(
+          paste0(
+            legend_body,
+            " Model setup: outcome = ",
+            input$outcome_var,
+            ", outcome type = ",
+            model_mode,
+            ", taxonomic level = ",
+            input$tax_level,
+            ", transform = ",
+            input$transform_method,
+            ", validation = ",
+            validation_label,
+            "."
+          )
+        )
+      )
+    })
   })
 }
-
-

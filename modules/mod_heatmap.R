@@ -25,15 +25,21 @@ mod_heatmap_ui <- function(id) {
         line-height: 1.45;
         white-space: pre-wrap;
       }
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
     ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("table-cells"), "Correlation Heatmap"),
+        h4(icon("table-cells"), "Corr. Heatmap"),
         hr(),
         selectInput(
           ns("group_var"),
-          "1. Group variable (for Taxa vs Group)",
+          "1. Group variable",
           choices = character(0),
           selected = NULL
         ),
@@ -71,7 +77,7 @@ mod_heatmap_ui <- function(id) {
           tags$summary("Advanced options"),
           numericInput(
             ns("prevalence_filter_pct"),
-            "7. Prevalence filter cutoff (%)",
+            "7. Prevalence filter (%)",
             value = 10,
             min = 0,
             max = 100,
@@ -105,6 +111,21 @@ mod_heatmap_ui <- function(id) {
         numericInput(ns("cell_height"), "Cell height (px)", value = 10, min = 6, max = 80, step = 1),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         actionButton(ns("run_heatmap"), "Run Heatmap", class = "btn-danger", style = "font-size: 12px;"),
+        hr(),
+        h5(icon("download"), "Download"),
+        tags$div(
+          style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_heatmap_png"),
+            "Download Plot (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_corr_tsv"),
+            "Download Matrix (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
+        ),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-heatmap-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);
@@ -116,16 +137,11 @@ mod_heatmap_ui <- function(id) {
       ),
       mainPanel(
         h4("Correlation Heatmap"),
-        tags$div(
-          style = "display: flex; gap: 10px; align-items: center; margin-bottom: 10px;",
-          downloadButton(ns("download_heatmap_png"), "Download Heatmap (PNG)"),
-          downloadButton(ns("download_corr_tsv"), "Download Matrix (TSV)")
-        ),
         plotOutput(ns("corr_heatmap_plot"), height = "auto"),
-        div(
-          class = "simple-result-card",
-          verbatimTextOutput(ns("heatmap_status"))
-        )
+        uiOutput(ns("heatmap_legend_box")),
+        uiOutput(ns("heatmap_status_separator")),
+        h5(icon("circle-info"), "Heatmap Status"),
+        uiOutput(ns("heatmap_status_box"))
       )
     )
   )
@@ -244,16 +260,22 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       updateSelectizeInput(session, "selected_taxa", choices = taxa_choices, selected = selected_keep, server = TRUE)
     })
 
+    heatmap_running <- reactiveVal(FALSE)
+
     corr_payload <- eventReactive(input$run_heatmap, {
+      heatmap_running(TRUE)
       session$sendCustomMessage(
         "toggle-heatmap-run-btn",
         list(id = session$ns("run_heatmap"), disabled = TRUE, label = "Running...")
       )
       on.exit(
-        session$sendCustomMessage(
-          "toggle-heatmap-run-btn",
-          list(id = session$ns("run_heatmap"), disabled = FALSE, label = "Run Heatmap")
-        ),
+        {
+          heatmap_running(FALSE)
+          session$sendCustomMessage(
+            "toggle-heatmap-run-btn",
+            list(id = session$ns("run_heatmap"), disabled = FALSE, label = "Run Heatmap")
+          )
+        },
         add = TRUE
       )
       req(ps_obj(), input$tax_level, input$transform_method, input$corr_method, input$value_scale)
@@ -654,15 +676,6 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         }
       }
 
-      title_text <- paste0(
-        "Heatmap (",
-        if (identical(input$transform_method, "clr")) "CLR" else "TSS",
-        " + ",
-        tools::toTitleCase(input$corr_method), ", ",
-        if (identical(input$value_scale, "zscore")) "Z-score" else "Raw",
-        ")"
-      )
-
       col_fun <- circlize::colorRamp2(
         c(-fill_limit, 0, fill_limit),
         c("#2166AC", "#F7F7F7", "#B2182B")
@@ -713,8 +726,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         ),
         width = grid::unit(ncol(assoc_mat) * cell_width_pt, "pt"),
         height = grid::unit(nrow(assoc_mat) * cell_height_pt, "pt"),
-        column_title = title_text,
-        column_title_gp = grid::gpar(fontsize = base_size + 1, fontface = "plain"),
+        column_title = NULL,
         cell_fun = function(j, i, x, y, width, height, fill) {
           if (identical(sig_mat[i, j], "*")) {
             grid::grid.text("*", x = x, y = y - grid::unit(2.5, "pt"), gp = grid::gpar(fontsize = sig_fontsize_pt))
@@ -724,8 +736,11 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     plot_dims_px <- reactive({
-      req(corr_payload())
-      assoc_mat <- corr_payload()$assoc_mat
+      payload <- tryCatch(corr_payload(), error = function(e) NULL)
+      if (is.null(payload)) {
+        return(list(width_px = 900L, height_px = 500L))
+      }
+      assoc_mat <- payload$assoc_mat
       if (length(input$selected_taxa) > 0) {
         taxa_keep <- intersect(input$selected_taxa, rownames(assoc_mat))
         if (length(taxa_keep) > 0) {
@@ -748,13 +763,24 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
 
     output$corr_heatmap_plot <- renderPlot(
       {
+        if (is.null(input$run_heatmap) || input$run_heatmap < 1) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Click 'Run Heatmap' to start analysis.")
+          return(invisible(NULL))
+        }
+        if (isTRUE(heatmap_running())) {
+          graphics::plot.new()
+          graphics::text(0.5, 0.5, "Heatmap analysis is running. Please wait...")
+          return(invisible(NULL))
+        }
         ht <- heatmap_plot_obj()
         grid::grid.newpage()
-        left_pad_mm <- if (isTRUE(input$show_row_dendrogram)) 8 else 3
+        left_pad_mm <- if (isTRUE(input$show_row_dendrogram)) 16 else 10
+        top_pad_mm <- 10
         ComplexHeatmap::draw(
           ht,
           heatmap_legend_side = "right",
-          padding = grid::unit(c(4, 4, 4, left_pad_mm), "mm")
+          padding = grid::unit(c(top_pad_mm, 6, 6, left_pad_mm), "mm")
         )
       },
       width = function() plot_dims_px()$width_px,
@@ -806,6 +832,88 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       )
     })
 
+    output$heatmap_status_box <- renderUI({
+      req(plot_dims_px())
+      box_width <- plot_dims_px()$width_px
+      if (is.null(box_width) || !is.finite(box_width)) {
+        box_width <- 600
+      }
+      tags$div(
+        class = "simple-result-card",
+        style = paste0("width: ", box_width, "px; max-width: 100%;"),
+        verbatimTextOutput(session$ns("heatmap_status"))
+      )
+    })
+
+    output$heatmap_legend_box <- renderUI({
+      req(plot_dims_px())
+      box_width <- plot_dims_px()$width_px
+      if (is.null(box_width) || !is.finite(box_width)) {
+        box_width <- 600
+      }
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("heatmap_figure_legend"))
+        )
+      )
+    })
+
+    output$heatmap_status_separator <- renderUI({
+      req(plot_dims_px())
+      box_width <- plot_dims_px()$width_px
+      if (is.null(box_width) || !is.finite(box_width)) {
+        box_width <- 600
+      }
+      tags$hr(
+        style = paste(
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "margin: 14px 0 12px 0;",
+          "border-top: 1px solid #d1d5db;"
+        )
+      )
+    })
+
+    output$heatmap_figure_legend <- renderUI({
+      req(input$tax_level, input$transform_method, input$corr_method, input$value_scale)
+      group_label <- if (is.null(input$group_var) || !nzchar(input$group_var)) "selected group variable" else input$group_var
+      title_text <- "Association heatmap"
+      body_text <- paste0(
+        "Cells represent taxa-to-group association values at ",
+        tolower(input$tax_level),
+        " level. The analysis uses ",
+        toupper(input$transform_method),
+        " transformed abundance and ",
+        tools::toTitleCase(input$corr_method),
+        " statistics. Color indicates association direction and magnitude, with value scale set to ",
+        if (identical(input$value_scale, "zscore")) "row-wise z-score" else "raw association value",
+        ". Group variable is ",
+        group_label,
+        if (isTRUE(input$apply_sig_filter)) {
+          paste0(", and non-significant cells are masked at FDR q < ", input$q_cutoff, ".")
+        } else {
+          "."
+        }
+      )
+      tags$div(
+        tags$div(style = "font-weight: 600; margin-bottom: 4px;", title_text),
+        tags$div(body_text)
+      )
+    })
+
     output$download_heatmap_png <- downloadHandler(
       filename = function() {
         paste0(
@@ -835,11 +943,12 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         on.exit(grDevices::dev.off(), add = TRUE)
         ht <- heatmap_plot_obj()
         grid::grid.newpage()
-        left_pad_mm <- if (isTRUE(input$show_row_dendrogram)) 8 else 3
+        left_pad_mm <- if (isTRUE(input$show_row_dendrogram)) 16 else 10
+        top_pad_mm <- 10
         ComplexHeatmap::draw(
           ht,
           heatmap_legend_side = "right",
-          padding = grid::unit(c(4, 4, 4, left_pad_mm), "mm")
+          padding = grid::unit(c(top_pad_mm, 6, 6, left_pad_mm), "mm")
         )
       }
     )

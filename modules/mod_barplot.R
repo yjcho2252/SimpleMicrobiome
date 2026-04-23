@@ -4,22 +4,30 @@ mod_barplot_ui <- function(id) {
   tax_ranks <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
   
   palette_choices <- c(
-    "Paired (Default, Max 12)" = "Paired",
+    "Paired" = "Paired",
     "Custom (HCL 30+ Colors)" = "Custom_HCL",
-    "Set1 (Max 9)" = "Set1",
-    "Set2 (Max 8)" = "Set2",
-    "Set3 (Max 12)" = "Set3",
-    "Dark2 (Max 8)" = "Dark2",
-    "Accent (Max 8)" = "Accent",
-    "Pastel1 (Max 9)" = "Pastel1",
-    "Pastel2 (Max 8)" = "Pastel2"
+    "Set1" = "Set1",
+    "Set2" = "Set2",
+    "Set3" = "Set3",
+    "Dark2" = "Dark2",
+    "Accent" = "Accent",
+    "Pastel1" = "Pastel1",
+    "Pastel2" = "Pastel2"
   )
   
   tagList(
+    tags$style(HTML("
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("chart-bar"), "Taxa Barplot"),
+        h4(icon("chart-bar"), "Taxa Bar plot"),
         hr(),
         
         uiOutput(ns("local_group_selector")), 
@@ -31,8 +39,8 @@ mod_barplot_ui <- function(id) {
 
           selectInput(ns("sort_method"), "Primary Sort Criterion (within Group):",
                       choices = c(
-                        "Top Taxa Abundance (Default)" = "taxa_top1",
-                        "Sample Name (Alphabetical)" = "sample_name",
+                        "Top Taxa Abundance" = "taxa_top1",
+                        "Sample Name" = "sample_name",
                         "Metadata Variable" = "metadata_var"
                       ),
                       selected = "taxa_top1"),
@@ -43,9 +51,9 @@ mod_barplot_ui <- function(id) {
             uiOutput(ns("sort_by_metadata_ui")),
             selectInput(ns("secondary_sort"), "Secondary Sort (after Metadata):",
                         choices = c(
-                          "None (Metadata only)" = "none",
-                          "Top Taxa Abundance (Descending)" = "taxa_top1",
-                          "Sample Name (Alphabetical)" = "sample_name_asc"
+                          "None" = "none",
+                          "Top Taxa Abundance" = "taxa_top1",
+                          "Sample Name" = "sample_name_asc"
                         ),
                         selected = "taxa_top1")
           )
@@ -60,15 +68,16 @@ mod_barplot_ui <- function(id) {
         selectInput(ns("tax_level"), "Taxonomic Level:",
                     choices = tax_ranks,
                     selected = "Genus"),        
-        numericInput(ns("top_n_taxa"), "Number of Top Taxa to Display:",
+        numericInput(ns("top_n_taxa"), "Taxa Numbers to Display:",
                      value = 15, min = 1, max = 50, step = 1),        
-        selectInput(ns("name_display_mode"), "Taxa Name Display:",
+        selectInput(ns("name_display_mode"), "Taxa Rank to Display:",
                     choices = c("Full Hierarchy" = "full",
-                                "Current Rank Only" = "current"),
+                                "Current Rank" = "current"),
                     selected = "current"),
-        selectInput(ns("color_palette"), "Color Palette Selection:",
+        selectInput(ns("color_palette"), "Color Palette:",
                     choices = palette_choices,
                     selected = "Paired"),
+        hr(),
         h4(icon("sliders"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width (px):",
                      value = 1000, min = 300, step = 50),
@@ -84,19 +93,21 @@ mod_barplot_ui <- function(id) {
           style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
           downloadButton(
             ns("download_barplot"),
-            "Download Plot (PNG)",
+            "Plot (PNG)",
             style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
           ),
           downloadButton(
             ns("download_barplot_matrix"),
-            "Download Matrix (TSV)",
+            "Matrix (TSV)",
             style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
           )
         )
       ),
       mainPanel(
         width = 9,
-        plotOutput(ns("barplot_out"), height = "auto")
+        h4("Taxa Bar plot"),
+        plotOutput(ns("barplot_out"), height = "auto"),
+        uiOutput(ns("barplot_legend_box"))
       )
     )
   )
@@ -116,6 +127,35 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         return(matched[1])
       }
       requested
+    }
+
+    size_update_in_progress <- reactiveVal(FALSE)
+
+    compute_auto_plot_dims <- function(n_bars) {
+      n_bars <- max(1, as.numeric(n_bars))
+      per_bar_px <- min(26, max(6, 89.44 / sqrt(n_bars)))
+      width <- ceiling(min(max(300, 220 + n_bars * per_bar_px), 2200))
+      height <- 400
+      list(width = width, height = height)
+    }
+
+    maybe_auto_adjust_plot_size <- function(width, height) {
+      if (size_update_in_progress()) {
+        return()
+      }
+      current_width <- suppressWarnings(as.numeric(input$plot_width))
+      current_height <- suppressWarnings(as.numeric(input$plot_height))
+      if (is.finite(current_width) && is.finite(current_height) &&
+          as.integer(current_width) == as.integer(width) &&
+          as.integer(current_height) == as.integer(height)) {
+        return()
+      }
+      size_update_in_progress(TRUE)
+      updateNumericInput(session, "plot_width", value = width)
+      updateNumericInput(session, "plot_height", value = height)
+      session$onFlushed(function() {
+        size_update_in_progress(FALSE)
+      }, once = TRUE)
     }
 
     apply_disambiguated_taxrank <- function(ps, tax_level) {
@@ -169,7 +209,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       req(meta_cols())
       group_choices <- setdiff(meta_cols(), "SampleID")
       selected_col <- if (length(group_choices) > 0) group_choices[1] else meta_cols()[1]
-      selectInput(session$ns("group_var"), "Primary Grouping Variable (Facet):",
+      selectInput(session$ns("group_var"), "Primary Group (Facet):",
                   choices = group_choices, selected = selected_col)
     })
     
@@ -178,7 +218,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
       group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, resolved_primary))
       selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
-      selectInput(session$ns("secondary_var"), "Secondary Grouping Variable (Sub-Group):",
+      selectInput(session$ns("secondary_var"), "Secondary Group:",
                   choices = c("None" = "None", group_choices), 
                   selected = "None")
     })
@@ -444,6 +484,18 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           dplyr::select(any_of(c("Sample", "Combined_Group", primary_var, "Taxa_Group", "Abundance")))
       }
     })
+
+    observeEvent(list(barplot_matrix_reactive(), input$plot_mode), {
+      req(barplot_matrix_reactive())
+      df_plot <- barplot_matrix_reactive()
+      x_var <- if (identical(input$plot_mode, "Group_Mean")) "Combined_Group" else "Sample"
+      if (!x_var %in% names(df_plot) || nrow(df_plot) == 0) {
+        return()
+      }
+      n_bars <- length(unique(as.character(df_plot[[x_var]])))
+      dims <- compute_auto_plot_dims(n_bars)
+      maybe_auto_adjust_plot_size(dims$width, dims$height)
+    }, ignoreInit = FALSE)
     
     barplot_reactive <- reactive({
       req(ps_obj(), group_var(), input$tax_level, input$name_display_mode, 
@@ -593,7 +645,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         
         x_var <- "Combined_Group"
         x_label <- paste(primary_var, if (!is.null(secondary_var_val)) secondary_var_val else "")
-        plot_title <- paste("Mean Relative Abundance of Top", topN, current_rank, "Taxa + Others", combined_title_suffix)
+        plot_title <- paste0(current_rank, "-Level Microbial Community Composition")
         
         df_plot[[x_var]] <- factor(df_plot[[x_var]])
         
@@ -601,7 +653,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         df_plot <- df_sample
         x_var <- "Sample"
         x_label <- ""
-        plot_title <- paste("Top", topN, current_rank, "Taxa + Others", combined_title_suffix)
+        plot_title <- paste0(current_rank, "-Level Microbial Community Composition")
         subgroup_rect_df <- NULL
         subgroup_boundary_df <- NULL
         subgroup_label_df <- NULL
@@ -819,6 +871,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
             vjust = 0.5,
             size = if (plot_mode == "Group_Mean") base_size else max(6, base_size - 2)
           ),
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
           panel.grid.major = ggplot2::element_line(color = "white", linewidth = 0.1),
           panel.grid.minor = ggplot2::element_line(color = "white", linewidth = 0.1),
           axis.title.x = ggplot2::element_blank(),
@@ -834,9 +887,37 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       return(p)
     })
     
-    output$barplot_out <- renderPlot({ barplot_reactive() },
-                                     height = function() { input$plot_height },
-                                     width = function() { input$plot_width }
+    output$barplot_out <- renderPlot({
+      ps_now <- ps_obj()
+      if (is.null(ps_now)) {
+        graphics::plot.new()
+        graphics::text(
+          0.5, 0.5,
+          "Applying selected samples and preparing bar plot.\nPlease wait..."
+        )
+        return(invisible(NULL))
+      }
+      if (phyloseq::nsamples(ps_now) == 0) {
+        graphics::plot.new()
+        graphics::text(
+          0.5, 0.5,
+          "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+        )
+        return(invisible(NULL))
+      }
+      tryCatch(
+        barplot_reactive(),
+        error = function(e) {
+          graphics::plot.new()
+          graphics::text(
+            0.5, 0.5,
+            paste0("Bar plot is not ready yet. Please wait...\n", conditionMessage(e))
+          )
+        }
+      )
+    },
+    height = function() { input$plot_height },
+    width = function() { input$plot_width }
     )
     
     output$download_barplot <- downloadHandler(
@@ -862,6 +943,86 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         readr::write_tsv(barplot_matrix_reactive(), file)
       }
     )
+
+    output$barplot_legend_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1000 else input$plot_width
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("barplot_figure_legend"))
+        )
+      )
+    })
+
+    output$barplot_figure_legend <- renderUI({
+      req(input$tax_level, input$top_n_taxa, input$plot_mode, input$name_display_mode)
+      secondary_group <- tryCatch(secondary_var(), error = function(e) NULL)
+      secondary_label <- if (!is.null(secondary_group) && nzchar(secondary_group)) {
+        secondary_group
+      } else {
+        "None"
+      }
+      tax_level_label <- tolower(input$tax_level)
+      first_sentence <- if (identical(input$plot_mode, "Group_Mean")) {
+        "Stacked bar plots show group-level mean relative abundance of microbial taxa"
+      } else {
+        "Stacked bar plots show the relative abundance of microbial taxa across samples"
+      }
+      taxa_name_label <- if (identical(input$name_display_mode, "full")) "full taxonomy hierarchy" else "current rank name"
+      sort_sentence <- ""
+      if (!identical(input$plot_mode, "Group_Mean")) {
+        sort_method <- input$sort_method
+        if (identical(sort_method, "sample_name")) {
+          sort_sentence <- "Within each group, sample order is alphabetical by sample name. "
+        } else if (identical(sort_method, "metadata_var")) {
+          secondary_sort <- input$secondary_sort
+          if (identical(secondary_sort, "taxa_top1")) {
+            sort_sentence <- "Within each group, sample order is determined first by the selected metadata variable and then by the relative abundance of the dominant taxon at the selected rank. "
+          } else if (identical(secondary_sort, "sample_name_asc")) {
+            sort_sentence <- "Within each group, sample order is determined first by the selected metadata variable and then alphabetically by sample name. "
+          } else {
+            sort_sentence <- "Within each group, sample order is determined by the selected metadata variable. "
+          }
+        } else {
+          sort_sentence <- "Within each group, sample order is determined by the relative abundance of the dominant taxon at the selected rank. "
+        }
+      }
+      tags$div(
+        tags$div(
+          style = "font-weight: 600; margin-bottom: 4px;",
+          "Taxonomic composition bar plot"
+        ),
+        tags$div(
+          paste0(
+            first_sentence,
+            " at ",
+            tax_level_label,
+            " level. Colors denote taxa, and taxa outside the top ",
+            input$top_n_taxa,
+            " most abundant taxa in the full displayed dataset are aggregated as others",
+            if (!identical(secondary_label, "None")) paste0(" and sub-grouped by ", secondary_label) else "",
+            ". ",
+            sort_sentence,
+            "The y-axis represents relative abundance, and taxa labels are shown as ",
+            taxa_name_label,
+            "; for unassigned entries, the closest annotated higher taxonomic rank is shown instead."            
+          )
+        )
+      )
+    })
   })
 }
 

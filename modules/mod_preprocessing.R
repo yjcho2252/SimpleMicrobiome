@@ -7,24 +7,32 @@ library(DT)
 mod_preprocessing_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
+      .well .irs-grid-text { display: none !important; }
+    ")),
     fluidRow(
       column(
         width = 2,
         wellPanel(
-          h4(icon("filter"), "Sample Selection Overview"),
-          p("Select samples by minimum read count."),
-          uiOutput(ns("read_count_filter_ui")),
-          p("Unselect rows in the table to EXCLUDE samples.", style = "margin-top: -8px;"),
+          h4(icon("filter"), "Sample Selection"),
           hr(),
+          h5(icon("filter"), "Read Counts Filtering"),
+          uiOutput(ns("read_count_filter_ui")),
           div(style = "background: #f8f9fa; padding: 10px; border-radius: 5px;",
               verbatimTextOutput(ns("sample_count_info"))
           ),
           hr(),
           h5(icon("layer-group"), "Group-based Toggle"),
-          selectInput(ns("toggle_group_var"), "Group variable", choices = NULL),
+          selectInput(ns("toggle_group_var"), "Group Variable", choices = NULL),
           selectizeInput(
             ns("toggle_group_levels"),
-            "Group level",
+            "Group Level",
             choices = NULL,
             multiple = FALSE,
             options = list(
@@ -41,12 +49,12 @@ mod_preprocessing_ui <- function(id) {
             width = "100%"
           ),
           hr(),
-          actionButton(ns("reset_selection"), "Reset: Select All Samples", 
+          actionButton(ns("reset_selection"), "Select All", 
                        icon = icon("sync"), class = "btn-secondary btn-sm", style = "font-size: 12px;", width = "100%"),
           br(),
           actionButton(
             ns("unselect_all"),
-            "Unselect All Samples",
+            "Unselect All",
             icon = icon("ban"),
             class = "btn-secondary btn-sm",
             style = "font-size: 12px;",
@@ -58,6 +66,7 @@ mod_preprocessing_ui <- function(id) {
         width = 9,
         wellPanel(
           h4(icon("list-check"), "Individual Sample Selection (Click to Toggle)"),
+          p("After finishing selection, click another analysis tab to continue.", style = "margin: 0 0 8px 0; color: #4b5563; font-size: 12px;"),
           div(
             style = "width: 100%; overflow-x: auto;",
             DTOutput(ns("sample_table"))
@@ -86,7 +95,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     }
     
     ps_filtered <- reactiveVal(NULL)
-    selection_initialized <- reactiveVal(FALSE)
+    last_applied_indices <- reactiveVal(NULL)
     default_min_reads <- 2000
     
     meta_df_for_dt <- reactive({
@@ -152,7 +161,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     }, server = TRUE)
     
     proxy <- DT::dataTableProxy('sample_table')
-
+    
     output$read_count_filter_ui <- renderUI({
       req(meta_df_for_dt())
       df <- meta_df_for_dt()
@@ -160,7 +169,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       if (!is.finite(max_reads)) max_reads <- default_min_reads
       sliderInput(
         session$ns("min_read_count"),
-        "Minimum reads",
+        "",
         min = 0,
         max = ceiling(max_reads),
         value = min(default_min_reads, ceiling(max_reads)),
@@ -169,12 +178,12 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     })
 
     observeEvent(ps_obj_initial(), {
-      selection_initialized(FALSE)
+      last_applied_indices(NULL)
+      ps_filtered(ps_obj_initial())
     }, ignoreInit = FALSE)
 
     observeEvent(input$min_read_count, {
       req(meta_df_for_dt())
-      selection_initialized(TRUE)
       df <- meta_df_for_dt()
       selected_rows <- which(df$`Read Count` >= input$min_read_count)
       DT::selectRows(proxy, selected_rows)
@@ -215,19 +224,16 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     
     observeEvent(input$reset_selection, {
       req(meta_df_for_dt())
-      selection_initialized(TRUE)
       DT::selectRows(proxy, seq_len(nrow(meta_df_for_dt())))
     })
 
     observeEvent(input$unselect_all, {
       req(meta_df_for_dt())
-      selection_initialized(TRUE)
       DT::selectRows(proxy, integer(0))
     })
     
     observeEvent(input$toggle_selection_all, {
       req(meta_df_for_dt())
-      selection_initialized(TRUE)
       target_rows <- input$sample_table_rows_all
       if (is.null(target_rows) || length(target_rows) == 0) {
         return()
@@ -247,7 +253,6 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     
     observeEvent(input$toggle_group_selection, {
       req(meta_df_for_dt(), input$toggle_group_var)
-      selection_initialized(TRUE)
       selected_level <- input$toggle_group_levels
       validate(need(!is.null(selected_level) && nzchar(selected_level),
                     "Select one group level to toggle."))
@@ -272,15 +277,39 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       
       DT::selectRows(proxy, new_selected)
     })
-    
-    observe({      
-      req(ps_obj_initial(), meta_df_for_dt())
-      
+
+    selected_indices_for_apply <- reactive({
+      req(meta_df_for_dt())
       selected_indices <- input$sample_table_rows_selected
+      if (is.null(selected_indices)) {
+        min_reads <- input$min_read_count
+        if (is.null(min_reads)) {
+          min_reads <- default_min_reads
+        }
+        selected_indices <- which(meta_df_for_dt()$`Read Count` >= min_reads)
+      }
+      sort(unique(as.integer(selected_indices)))
+    })
+    
+    apply_current_selection <- function(selected_indices) {
+      req(ps_obj_initial(), meta_df_for_dt())
+      if (is.null(selected_indices)) {
+        selected_indices <- integer(0)
+      } else {
+        selected_indices <- sort(unique(as.integer(selected_indices)))
+      }
       
-      if (is.null(selected_indices) && !isTRUE(selection_initialized())) {
-        ps_new <- ps_obj_initial()
-      } else if (is.null(selected_indices) || length(selected_indices) == 0) {
+      last_indices <- last_applied_indices()
+      if (is.null(last_indices)) {
+        last_indices <- integer(0)
+      } else {
+        last_indices <- sort(unique(as.integer(last_indices)))
+      }
+      if (identical(selected_indices, last_indices)) {
+        return(invisible(NULL))
+      }
+      
+      if (length(selected_indices) == 0) {
         ps_new <- NULL
       } else {
         selected_samples <- meta_df_for_dt()$SampleID[selected_indices]
@@ -292,24 +321,25 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       }
       
       ps_filtered(ps_new)
-    })
+      last_applied_indices(selected_indices)
+      invisible(NULL)
+    }
+    
+    observeEvent(active_tab(), {
+      current_tab <- active_tab()
+      if (!is.null(current_tab) && !identical(current_tab, "Preprocessing")) {
+        apply_current_selection(selected_indices_for_apply())
+      }
+    }, ignoreInit = TRUE)
     
     output$sample_count_info <- renderText({
-      req(ps_obj_initial())
-      ps_now <- ps_filtered()
-      
-      res <- sprintf("Initial Total: %d samples\n", phyloseq::nsamples(ps_obj_initial()))
-      if (!is.null(ps_now)) {
-        res <- paste0(res, sprintf("Currently Selected: %d samples\n", phyloseq::nsamples(ps_now)))
-        res <- paste0(res, sprintf("Active Taxa (ASVs): %d", phyloseq::ntaxa(ps_now)))
-      } else {
-        if (isTRUE(selection_initialized())) {
-          res <- paste0(res, "Currently Selected: 0 samples\nActive Taxa (ASVs): 0")
-        } else {
-          res <- paste0(res, "Initializing selection...")
-        }
-      }
-      res
+      req(ps_obj_initial(), meta_df_for_dt())
+      total_samples <- nrow(meta_df_for_dt())
+      selected_count <- length(selected_indices_for_apply())
+      paste0(
+        sprintf("Total: %d\n", total_samples),
+        sprintf("Selected: %d", selected_count)
+      )
     })
     
     return(list(

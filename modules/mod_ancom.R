@@ -7,13 +7,44 @@ library(phyloseq)
 mod_ancom_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    tags$style(HTML("
+      .simple-result-card {
+        width: 600px;
+        max-width: 100%;
+        height: 130px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.45;
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        border-radius: 10px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        margin-bottom: 10px;
+      }
+      .simple-result-card pre {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+      .well h4 { font-size: 16px; }
+      .well h5 { font-size: 13px; }
+      .well .control-label { font-size: 12px; }
+      .well .checkbox label { font-size: 12px; }
+      .well .form-control { font-size: 12px; }
+      .well .btn { font-size: 11px; }
+    ")),
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("vial-circle-check"), "ANCOM-BC2 Analysis"),
+        h4(icon("vial-circle-check"), "ANCOM-BC2"),
         hr(),
 
-        selectInput(ns("group_var"), "1. Metadata grouping variable", choices = NULL),
+        selectInput(ns("group_var"), "1. Grouping variable", choices = NULL),
 
         selectizeInput(
           ns("group_levels"),
@@ -27,19 +58,18 @@ mod_ancom_ui <- function(id) {
         ),
 
         selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
-        verbatimTextOutput(ns("group_sample_counts")),
 
         selectInput(ns("tax_level"), "4. Taxonomic level",
                     choices = c("ASV", "Genus", "Species"), selected = "Genus"),
 
-        selectInput(ns("volcano_y_axis"), "5. Statistical significance metric",
-                    choices = c("FDR-adjusted p-value (q-value)" = "q_val",
-                                "Raw p-value (p-value)" = "p_val"),
+        selectInput(ns("volcano_y_axis"), "5. Statistical metric",
+                    choices = c("FDR q-value" = "q_val",
+                                "p-value" = "p_val"),
                     selected = "q_val"),
 
         numericInput(
           ns("prevalence_filter_pct"),
-          "6. Prevalence filter cutoff (0-20%)",
+          "6. Prevalence filter (0-20%)",
           value = 5,
           min = 0,
           max = 20,
@@ -83,8 +113,9 @@ mod_ancom_ui <- function(id) {
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 900, min = 400, max = 2000, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 600, min = 300, max = 2000, step = 50),
+        numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2000, step = 50),
+        numericInput(ns("plot_height"), "Plot height (px)", value = 400, min = 300, max = 2000, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         actionButton(ns("run_ancom_btn"), "Run ANCOM-BC2", class = "btn-danger", style = "font-size: 12px;"),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-ancom-run-btn', function(msg) {
@@ -92,21 +123,43 @@ mod_ancom_ui <- function(id) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              if (msg.label) btn.textContent = msg.label;
+           });
+           Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
+             var el = document.getElementById(msg.id);
+             if (!el) return;
+             el.style.width = msg.width;
+             el.style.maxWidth = '100%';
            });"
         ))
       ),
       mainPanel(
-        tabsetPanel(
-          tabPanel("Table",
-                   downloadButton(ns("download_ancom_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-                   DTOutput(ns("ancom_table"))),
-          tabPanel("Volcano Plot",
-                   downloadButton(ns("download_volcano"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-                   plotOutput(ns("ancom_plot"), height = "auto")),
-          tabPanel("Bar Plot",
-                   downloadButton(ns("download_barplot"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-                   plotOutput(ns("ancom_barplot"), height = "auto"))
-        )
+        h4("ANCOM-BC2"),
+        tags$div(
+          id = ns("ancom_tab_container"),
+          style = "max-width: 100%;",
+          tabsetPanel(
+            id = ns("ancom_active_tab"),
+            tabPanel("Volcano Plot",
+                     downloadButton(ns("download_volcano"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+                     tags$div(
+                       style = "margin-top: 8px;",
+                       plotOutput(ns("ancom_plot"), height = "auto")
+                     )),
+            tabPanel("Bar Plot",
+                     downloadButton(ns("download_barplot"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+                     tags$div(
+                       style = "margin-top: 8px;",
+                       plotOutput(ns("ancom_barplot"), height = "auto")
+                     )),
+            tabPanel("Table",
+                     downloadButton(ns("download_ancom_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+                     DTOutput(ns("ancom_table")))
+          )
+        ),
+        uiOutput(ns("ancom_legend_box")),
+        uiOutput(ns("ancom_status_separator")),
+        h5(icon("circle-info"), "ANCOM-BC2 Status"),
+        uiOutput(ns("ancom_status_box"))
       )
     )
   )
@@ -115,6 +168,23 @@ mod_ancom_ui <- function(id) {
 ## Server
 mod_ancom_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
+    draw_wait_message <- function(message_text) {
+      old_par <- graphics::par(no.readonly = TRUE)
+      on.exit(graphics::par(old_par), add = TRUE)
+      graphics::par(mar = c(0, 0, 0, 0))
+      graphics::plot.new()
+      graphics::text(0.5, 0.5, message_text)
+    }
+
+    observe({
+      width_px <- suppressWarnings(as.integer(input$plot_width))
+      if (!is.finite(width_px) || is.na(width_px) || width_px <= 0) width_px <- 900L
+      session$sendCustomMessage(
+        "set-tab-container-width",
+        list(id = session$ns("ancom_tab_container"), width = paste0(width_px, "px"))
+      )
+    })
+
     taxa_counts <- reactiveVal(list(before = NA_integer_, after = NA_integer_))
     apply_disambiguated_taxrank <- function(ps, tax_level) {
       if (is.null(ps) || identical(tax_level, "ASV")) {
@@ -238,14 +308,14 @@ mod_ancom_server <- function(id, ps_obj) {
       }
       selected_levels <- intersect(selected_levels, level_choices)
       if (length(selected_levels) == 0) {
-        selected_levels <- head(level_choices, 5)
+        selected_levels <- head(level_choices, 2)
       }
       if (length(selected_levels) > 5) {
         selected_levels <- selected_levels[1:5]
         showNotification("You can select up to 5 group levels. Keeping the first 5 selected levels.", type = "warning")
       }
       if (length(selected_levels) < 2 && length(level_choices) >= 2) {
-        selected_levels <- head(level_choices, min(5, length(level_choices)))
+        selected_levels <- head(level_choices, 2)
       }
 
       updateSelectizeInput(session, "group_levels",
@@ -458,9 +528,12 @@ mod_ancom_server <- function(id, ps_obj) {
       ps_sub
     })
 
+    ancom_running <- reactiveVal(FALSE)
+
     ancom_res <- eventReactive(input$run_ancom_btn, {
       req(ps_filtered(), input$group_var, input$reference_level)
       current_group_var <- group_var_resolved()
+      ancom_running(TRUE)
 
       session$sendCustomMessage("toggle-ancom-run-btn", list(
         id = session$ns("run_ancom_btn"),
@@ -468,6 +541,7 @@ mod_ancom_server <- function(id, ps_obj) {
         label = "Running..."
       ))
       on.exit({
+        ancom_running(FALSE)
         session$sendCustomMessage("toggle-ancom-run-btn", list(
           id = session$ns("run_ancom_btn"),
           disabled = FALSE,
@@ -991,7 +1065,7 @@ mod_ancom_server <- function(id, ps_obj) {
     }
 
     volcano_plot_reactive <- reactive({
-      req(ancom_processed(), input$volcano_y_axis)
+      req(ancom_processed(), input$volcano_y_axis, input$base_size)
       res <- ancom_processed()
       selected_levels <- group_selection_info()$selected_levels
       target_levels <- setdiff(selected_levels, input$reference_level)
@@ -1057,12 +1131,12 @@ mod_ancom_server <- function(id, ps_obj) {
         ) +
         coord_cartesian(ylim = c(0, y_upper), xlim = x_lim) +
         scale_x_continuous(breaks = x_breaks) +
-        labs(title = paste("ANCOM-BC2 Volcano Plot (reference:", input$reference_level, ")"),
+        labs(title = paste0(input$tax_level, "-Level ANCOM-BC2 Volcano Plot (reference: ", input$reference_level, ")"),
              x = expression("log"[2]*"FC"),
              y = y_axis_label,
              color = "Direction",
              subtitle = paste0("Positive log2FC = increased in ", target_label, " (vs ", input$reference_level, ")")) +
-        theme_minimal(base_size = 14) +
+        theme_minimal(base_size = input$base_size) +
         theme(
           plot.title = element_text(size = 16, face = "bold"),
           plot.subtitle = element_text(size = 12),
@@ -1086,7 +1160,7 @@ mod_ancom_server <- function(id, ps_obj) {
     })
 
     bar_plot_reactive <- reactive({
-      req(ancom_processed(), input$volcano_y_axis)
+      req(ancom_processed(), input$volcano_y_axis, input$base_size)
       res <- ancom_processed()
       selected_levels <- group_selection_info()$selected_levels
       target_levels <- setdiff(selected_levels, input$reference_level)
@@ -1146,11 +1220,11 @@ mod_ancom_server <- function(id, ps_obj) {
             "FALSE" = paste0("Decrease in ", target_label)
           )
         ) +
-        labs(title = paste("Top", top_n, "Differential Taxa by LFC (reference:", input$reference_level, ")"),
+        labs(title = paste0("Top ", top_n, " ", input$tax_level, "-Level Differential Taxa by LFC (reference: ", input$reference_level, ")"),
              x = input$tax_level,
              y = expression("log"[2]*"FC"),
              fill = "Direction") +
-        theme_bw() +
+        theme_bw(base_size = input$base_size) +
         theme(plot.margin = ggplot2::margin(6, 90, 6, 90))
 
       if ("contrast" %in% colnames(res_top)) {
@@ -1161,14 +1235,54 @@ mod_ancom_server <- function(id, ps_obj) {
     })
 
     output$ancom_plot <- renderPlot(
-      { volcano_plot_reactive() },
-      height = function() { req(input$plot_height); input$plot_height },
-      width = function() { req(input$plot_width); input$plot_width }
+      {
+        if (is.null(input$run_ancom_btn) || input$run_ancom_btn < 1) {
+          draw_wait_message("Click 'Run ANCOM-BC2' to start analysis.")
+          return(invisible(NULL))
+        }
+        if (isTRUE(ancom_running())) {
+          draw_wait_message("ANCOM-BC2 is running. Please wait...")
+          return(invisible(NULL))
+        }
+        volcano_plot_reactive()
+      },
+      height = function() {
+        if (is.null(input$run_ancom_btn) || input$run_ancom_btn < 1) {
+          200
+        } else {
+          h <- suppressWarnings(as.numeric(input$plot_height))
+          if (!is.finite(h) || is.na(h) || h <= 0) 400 else h
+        }
+      },
+      width = function() {
+        w <- suppressWarnings(as.numeric(input$plot_width))
+        if (!is.finite(w) || is.na(w) || w <= 0) 700 else w
+      }
     )
     output$ancom_barplot <- renderPlot(
-      { bar_plot_reactive() },
-      height = function() { req(input$plot_height); input$plot_height },
-      width = function() { req(input$plot_width); input$plot_width }
+      {
+        if (is.null(input$run_ancom_btn) || input$run_ancom_btn < 1) {
+          draw_wait_message("Click 'Run ANCOM-BC2' to start analysis.")
+          return(invisible(NULL))
+        }
+        if (isTRUE(ancom_running())) {
+          draw_wait_message("ANCOM-BC2 is running. Please wait...")
+          return(invisible(NULL))
+        }
+        bar_plot_reactive()
+      },
+      height = function() {
+        if (is.null(input$run_ancom_btn) || input$run_ancom_btn < 1) {
+          200
+        } else {
+          h <- suppressWarnings(as.numeric(input$plot_height))
+          if (!is.finite(h) || is.na(h) || h <= 0) 400 else h
+        }
+      },
+      width = function() {
+        w <- suppressWarnings(as.numeric(input$plot_width))
+        if (!is.finite(w) || is.na(w) || w <= 0) 700 else w
+      }
     )
 
     output$download_volcano <- downloadHandler(
@@ -1196,7 +1310,107 @@ mod_ancom_server <- function(id, ps_obj) {
                         width = input$plot_width / 100, height = input$plot_height / 100)
       }
     )
+
+    output$ancom_legend_box <- renderUI({
+      req(input$plot_width)
+      active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano Plot" else input$ancom_active_tab
+      if (identical(active_tab, "Table")) {
+        return(NULL)
+      }
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
+      tags$div(
+        style = paste(
+          "margin-top: 12px;",
+          "clear: both;",
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "padding: 12px 14px;",
+          "border: 1px solid #e5e7eb;",
+          "border-left: 4px solid #6b7280;",
+          "border-radius: 8px;",
+          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
+          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+          "box-sizing: border-box;"
+        ),
+        tags$div(
+          style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
+          uiOutput(session$ns("ancom_figure_legend"))
+        )
+      )
+    })
+
+    output$ancom_status_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
+      tags$div(
+        class = "simple-result-card",
+        style = paste0("width: ", box_width, "px; max-width: 100%;"),
+        verbatimTextOutput(session$ns("group_sample_counts"))
+      )
+    })
+
+    output$ancom_status_separator <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
+      tags$hr(
+        style = paste(
+          sprintf("width: %spx;", box_width),
+          "max-width: 100%;",
+          "margin: 14px 0 12px 0;",
+          "border-top: 1px solid #d1d5db;"
+        )
+      )
+    })
+
+    output$ancom_figure_legend <- renderUI({
+      req(input$tax_level, input$reference_level)
+      active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano Plot" else input$ancom_active_tab
+      y_metric_label <- if (identical(input$volcano_y_axis, "q_val")) {
+        "FDR-adjusted p-value (q-value)"
+      } else {
+        "raw p-value"
+      }
+      legend_title <- if (identical(active_tab, "Bar Plot")) {
+        "ANCOM-BC2 differential taxa bar plot"
+      } else if (identical(active_tab, "Table")) {
+        "ANCOM-BC2 results table"
+      } else {
+        "ANCOM-BC2 volcano plot"
+      }
+      legend_body <- if (identical(active_tab, "Bar Plot")) {
+        paste0(
+          "Bars show the top 10 taxa ranked by absolute log2 fold-change (log2FC) from ANCOM-BC2 at ",
+          tolower(input$tax_level),
+          " level against reference group ",
+          input$reference_level,
+          ". Red indicates taxa increased in the comparison group and blue indicates taxa decreased."
+        )
+      } else if (identical(active_tab, "Table")) {
+        paste0(
+          "This table reports ANCOM-BC2 coefficient estimates, test statistics, and significance values for selected contrasts at ",
+          tolower(input$tax_level),
+          " level. Reference group is ",
+          input$reference_level,
+          "."
+        )
+      } else {
+        paste0(
+          "Points represent taxa tested by ANCOM-BC2 at ",
+          tolower(input$tax_level),
+          " level. The x-axis is log2FC relative to reference group ",
+          input$reference_level,
+          ", and the y-axis is -log10(",
+          y_metric_label,
+          "). Dashed lines indicate |log2FC| = 0.5 and p/q = 0.05 thresholds."
+        )
+      }
+      tags$div(
+        tags$div(
+          style = "font-weight: 600; margin-bottom: 4px;",
+          legend_title
+        ),
+        tags$div(legend_body)
+      )
+    })
   })
 }
-
-

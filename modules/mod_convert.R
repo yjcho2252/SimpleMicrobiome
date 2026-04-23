@@ -4,6 +4,14 @@ library(readr)
 library(httr2)
 
 ui <- fluidPage(
+  tags$style(HTML("
+    .well h4 { font-size: 16px; }
+    .well h5 { font-size: 13px; }
+    .well .control-label { font-size: 12px; }
+    .well .checkbox label { font-size: 12px; }
+    .well .form-control { font-size: 12px; }
+    .well .btn { font-size: 11px; }
+  ")),
   titlePanel("QIIME2 qza to TSV Converter (API Client)"),
   sidebarLayout(
     sidebarPanel(

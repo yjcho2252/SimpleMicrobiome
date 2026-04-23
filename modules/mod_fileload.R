@@ -3,20 +3,69 @@ mod_fileload_ui <- function(id) {
   ns <- NS(id)
   converter_url <- Sys.getenv("CONVERTER_APP_URL", "https://simplemicrobiome.mglab.org/convert/ui")
   tagList(
-    tags$style(HTML(sprintf(
-      "#%s .btn-file, #%s .btn-file, #%s .btn-file { font-size: 11px; }",
-      ns("otu_file"), ns("tax_file"), ns("meta_file")
-    ))),
+    tags$style(HTML("
+      .file-input-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 6px;
+        justify-content: flex-start;
+      }
+      .file-input-label {
+        flex: 0 0 200px;
+        width: 200px;
+        height: 38px;
+        display: flex;
+        align-items: center;
+        margin: 0;
+        line-height: 1.25;
+        font-size: 12px;
+        transform: translateY(-3px);
+      }
+      .file-input-control {
+        flex: 0 0 360px;
+        width: 360px;
+      }
+      .file-input-control .shiny-input-container,
+      .file-input-control .form-group,
+      .file-input-control .input-group {
+        margin-bottom: 0 !important;
+      }
+      .file-input-control .shiny-file-input-progress {
+        display: none !important;
+      }
+      .shiny-file-input-progress {
+        display: none !important;
+      }
+      .file-input-control .btn-file {
+        font-size: 11px;
+      }
+    ")),
     h4(icon("upload"), "Data Input"),
-    fileInput(ns("otu_file"),
-              "1. ASV/OTU Abundance Matrix",
-              accept = c(".csv", ".tsv", ".txt")),
-    fileInput(ns("tax_file"),
-              "2. Taxonomy Table",
-              accept = c(".csv", ".tsv", ".txt")),
-    fileInput(ns("meta_file"),
-              "3. Metadata File", 
-              accept = c(".csv", ".tsv", ".txt")),
+    div(
+      class = "file-input-row",
+      tags$p("1. ASV/OTU Abundance Matrix", class = "file-input-label"),
+      div(
+        class = "file-input-control",
+        fileInput(ns("otu_file"), NULL, accept = c(".csv", ".tsv", ".txt"))
+      )
+    ),
+    div(
+      class = "file-input-row",
+      tags$p("2. Taxonomy Table", class = "file-input-label"),
+      div(
+        class = "file-input-control",
+        fileInput(ns("tax_file"), NULL, accept = c(".csv", ".tsv", ".txt"))
+      )
+    ),
+    div(
+      class = "file-input-row",
+      tags$p("3. Metadata File", class = "file-input-label"),
+      div(
+        class = "file-input-control",
+        fileInput(ns("meta_file"), NULL, accept = c(".csv", ".tsv", ".txt"))
+      )
+    ),
     div(
       style = "display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; margin-bottom: 4px;",
       actionButton(
@@ -45,13 +94,13 @@ mod_fileload_ui <- function(id) {
       tags$p("This tool requires 3 files:", style = "margin: 0 0 4px 0;"),
       tags$ul(
         style = "margin: 0 0 0 18px; padding: 0;",
-        tags$li("ASV_table.tsv from table.qza"),
-        tags$li("taxonomy_table.tsv from taxonomy.qza"),
-        tags$li("metadata.tsv prepared manually by the user")
+        tags$li("ASV/OTU Abundance Matrix from table.qza of QIIME2"),
+        tags$li("Taxonomy table from taxonomy.qza of QIIME2"),
+        tags$li("Metadata table prepared manually by the user (see the example file)")
       ),
       tags$p(
         tagList(
-          "To convert QZA files to TSV, use ",
+          "To convert QZA files to input files, use ",
           tags$a(
             href = converter_url,
             target = "_blank",
@@ -63,7 +112,6 @@ mod_fileload_ui <- function(id) {
         style = "margin: 6px 0 0 0;"
       )
     ),
-    hr(),
     uiOutput(ns("load_status"))
   )
 }
@@ -267,7 +315,13 @@ mod_fileload_server <- function(id) {
                          type = "error", duration = 10)
         return(NULL)
       })
-    })
+    }) |> bindEvent(
+      input$otu_file,
+      input$tax_file,
+      input$meta_file,
+      example_files(),
+      ignoreInit = TRUE
+    )
     
     meta_vars <- reactive({
       req(ps_obj_initial())
@@ -276,9 +330,15 @@ mod_fileload_server <- function(id) {
     
     output$load_status <- renderUI({
       if (load_completed()) {
-        h5(span("✅ Go to Preprocessing Tab!", style = "color: green; font-weight: bold;"))
+        h5(
+          span("✅ Go to Preprocessing Tab!", style = "color: green; font-weight: bold;"),
+          style = "margin-top: 2px; margin-bottom: 0;"
+        )
       } else {
-        h5(span("Waiting for 3 data files...", style = "color: orange;"))
+        h5(
+          span("Waiting for 3 data files...", style = "color: orange;"),
+          style = "margin-top: 2px; margin-bottom: 0;"
+        )
       }
     })
     

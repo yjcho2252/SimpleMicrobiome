@@ -126,19 +126,7 @@ mod_top_ui <- function(id) {
             " menu first."
           )
         ),
-        div(
-          class = "top-start",
-          tagList(
-            icon("right-to-bracket"),
-            strong(" QZA Converter (External Service): "),
-            tags$a(
-              href = converter_url,
-              target = "_blank",
-              rel = "noopener noreferrer",
-              "Open Converter Tool"
-            )
-          )
-        )
+        
       ),
       fluidRow(
         class = "top-grid",
@@ -164,7 +152,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
-            tags$li("260421: Barplot in Taxa Profiles and Alpha Diversity added."),
+            tags$li("260421: Bar plot in Taxa Profiles and Alpha Diversity added."),
             tags$li("260420: Association analysis modules added."),
             tags$li("260417: K-fold CV in RF added."),
             tags$li("260415: QZA Converter Tool added."),
