@@ -67,7 +67,7 @@ mod_taxa_comparison_ui <- function(id) {
           )
         ),
         hr(),
-        h5(icon("sliders"), "Plot Settings"),
+        h4(icon("sliders"), "Plot Settings"),
         selectInput(
           ns("tax_level"),
           "Taxonomic Level:",
@@ -119,10 +119,11 @@ mod_taxa_comparison_ui <- function(id) {
         checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
         hr(),
         h4(icon("sliders"), "P-value Options"),
-        checkboxInput(ns("show_p_val"), "Show P-value Bars", value = TRUE),
+        checkboxInput(ns("show_p_val"), "Show p-value bars", value = TRUE),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("only_sig"), "Show Significant Marks", value = TRUE)
+          checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
+          checkboxInput(ns("show_sig_as_marks"), "Show as significant marks", value = TRUE)
         ),
         selectInput(
           ns("stat_method"),
@@ -751,7 +752,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         step <- max(1, ceiling((hi - lo) / 6))
         seq(lo, hi, by = step)
       }
-
       p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
         ggplot2::scale_y_continuous(
           breaks = integer_breaks,
@@ -912,17 +912,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
 
       if (isTRUE(input$show_p_val) && num_groups >= 2) {
         all_comps <- utils::combn(group_levels, 2, simplify = FALSE)
-        current_label <- if (isTRUE(input$only_sig)) "p.signif" else "p.format"
+        sig_only <- isTRUE(input$show_sig_only)
+        sig_as_marks <- isTRUE(input$show_sig_as_marks)
         paired_mode <- has_subject
         p_adjust_method <- input$p_adjust_method
         if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
           p_adjust_method <- "none"
         }
-        y_max <- suppressWarnings(max(df$AbundancePlot, na.rm = TRUE))
-        if (!is.finite(y_max) || y_max <= 0) {
-          y_max <- 1
-        }
-        pairwise_label_y <- y_max * 1.04
+        pairwise_vjust <- if (sig_as_marks) 0.25 else -0.15
 
         compute_pairwise_p <- function(sub_data, comp_levels) {
           if (!all(comp_levels %in% unique(as.character(sub_data$Group)))) {
@@ -980,10 +977,31 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           }, error = function(e) NA_real_)
         }
 
-        compute_adjusted_p_for_comp <- function(sub_data, target_comp) {
+        format_p_value <- function(pv) {
+          if (!is.finite(pv)) return(NA_character_)
+          if (pv < 0.001) return("< 0.001")
+          sprintf("%.3f", pv)
+        }
+        signif_mark <- function(pv) {
+          if (!is.finite(pv)) return("ns")
+          if (pv < 0.001) return("***")
+          if (pv < 0.01) return("**")
+          if (pv < 0.05) return("*")
+          "ns"
+        }
+
+        facet_vars <- if (is_secondary) c("PrimaryGroup", "Taxa") else c("Taxa")
+        facet_split <- interaction(df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
+        facet_data <- split(df, facet_split)
+        annotation_rows <- vector("list", length(facet_data))
+        row_idx <- 0L
+
+        for (sub_data in facet_data) {
+          if (nrow(sub_data) == 0) next
           raw_p <- vapply(all_comps, function(this_comp) {
             compute_pairwise_p(sub_data, this_comp)
           }, numeric(1))
+
           adj_p <- raw_p
           if (p_adjust_method != "none") {
             ok <- is.finite(adj_p)
@@ -991,61 +1009,49 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
               adj_p[ok] <- stats::p.adjust(adj_p[ok], method = p_adjust_method)
             }
           }
-          comp_idx <- which(vapply(all_comps, function(this_comp) identical(this_comp, target_comp), logical(1)))
-          if (length(comp_idx) != 1) {
-            return(NA_real_)
-          }
-          adj_p[comp_idx]
-        }
 
-        if (isTRUE(input$only_sig)) {
-          final_comps <- list()
-          for (comp in all_comps) {
-            is_sig_anywhere <- FALSE
-            for (taxa_name in unique(df$Taxa)) {
-              sub_taxa <- df[df$Taxa == taxa_name, , drop = FALSE]
-              if (is_secondary) {
-                for (prim in unique(sub_taxa$PrimaryGroup)) {
-                  sub_data <- sub_taxa[sub_taxa$PrimaryGroup == prim, , drop = FALSE]
-                  p_val <- compute_adjusted_p_for_comp(sub_data, comp)
-                  if (!is.na(p_val) && p_val < 0.05) {
-                    is_sig_anywhere <- TRUE
-                    break
-                  }
-                }
-              } else {
-                p_val <- compute_adjusted_p_for_comp(sub_taxa, comp)
-                if (!is.na(p_val) && p_val < 0.05) {
-                  is_sig_anywhere <- TRUE
-                }
-              }
-              if (is_sig_anywhere) break
-            }
-            if (is_sig_anywhere) final_comps[[length(final_comps) + 1]] <- comp
-          }
-        } else {
-          final_comps <- all_comps
-        }
+          valid_idx <- which(is.finite(adj_p))
+          if (sig_only) valid_idx <- valid_idx[adj_p[valid_idx] < 0.05]
+          if (length(valid_idx) == 0) next
 
-        if (length(final_comps) > 0) {
-          pairwise_args <- list(
-            comparisons = final_comps,
-            method = input$stat_method,
-            label = current_label,
-            step.increase = 0.14,
-            label.y = pairwise_label_y,
-            vjust = 0.25,
-            hide.ns = isTRUE(input$only_sig),
-            digits = 3,
-            size = max(2, base_size / 3.2)
+          y_max <- suppressWarnings(max(sub_data$AbundancePlot, na.rm = TRUE))
+          if (!is.finite(y_max) || y_max <= 0) y_max <- 1
+          base_mult <- if (sig_as_marks) 1.12 else 1.20
+          step_mult <- if (sig_as_marks) 0.08 else 0.12
+
+          ann_df <- data.frame(
+            group1 = vapply(all_comps[valid_idx], `[[`, character(1), 1),
+            group2 = vapply(all_comps[valid_idx], `[[`, character(1), 2),
+            p.adj = adj_p[valid_idx],
+            stringsAsFactors = FALSE
           )
-          if (paired_mode && input$stat_method %in% c("wilcox.test", "t.test")) {
-            pairwise_args$paired <- TRUE
+          ann_df$p.signif <- vapply(ann_df$p.adj, signif_mark, character(1))
+          ann_df$p.format <- vapply(ann_df$p.adj, format_p_value, character(1))
+          ann_df$y.position <- y_max * (base_mult + step_mult * (seq_len(nrow(ann_df)) - 1))
+          for (fv in facet_vars) {
+            ann_df[[fv]] <- sub_data[[fv]][1]
           }
-          if (p_adjust_method != "none") {
-            pairwise_args$p.adjust.method <- p_adjust_method
-          }
-          p <- p + do.call(ggpubr::stat_compare_means, pairwise_args)
+
+          row_idx <- row_idx + 1L
+          annotation_rows[[row_idx]] <- ann_df
+        }
+
+        annotation_rows <- annotation_rows[seq_len(row_idx)]
+        if (length(annotation_rows) > 0) {
+          annotation_df <- do.call(rbind, annotation_rows)
+          p <- p + ggpubr::stat_pvalue_manual(
+            annotation_df,
+            label = if (sig_as_marks) "p.signif" else "p.format",
+            xmin = "group1",
+            xmax = "group2",
+            y.position = "y.position",
+            tip.length = 0.01,
+            size = max(2, base_size / 3.2),
+            bracket.size = 0.3,
+            vjust = pairwise_vjust,
+            hide.ns = FALSE,
+            inherit.aes = FALSE
+          )
         }
 
         # Do not add the overall test label (e.g., "t-test, p=...") to avoid duplicate p-value text.

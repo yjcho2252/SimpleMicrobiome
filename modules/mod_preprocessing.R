@@ -180,7 +180,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     observeEvent(ps_obj_initial(), {
       last_applied_indices(NULL)
       ps_filtered(ps_obj_initial())
-    }, ignoreInit = FALSE)
+    }, ignoreInit = FALSE, ignoreNULL = FALSE)
 
     observeEvent(input$min_read_count, {
       req(meta_df_for_dt())

@@ -122,6 +122,7 @@ mod_fileload_server <- function(id) {
     
     load_completed <- reactiveVal(FALSE) 
     example_files <- reactiveVal(NULL)
+    ps_initial_val <- reactiveVal(NULL)
 
     resolve_sample_dir <- function() {
       file.path(getwd(), "sample")
@@ -228,37 +229,50 @@ mod_fileload_server <- function(id) {
       return(data)
     }
     
-    ps_obj_initial <- reactive({ 
-      selected_files <- example_files()
+    observeEvent(list(
+      input$otu_file,
+      input$tax_file,
+      input$meta_file,
+      example_files()
+    ), {
+      # Reset all downstream analyses immediately when any file selection changes.
+      ps_initial_val(NULL)
+      load_completed(FALSE)
+
+      has_manual_input <- !is.null(input$otu_file) || !is.null(input$tax_file) || !is.null(input$meta_file)
+      selected_files <- if (isTRUE(has_manual_input)) NULL else example_files()
 
       otu_input <- if (!is.null(input$otu_file)) input$otu_file else if (!is.null(selected_files)) selected_files$otu_file else NULL
       tax_input <- if (!is.null(input$tax_file)) input$tax_file else if (!is.null(selected_files)) selected_files$tax_file else NULL
       meta_input <- if (!is.null(input$meta_file)) input$meta_file else if (!is.null(selected_files)) selected_files$meta_file else NULL
 
-      req(otu_input, tax_input, meta_input)
-      
-      otu_df <- read_microbiome_file(otu_input)
-      tax_df <- read_microbiome_file(tax_input)
-      meta_df <- read_microbiome_file(meta_input, is_meta = TRUE) 
-      
-      if(is.null(otu_df) | is.null(tax_df) | is.null(meta_df)) {
-        load_completed(FALSE)
-        
-        showNotification("File read error: Check file format (csv/tsv), delimiter, and data structure. Please re-upload all files.",
-                         type = "error", duration = 10)
+      if (is.null(otu_input) || is.null(tax_input) || is.null(meta_input)) {
         return(NULL)
       }
-      
+
+      otu_df <- read_microbiome_file(otu_input)
+      tax_df <- read_microbiome_file(tax_input)
+      meta_df <- read_microbiome_file(meta_input, is_meta = TRUE)
+
+      if (is.null(otu_df) || is.null(tax_df) || is.null(meta_df)) {
+        showNotification(
+          "File read error: Check file format (csv/tsv), delimiter, and data structure. Please re-upload all files.",
+          type = "error",
+          duration = 10
+        )
+        return(NULL)
+      }
+
       ps <- tryCatch({
         colnames(meta_df)[1] <- "SampleID"
         rownames(meta_df) <- meta_df$SampleID
-        
-        otu <- otu_table(as.matrix(otu_df), taxa_are_rows = TRUE) 
+
+        otu <- otu_table(as.matrix(otu_df), taxa_are_rows = TRUE)
         tax <- tax_table(as.matrix(tax_df))
-        meta <- sample_data(meta_df) 
-        
+        meta <- sample_data(meta_df)
+
         ps <- phyloseq(otu, tax, meta)
-        
+
         sample_keep <- sample_names(otu) %in% sample_names(meta)
         if (length(sample_keep) != nsamples(ps)) {
           stop(sprintf(
@@ -296,32 +310,37 @@ mod_fileload_server <- function(id) {
         ps <- prune_taxa(taxa_keep, ps)
         ps <- prune_taxa(taxa_sums(ps) > 0, ps)
         ps <- prune_samples(sample_sums(ps) > 0, ps)
-        
+
         if (ntaxa(ps) == 0) {
           stop("No valid taxa found. Check ASV/Taxonomy ID matching. (0 taxa)")
         }
         if (nsamples(ps) == 0) {
           stop("No valid samples found. Check Sample ID matching. (0 samples)")
         }
-        
-        load_completed(TRUE) 
-        
-        return(ps)
-        
+
+        ps
       }, error = function(e) {
-        load_completed(FALSE)
-        showNotification(paste0("Data construction error: ", conditionMessage(e),
-                                "\nPlease verify file contents and try again."),
-                         type = "error", duration = 10)
-        return(NULL)
+        showNotification(
+          paste0(
+            "Data construction error: ",
+            conditionMessage(e),
+            "\nPlease verify file contents and try again."
+          ),
+          type = "error",
+          duration = 10
+        )
+        NULL
       })
-    }) |> bindEvent(
-      input$otu_file,
-      input$tax_file,
-      input$meta_file,
-      example_files(),
-      ignoreInit = TRUE
-    )
+
+      if (!is.null(ps)) {
+        ps_initial_val(ps)
+        load_completed(TRUE)
+      }
+    }, ignoreInit = TRUE)
+
+    ps_obj_initial <- reactive({
+      ps_initial_val()
+    })
     
     meta_vars <- reactive({
       req(ps_obj_initial())

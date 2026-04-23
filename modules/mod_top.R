@@ -110,7 +110,7 @@ mod_top_ui <- function(id) {
         ),
         p(
           class = "top-subtitle",
-          "SimpleMicrobiome supports microbiome data visualization, diversity analysis, differential abundance, and network analysis."
+          "SimpleMicrobiome enables key microbiome analyses and visualizations."
         ),
         div(
           class = "top-start",
@@ -152,10 +152,11 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260423: UI improvements and bug fixes."),
             tags$li("260421: Bar plot in Taxa Profiles and Alpha Diversity added."),
             tags$li("260420: Association analysis modules added."),
             tags$li("260417: K-fold CV in RF added."),
-            tags$li("260415: QZA Converter Tool added."),
+            tags$li("260415: QZA Converter added."),
             tags$li("260414: Network Comparison function added."),
             tags$li("260408: Network Analysis modules added."),
             tags$li("260407: Random Forest module added."),

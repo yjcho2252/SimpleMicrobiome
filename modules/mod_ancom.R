@@ -63,7 +63,7 @@ mod_ancom_ui <- function(id) {
                     choices = c("ASV", "Genus", "Species"), selected = "Genus"),
 
         selectInput(ns("volcano_y_axis"), "5. Statistical metric",
-                    choices = c("FDR q-value" = "q_val",
+                    choices = c("q-value (FDR)" = "q_val",
                                 "p-value" = "p_val"),
                     selected = "q_val"),
 
@@ -139,14 +139,14 @@ mod_ancom_ui <- function(id) {
           style = "max-width: 100%;",
           tabsetPanel(
             id = ns("ancom_active_tab"),
-            tabPanel("Volcano Plot",
-                     downloadButton(ns("download_volcano"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+            tabPanel("Volcano plot",
+                     downloadButton(ns("download_volcano"), "Download plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
                      tags$div(
                        style = "margin-top: 8px;",
                        plotOutput(ns("ancom_plot"), height = "auto")
                      )),
-            tabPanel("Bar Plot",
-                     downloadButton(ns("download_barplot"), "Download Plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
+            tabPanel("Bar plot",
+                     downloadButton(ns("download_barplot"), "Download plot (PNG)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
                      tags$div(
                        style = "margin-top: 8px;",
                        plotOutput(ns("ancom_barplot"), height = "auto")
@@ -1131,7 +1131,7 @@ mod_ancom_server <- function(id, ps_obj) {
         ) +
         coord_cartesian(ylim = c(0, y_upper), xlim = x_lim) +
         scale_x_continuous(breaks = x_breaks) +
-        labs(title = paste0(input$tax_level, "-Level ANCOM-BC2 Volcano Plot (reference: ", input$reference_level, ")"),
+        labs(title = paste0(input$tax_level, "-Level ANCOM-BC2 Volcano plot (reference: ", input$reference_level, ")"),
              x = expression("log"[2]*"FC"),
              y = y_axis_label,
              color = "Direction",
@@ -1313,7 +1313,7 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$ancom_legend_box <- renderUI({
       req(input$plot_width)
-      active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano Plot" else input$ancom_active_tab
+      active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano plot" else input$ancom_active_tab
       if (identical(active_tab, "Table")) {
         return(NULL)
       }
@@ -1364,20 +1364,20 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$ancom_figure_legend <- renderUI({
       req(input$tax_level, input$reference_level)
-      active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano Plot" else input$ancom_active_tab
+      active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano plot" else input$ancom_active_tab
       y_metric_label <- if (identical(input$volcano_y_axis, "q_val")) {
         "FDR-adjusted p-value (q-value)"
       } else {
         "raw p-value"
       }
-      legend_title <- if (identical(active_tab, "Bar Plot")) {
+      legend_title <- if (identical(active_tab, "Bar plot")) {
         "ANCOM-BC2 differential taxa bar plot"
       } else if (identical(active_tab, "Table")) {
         "ANCOM-BC2 results table"
       } else {
         "ANCOM-BC2 volcano plot"
       }
-      legend_body <- if (identical(active_tab, "Bar Plot")) {
+      legend_body <- if (identical(active_tab, "Bar plot")) {
         paste0(
           "Bars show the top 10 taxa ranked by absolute log2 fold-change (log2FC) from ANCOM-BC2 at ",
           tolower(input$tax_level),

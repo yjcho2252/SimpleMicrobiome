@@ -33,7 +33,7 @@ mod_alpha_ui <- function(id) {
                            ),
                            selected = c("Chao1", "Shannon")),
         hr(),
-        h5(icon("sliders"), "Plot Settings"),
+        h4(icon("sliders"), "Plot Settings"),
         selectInput(
           ns("plot_type"),
           "Plot Type:",
@@ -56,14 +56,15 @@ mod_alpha_ui <- function(id) {
         hr(),
         h4(icon("sliders"), "P-value Options"),
         tags$style(HTML(sprintf(
-          "#%s { margin-bottom: 2px; } #%s { margin-top: 0; margin-bottom: 4px; }",
-          ns("show_p_val"), ns("only_sig")
+          "#%s { margin-bottom: 2px; } #%s, #%s { margin-top: 0; margin-bottom: 4px; }",
+          ns("show_p_val"), ns("show_sig_only"), ns("show_sig_as_marks")
         ))),
-        checkboxInput(ns("show_p_val"), "Show P-value Bars", value = TRUE),
+        checkboxInput(ns("show_p_val"), "Show p-value bars", value = TRUE),
         
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("only_sig"), "Show Significant Marks", value = TRUE)
+          checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
+          checkboxInput(ns("show_sig_as_marks"), "Show as significant marks", value = TRUE)
         ),
         
         selectInput(ns("stat_method"), "Statistical Method:",
@@ -327,66 +328,97 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       
       if (input$show_p_val && num_groups >= 2) {
         all_comps <- utils::combn(group_levels, 2, simplify = FALSE)
-        current_label <- if (input$only_sig) "p.signif" else "p.format"
+        sig_only <- isTRUE(input$show_sig_only)
+        sig_as_marks <- isTRUE(input$show_sig_as_marks)
         p_adjust_method <- input$p_adjust_method
         if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
           p_adjust_method <- "none"
         }
-        
-        if (input$only_sig) {
-          final_comps <- list()
-          for (comp in all_comps) {
-            is_sig_anywhere <- FALSE
-            for (idx in unique(alpha_long$Alpha_Index)) {
-              sub_data <- alpha_long[alpha_long$Alpha_Index == idx, , drop = FALSE]
-              comp_pvals <- vapply(all_comps, function(this_comp) {
-                d1 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[1]]
-                d2 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[2]]
-                if (length(d1) <= 1 || length(d2) <= 1) {
-                  return(NA_real_)
-                }
-                tryCatch(
-                  if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value,
-                  error = function(e) NA_real_
-                )
-              }, numeric(1))
-              if (p_adjust_method != "none") {
-                ok <- is.finite(comp_pvals)
-                if (any(ok)) {
-                  comp_pvals[ok] <- stats::p.adjust(comp_pvals[ok], method = p_adjust_method)
-                }
-              }
-              comp_idx <- which(vapply(all_comps, function(this_comp) identical(this_comp, comp), logical(1)))
-              if (length(comp_idx) == 1) {
-                p_val <- comp_pvals[comp_idx]
-                if (!is.na(p_val) && p_val < 0.05) {
-                  is_sig_anywhere <- TRUE
-                  break
-                }
-              }
-            }
-            if (is_sig_anywhere) final_comps[[length(final_comps) + 1]] <- comp
-          }
-        } else {
-          final_comps <- all_comps
+
+        format_p_value <- function(pv) {
+          if (!is.finite(pv)) return(NA_character_)
+          if (pv < 0.001) return("< 0.001")
+          sprintf("%.3f", pv)
+        }
+        signif_mark <- function(pv) {
+          if (!is.finite(pv)) return("ns")
+          if (pv < 0.001) return("***")
+          if (pv < 0.01) return("**")
+          if (pv < 0.05) return("*")
+          "ns"
         }
 
-        if (length(final_comps) > 0) {
-          stat_args <- list(
-            comparisons = final_comps,
-            method = input$stat_method,
-            label = current_label,
-            step.increase = 0.14,
-            label.y.npc = 1.16,
-            vjust = 0.25,
-            hide.ns = input$only_sig,
-            digits = 3,
-            size = max(2, base_size / 3.2)
-          )
+        facet_vars <- c("Alpha_Index")
+        if (is_secondary) facet_vars <- c(facet_vars, primary_col)
+        facet_split <- interaction(alpha_long[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
+        facet_data <- split(alpha_long, facet_split)
+        annotation_rows <- vector("list", length(facet_data))
+        row_idx <- 0L
+
+        for (sub_data in facet_data) {
+          if (nrow(sub_data) == 0) next
+          comp_pvals <- vapply(all_comps, function(this_comp) {
+            d1 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[1]]
+            d2 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[2]]
+            if (length(d1) <= 1 || length(d2) <= 1) {
+              return(NA_real_)
+            }
+            tryCatch(
+              if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value,
+              error = function(e) NA_real_
+            )
+          }, numeric(1))
+
+          adj_pvals <- comp_pvals
           if (p_adjust_method != "none") {
-            stat_args$p.adjust.method <- p_adjust_method
+            ok <- is.finite(adj_pvals)
+            if (any(ok)) {
+              adj_pvals[ok] <- stats::p.adjust(adj_pvals[ok], method = p_adjust_method)
+            }
           }
-          p <- p + do.call(ggpubr::stat_compare_means, stat_args)
+
+          valid_idx <- which(is.finite(adj_pvals))
+          if (sig_only) valid_idx <- valid_idx[adj_pvals[valid_idx] < 0.05]
+          if (length(valid_idx) == 0) next
+
+          y_max <- suppressWarnings(max(sub_data$Value, na.rm = TRUE))
+          if (!is.finite(y_max) || y_max <= 0) y_max <- 1
+          base_mult <- if (sig_as_marks) 1.12 else 1.20
+          step_mult <- if (sig_as_marks) 0.08 else 0.12
+
+          ann_df <- data.frame(
+            group1 = vapply(all_comps[valid_idx], `[[`, character(1), 1),
+            group2 = vapply(all_comps[valid_idx], `[[`, character(1), 2),
+            p.adj = adj_pvals[valid_idx],
+            stringsAsFactors = FALSE
+          )
+          ann_df$p.signif <- vapply(ann_df$p.adj, signif_mark, character(1))
+          ann_df$p.format <- vapply(ann_df$p.adj, format_p_value, character(1))
+          ann_df$y.position <- y_max * (base_mult + step_mult * (seq_len(nrow(ann_df)) - 1))
+          for (fv in facet_vars) {
+            ann_df[[fv]] <- sub_data[[fv]][1]
+          }
+
+          row_idx <- row_idx + 1L
+          annotation_rows[[row_idx]] <- ann_df
+        }
+
+        annotation_rows <- annotation_rows[seq_len(row_idx)]
+        if (length(annotation_rows) > 0) {
+          annotation_df <- do.call(rbind, annotation_rows)
+          p <- p + ggpubr::stat_pvalue_manual(
+            annotation_df,
+            label = if (sig_as_marks) "p.signif" else "p.format",
+            xmin = "group1",
+            xmax = "group2",
+            y.position = "y.position",
+            tip.length = 0.01,
+            size = max(2, base_size / 3.2),
+            bracket.size = 0.3,
+            vjust = if (sig_as_marks) 0.25 else -0.15,
+            hide.ns = FALSE,
+            inherit.aes = FALSE
+          )
         }
       }
       return(
