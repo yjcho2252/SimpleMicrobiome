@@ -944,6 +944,10 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (is.null(base_size) || !is.finite(base_size)) {
         base_size <- 11
       }
+      text_size_sample <- max(2.2, base_size / 3.6)
+      text_size_cluster <- max(2.0, base_size / 4.1)
+      text_size_env_arrow <- max(2.2, base_size / 3.6)
+      text_size_env_point <- max(2.0, base_size / 3.9)
       
       if (!is.null(ord$values) && "Eigenvalues" %in% colnames(ord$values)) {
         eigenvalues <- ord$values$Eigenvalues
@@ -992,7 +996,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             data = plot_data,
             mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = SampleID),
             color = "black",
-            size = 3,
+            size = text_size_sample,
             box.padding = 0.25,
             point.padding = 0.3,
             max.overlaps = Inf,
@@ -1003,7 +1007,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             data = plot_data,
             mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = SampleID),
             color = "black",
-            size = 3,
+            size = text_size_sample,
             hjust = -0.1,
             vjust = 0.5
           )
@@ -1020,7 +1024,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           p <- p + ggplot2::geom_text(
             data = plot_data,
             mapping = ggplot2::aes(x = Axis.1, y = Axis.2, label = ClusterLabel),
-            color = "black", size = 2.7, vjust = -0.8, show.legend = FALSE
+            color = "black", size = text_size_cluster, vjust = -0.8, show.legend = FALSE
           )
         }
         }
@@ -1062,7 +1066,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
               ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
               inherit.aes = FALSE,
               color = "#1B5E20",
-              size = 3,
+              size = text_size_env_arrow,
               min.segment.length = 0,
               box.padding = 0.2,
               point.padding = 0.15,
@@ -1074,7 +1078,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
               ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
               inherit.aes = FALSE,
               color = "#1B5E20",
-              size = 3,
+              size = text_size_env_arrow,
               hjust = -0.05,
               check_overlap = TRUE
             )
@@ -1102,7 +1106,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 ggplot2::aes(x = x_plot, y = y_plot, label = label),
                 inherit.aes = FALSE,
                 color = "#4A148C",
-                size = 2.8,
+                size = text_size_env_point,
                 min.segment.length = 0,
                 box.padding = 0.2,
                 point.padding = 0.15,
@@ -1114,7 +1118,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 ggplot2::aes(x = x_plot, y = y_plot, label = label),
                 inherit.aes = FALSE,
                 color = "#4A148C",
-                size = 2.8,
+                size = text_size_env_point,
                 hjust = -0.05,
                 vjust = -0.2,
                 check_overlap = TRUE
@@ -1158,6 +1162,10 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (is.null(base_size) || !is.finite(base_size)) {
         base_size <- 11
       }
+      text_size_sample <- max(2.2, base_size / 3.6)
+      text_size_cluster <- max(2.0, base_size / 4.1)
+      text_size_env_arrow <- max(2.2, base_size / 3.6)
+      text_size_env_point <- max(2.0, base_size / 3.9)
       
       if (is.null(plot_shape_var())) {
         p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var())
@@ -1192,7 +1200,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             data = plot_data,
             mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = SampleID),
             color = "black",
-            size = 3,
+            size = text_size_sample,
             box.padding = 0.25,
             point.padding = 0.3,
             max.overlaps = Inf,
@@ -1203,7 +1211,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             data = plot_data,
             mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = SampleID),
             color = "black",
-            size = 3,
+            size = text_size_sample,
             hjust = -0.1,
             vjust = 0.5
           )
@@ -1220,7 +1228,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           p <- p + ggplot2::geom_text(
             data = plot_data,
             mapping = ggplot2::aes(x = NMDS1, y = NMDS2, label = ClusterLabel),
-            color = "black", size = 2.7, vjust = -0.8, show.legend = FALSE
+            color = "black", size = text_size_cluster, vjust = -0.8, show.legend = FALSE
           )
         }
         }
@@ -1262,7 +1270,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
               ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
               inherit.aes = FALSE,
               color = "#1B5E20",
-              size = 3,
+              size = text_size_env_arrow,
               min.segment.length = 0,
               box.padding = 0.2,
               point.padding = 0.15,
@@ -1274,7 +1282,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
               ggplot2::aes(x = xend_plot, y = yend_plot, label = label),
               inherit.aes = FALSE,
               color = "#1B5E20",
-              size = 3,
+              size = text_size_env_arrow,
               hjust = -0.05,
               check_overlap = TRUE
             )
@@ -1302,7 +1310,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 ggplot2::aes(x = x_plot, y = y_plot, label = label),
                 inherit.aes = FALSE,
                 color = "#4A148C",
-                size = 2.8,
+                size = text_size_env_point,
                 min.segment.length = 0,
                 box.padding = 0.2,
                 point.padding = 0.15,
@@ -1314,7 +1322,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 ggplot2::aes(x = x_plot, y = y_plot, label = label),
                 inherit.aes = FALSE,
                 color = "#4A148C",
-                size = 2.8,
+                size = text_size_env_point,
                 hjust = -0.05,
                 vjust = -0.2,
                 check_overlap = TRUE

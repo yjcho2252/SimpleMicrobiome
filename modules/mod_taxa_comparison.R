@@ -863,7 +863,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             step.increase = 0.14,
             label.y = pairwise_label_y,
             hide.ns = isTRUE(input$only_sig),
-            digits = 3
+            digits = 3,
+            size = max(2, base_size / 3.2)
           )
           if (paired_mode && input$stat_method %in% c("wilcox.test", "t.test")) {
             pairwise_args$paired <- TRUE

@@ -69,6 +69,7 @@ mod_barplot_ui <- function(id) {
         selectInput(ns("color_palette"), "Color Palette Selection:",
                     choices = palette_choices,
                     selected = "Paired"),
+        h4(icon("sliders"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width (px):",
                      value = 1000, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height (px):",
@@ -799,7 +800,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           data = subgroup_label_df,
           ggplot2::aes(x = xmid, y = y, label = subgroup_label),
           inherit.aes = FALSE,
-          size = 3,
+          size = max(2.2, base_size / 3.6),
           fontface = "bold",
           color = "grey20",
           vjust = 0

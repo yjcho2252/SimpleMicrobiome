@@ -88,7 +88,15 @@ mod_biplot_ui <- function(id) {
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        actionButton(ns("run_biplot"), "Run Biplot", class = "btn-danger", style = "font-size: 12px;")
+        actionButton(ns("run_biplot"), "Run Biplot", class = "btn-danger", style = "font-size: 12px;"),
+        tags$script(HTML(
+          "Shiny.addCustomMessageHandler('toggle-biplot-run-btn', function(msg) {
+             var btn = document.getElementById(msg.id);
+             if (!btn) return;
+             btn.disabled = !!msg.disabled;
+             if (msg.label) btn.textContent = msg.label;
+           });"
+        ))
       ),
       mainPanel(
         h4("Association Biplot"),
@@ -162,6 +170,17 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     }, ignoreInit = FALSE)
 
     biplot_payload <- eventReactive(input$run_biplot, {
+      session$sendCustomMessage(
+        "toggle-biplot-run-btn",
+        list(id = session$ns("run_biplot"), disabled = TRUE, label = "Running...")
+      )
+      on.exit(
+        session$sendCustomMessage(
+          "toggle-biplot-run-btn",
+          list(id = session$ns("run_biplot"), disabled = FALSE, label = "Run Biplot")
+        ),
+        add = TRUE
+      )
       req(ps_obj(), input$group_var, input$tax_level, input$distance_metric)
       validate(
         need(requireNamespace("vegan", quietly = TRUE), "Package 'vegan' is required for dbRDA.")
@@ -376,6 +395,9 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       if (is.null(base_size) || !is.finite(base_size)) {
         base_size <- 11
       }
+      text_size_taxa <- max(2.2, base_size / 3.6)
+      text_size_group_vector <- max(2.3, base_size / 3.4)
+      text_size_sample <- max(2.1, base_size / 4.0)
       site_df <- payload$site_df
       taxa_df <- payload$species_df
       if (length(input$selected_taxa) > 0 && nrow(payload$species_all_df) > 0) {
@@ -427,7 +449,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
             ggplot2::aes(x = Axis1 * scale_mult, y = Axis2 * scale_mult, label = Taxon),
             inherit.aes = FALSE,
             color = "#6A1B9A",
-            size = 3,
+            size = text_size_taxa,
             min.segment.length = 0,
             box.padding = 0.2,
             point.padding = 0.1,
@@ -439,7 +461,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
             ggplot2::aes(x = Axis1 * scale_mult, y = Axis2 * scale_mult, label = Taxon),
             inherit.aes = FALSE,
             color = "#6A1B9A",
-            size = 3,
+            size = text_size_taxa,
             check_overlap = TRUE
           )
         }
@@ -462,7 +484,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
               ggplot2::aes(x = Axis1, y = Axis2, label = Variable),
               inherit.aes = FALSE,
               color = "#1B5E20",
-              size = 3.2,
+              size = text_size_group_vector,
               vjust = -0.4
             )
         } else if (nrow(bp_df) > 0) {
@@ -481,7 +503,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
               ggplot2::aes(x = Axis1, y = Axis2, label = Variable),
               inherit.aes = FALSE,
               color = "#1B5E20",
-              size = 3.2,
+              size = text_size_group_vector,
               vjust = -0.4
             )
         }
@@ -492,7 +514,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           p <- p + ggrepel::geom_text_repel(
             data = site_df,
             ggplot2::aes(x = Axis1, y = Axis2, label = SampleID, color = Group),
-            size = 2.8,
+            size = text_size_sample,
             show.legend = FALSE,
             box.padding = 0.2,
             point.padding = 0.15
@@ -501,7 +523,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           p <- p + ggplot2::geom_text(
             data = site_df,
             ggplot2::aes(x = Axis1, y = Axis2, label = SampleID, color = Group),
-            size = 2.8,
+            size = text_size_sample,
             hjust = -0.1,
             show.legend = FALSE
           )

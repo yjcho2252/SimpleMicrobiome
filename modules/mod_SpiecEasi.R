@@ -126,23 +126,19 @@ mod_spieceasi_server <- function(id, ps_obj) {
       }
       tax_ranks <- phyloseq::rank_names(ps)
       rank_pos <- match(tax_level, tax_ranks)
-      parent_candidates <- character(0)
+      parent_rank <- NULL
       if (!is.na(rank_pos) && rank_pos > 1) {
         parent_candidates <- rev(tax_ranks[seq_len(rank_pos - 1)])
         parent_candidates <- parent_candidates[parent_candidates %in% tax_cols]
+        if (length(parent_candidates) > 0) parent_rank <- parent_candidates[1]
       }
-      parent_val <- rep("UnclassifiedParent", nrow(tt))
-      if (length(parent_candidates) > 0) {
-        for (parent_rank in parent_candidates) {
-          candidate_val <- as.character(tt[[parent_rank]])
-          candidate_norm <- tolower(trimws(candidate_val))
-          candidate_norm <- gsub("^[a-z]__", "", candidate_norm)
-          candidate_is_placeholder <- is.na(candidate_norm) | !nzchar(candidate_norm) | grepl("(uncultured|unassigned)", candidate_norm)
-          use_idx <- idx_placeholder & parent_val == "UnclassifiedParent" & !candidate_is_placeholder
-          parent_val[use_idx] <- candidate_val[use_idx]
-        }
+      if (is.null(parent_rank)) {
+        parent_val <- rep("UnclassifiedParent", nrow(tt))
+      } else {
+        parent_val <- as.character(tt[[parent_rank]])
+        parent_val[is.na(parent_val) | !nzchar(parent_val)] <- "UnclassifiedParent"
       }
-      tt[[tax_level]][idx_placeholder] <- parent_val[idx_placeholder]
+      tt[[tax_level]][idx_placeholder] <- paste0(parent_val[idx_placeholder], "|", target_raw[idx_placeholder])
       phyloseq::tax_table(ps) <- phyloseq::tax_table(as.matrix(tt))
       ps
     }
@@ -1069,29 +1065,13 @@ mod_spieceasi_server <- function(id, ps_obj) {
       edge_plot_df <- do.call(rbind, edge_rows)
       node_plot_df$node_color_group <- "All Nodes"
       if (!identical(color_var, "None") && !is.null(res$taxa_annotation) && color_var %in% colnames(res$taxa_annotation)) {
-        rank_prefix_map <- c(
-          Kingdom = "k__",
-          Phylum = "p__",
-          Class = "c__",
-          Order = "o__",
-          Family = "f__",
-          Genus = "g__",
-          Species = "s__"
-        )
-        get_rank_unassigned_label <- function(rank_name) {
-          prefix <- rank_prefix_map[[rank_name]]
-          if (is.null(prefix) || !nzchar(prefix)) {
-            return(paste0(rank_name, "__Unassigned"))
-          }
-          paste0(prefix, "Unassigned")
-        }
         color_map <- res$taxa_annotation[, c("node_name", color_var), drop = FALSE]
         color_map[[color_var]] <- as.character(color_map[[color_var]])
-        color_map[[color_var]][is.na(color_map[[color_var]]) | !nzchar(color_map[[color_var]])] <- get_rank_unassigned_label(color_var)
+        color_map[[color_var]][is.na(color_map[[color_var]]) | !nzchar(color_map[[color_var]])] <- paste0(color_var, "__Unassigned")
         color_map <- color_map[!duplicated(color_map$node_name), , drop = FALSE]
         node_plot_df <- dplyr::left_join(node_plot_df, color_map, by = c("name" = "node_name"))
         node_plot_df$node_color_group <- as.character(node_plot_df[[color_var]])
-        node_plot_df$node_color_group[is.na(node_plot_df$node_color_group) | !nzchar(node_plot_df$node_color_group)] <- get_rank_unassigned_label(color_var)
+        node_plot_df$node_color_group[is.na(node_plot_df$node_color_group) | !nzchar(node_plot_df$node_color_group)] <- paste0(color_var, "__Unassigned")
       }
       node_plot_df$group <- factor(node_plot_df$group, levels = names(res$networks))
       edge_plot_df$group <- factor(edge_plot_df$group, levels = names(res$networks))
@@ -1214,4 +1194,3 @@ mod_spieceasi_server <- function(id, ps_obj) {
     )
   })
 }
-

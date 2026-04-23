@@ -104,8 +104,15 @@ mod_heatmap_ui <- function(id) {
         numericInput(ns("cell_width"), "Cell width (px)", value = 30, min = 6, max = 80, step = 1),
         numericInput(ns("cell_height"), "Cell height (px)", value = 10, min = 6, max = 80, step = 1),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        numericInput(ns("sig_text_size"), "Significance mark size", value = 3, min = 1, max = 10, step = 0.2),
-        actionButton(ns("run_heatmap"), "Run Heatmap", class = "btn-danger", style = "font-size: 12px;")
+        actionButton(ns("run_heatmap"), "Run Heatmap", class = "btn-danger", style = "font-size: 12px;"),
+        tags$script(HTML(
+          "Shiny.addCustomMessageHandler('toggle-heatmap-run-btn', function(msg) {
+             var btn = document.getElementById(msg.id);
+             if (!btn) return;
+             btn.disabled = !!msg.disabled;
+             if (msg.label) btn.textContent = msg.label;
+           });"
+        ))
       ),
       mainPanel(
         h4("Correlation Heatmap"),
@@ -238,6 +245,17 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     corr_payload <- eventReactive(input$run_heatmap, {
+      session$sendCustomMessage(
+        "toggle-heatmap-run-btn",
+        list(id = session$ns("run_heatmap"), disabled = TRUE, label = "Running...")
+      )
+      on.exit(
+        session$sendCustomMessage(
+          "toggle-heatmap-run-btn",
+          list(id = session$ns("run_heatmap"), disabled = FALSE, label = "Run Heatmap")
+        ),
+        add = TRUE
+      )
       req(ps_obj(), input$tax_level, input$transform_method, input$corr_method, input$value_scale)
       ps_data <- ps_obj()
       validate(
@@ -616,13 +634,10 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         fill_limit <- abs_limit_input
       }
 
-      sig_text_size <- as.numeric(input$sig_text_size)
-      if (!is.finite(sig_text_size)) sig_text_size <- 3
-      sig_text_size <- max(1, min(10, sig_text_size))
-      sig_fontsize_pt <- as.numeric(sig_text_size) * 2.8
       base_size <- as.numeric(input$base_size)
       if (!is.finite(base_size)) base_size <- 11
       base_size <- max(6, min(30, base_size))
+      sig_fontsize_pt <- max(8, base_size * 0.95)
 
       dims_cell <- cell_dims_px()
       cell_width_pt <- dims_cell$cell_width * 0.75
@@ -776,7 +791,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           paste0("Cell height (px): ", format(as.numeric(input$cell_height), digits = 3)),
           paste0("Auto plot width (px): ", plot_dims_px()$width_px),
           paste0("Auto plot height (px): ", plot_dims_px()$height_px),
-          paste0("Significance mark size: ", format(as.numeric(input$sig_text_size), digits = 3)),
+          paste0("Significance mark size: linked to base font size (", format(as.numeric(input$base_size), digits = 3), ")"),
           paste0("Significance filter: ", if (isTRUE(input$apply_sig_filter)) "On" else "Off"),
           paste0("Significance test method: ", test_method_label),
           paste0("FDR cutoff (q): ", format(as.numeric(input$q_cutoff), digits = 3)),

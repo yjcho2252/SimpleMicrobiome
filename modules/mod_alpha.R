@@ -355,7 +355,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
             label.y.npc = 1.22,
             hide.ns = input$only_sig,
             digits = 3,
-            size = 3.2
+            size = max(2, base_size / 3.2)
           )
           if (p_adjust_method != "none") {
             stat_args$p.adjust.method <- p_adjust_method
