@@ -35,41 +35,53 @@ mod_heatmap_ui <- function(id) {
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("table-cells"), "Corr. Heatmap"),
+        h4(icon("table-cells"), "Correlation Heatmap"),
         hr(),
         selectInput(
           ns("group_var"),
-          "1. Group variable",
+          "1. Primary grouping variable",
           choices = character(0),
           selected = NULL
         ),
         selectInput(
+          ns("primary_level"),
+          "2. Primary level to include",
+          choices = character(0),
+          selected = NULL
+        ),
+        selectInput(
+          ns("secondary_var"),
+          "3. Secondary grouping variable",
+          choices = c("None"),
+          selected = "None"
+        ),
+        selectInput(
           ns("group_type"),
-          "2. Group type",
+          "4. Group type",
           choices = c("Auto" = "auto", "Continuous" = "continuous", "Categorical" = "categorical"),
           selected = "auto"
         ),
         selectInput(
           ns("tax_level"),
-          "3. Taxonomic level",
+          "5. Taxonomic level",
           choices = c("ASV", "Genus", "Species"),
           selected = "Genus"
         ),
         selectInput(
           ns("transform_method"),
-          "4. Data transform",
+          "6. Data transform",
           choices = c("TSS" = "tss", "CLR" = "clr"),
           selected = "clr"
         ),
         selectInput(
           ns("corr_method"),
-          "5. Correlation method",
+          "7. Correlation method",
           choices = c("Pearson" = "pearson", "Spearman" = "spearman"),
           selected = "pearson"
         ),
         selectInput(
           ns("value_scale"),
-          "6. Heatmap value scale",
+          "8. Heatmap value scale",
           choices = c("Raw" = "raw", "Z-score (by taxa)" = "zscore"),
           selected = "raw"
         ),
@@ -77,7 +89,7 @@ mod_heatmap_ui <- function(id) {
           tags$summary("Advanced options"),
           numericInput(
             ns("prevalence_filter_pct"),
-            "7. Prevalence filter (%)",
+            "9. Prevalence filter (%)",
             value = 10,
             min = 0,
             max = 100,
@@ -85,7 +97,7 @@ mod_heatmap_ui <- function(id) {
           ),
           numericInput(
             ns("max_taxa"),
-            "8. Max taxa",
+            "10. Max taxa",
             value = 30,
             min = 10,
             max = 300,
@@ -211,6 +223,24 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         character(0)
       }
       updateSelectInput(session, "group_var", choices = candidate_cols, selected = selected_val)
+
+      level_choices <- character(0)
+      if (!is.null(selected_val) && nzchar(selected_val) && selected_val %in% colnames(meta_df)) {
+        level_choices <- sort(unique(as.character(meta_df[[selected_val]])))
+        level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      }
+      selected_primary_level <- isolate(input$primary_level)
+      if (is.null(selected_primary_level) || !selected_primary_level %in% level_choices) {
+        selected_primary_level <- if (length(level_choices) > 0) level_choices[1] else NULL
+      }
+      updateSelectInput(session, "primary_level", choices = level_choices, selected = selected_primary_level)
+
+      secondary_choices <- if (!is.null(selected_val) && nzchar(selected_val)) setdiff(candidate_cols, selected_val) else candidate_cols
+      selected_secondary <- isolate(input$secondary_var)
+      if (is.null(selected_secondary) || !selected_secondary %in% c("None", secondary_choices)) {
+        selected_secondary <- "None"
+      }
+      updateSelectInput(session, "secondary_var", choices = c("None" = "None", secondary_choices), selected = selected_secondary)
     })
 
     taxa_choices_preview <- reactive({
@@ -389,10 +419,22 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         validate(
           need(input$group_var %in% colnames(meta_df), "Selected group variable is not available in metadata.")
         )
-
-        group_vec <- meta_df[[input$group_var]]
+        effective_group_var <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) input$secondary_var else input$group_var
+        validate(
+          need(effective_group_var %in% colnames(meta_df), "Selected secondary/primary grouping variable is not available in metadata.")
+        )
+        group_vec <- meta_df[[effective_group_var]]
         names(group_vec) <- rownames(meta_df)
         group_vec <- group_vec[sample_ids]
+        if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
+          primary_vec <- meta_df[[input$group_var]]
+          names(primary_vec) <- rownames(meta_df)
+          primary_vec <- primary_vec[sample_ids]
+          keep_idx <- !is.na(primary_vec) & (as.character(primary_vec) == as.character(input$primary_level))
+          group_vec <- group_vec[keep_idx]
+          transformed <- transformed[, keep_idx, drop = FALSE]
+          sample_ids <- sample_ids[keep_idx]
+        }
 
         group_type_selected <- input$group_type
         if (is.null(group_type_selected) || !group_type_selected %in% c("auto", "continuous", "categorical")) {
@@ -423,7 +465,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           })
           assoc_mat <- matrix(as.numeric(assoc_vals), ncol = 1)
           rownames(assoc_mat) <- names(assoc_vals)
-          colnames(assoc_mat) <- input$group_var
+          colnames(assoc_mat) <- effective_group_var
           assoc_type <- "Taxa vs continuous group correlation"
           sig_supported <- TRUE
           sig_note <- "Computed from taxa-group correlation tests (BH-adjusted)."
@@ -439,8 +481,8 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           if (any(ok)) {
             q_vals[ok] <- stats::p.adjust(p_vals[ok], method = "BH")
           }
-          p_mat <- matrix(as.numeric(p_vals), ncol = 1, dimnames = list(names(p_vals), input$group_var))
-          q_mat <- matrix(as.numeric(q_vals), ncol = 1, dimnames = list(names(q_vals), input$group_var))
+          p_mat <- matrix(as.numeric(p_vals), ncol = 1, dimnames = list(names(p_vals), effective_group_var))
+          q_mat <- matrix(as.numeric(q_vals), ncol = 1, dimnames = list(names(q_vals), effective_group_var))
         } else {
           group_chr <- as.character(group_vec)
           group_chr[is.na(group_chr) | !nzchar(group_chr)] <- "(Missing)"
@@ -765,12 +807,12 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       {
         if (is.null(input$run_heatmap) || input$run_heatmap < 1) {
           graphics::plot.new()
-          graphics::text(0.5, 0.5, "Click 'Run Heatmap' to start analysis.")
+          graphics::text(0.5, 0.5, "Click 'Run Heatmap' to start analysis.", cex = 0.85)
           return(invisible(NULL))
         }
         if (isTRUE(heatmap_running())) {
           graphics::plot.new()
-          graphics::text(0.5, 0.5, "Heatmap analysis is running. Please wait...")
+          graphics::text(0.5, 0.5, "Heatmap analysis is running. Please wait...", cex = 0.85)
           return(invisible(NULL))
         }
         ht <- heatmap_plot_obj()
@@ -826,7 +868,12 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           if (isTRUE(payload$sig_supported)) paste0("Significant cells (*): ", payload$n_sig) else NULL,
           paste0("Taxonomic level: ", input$tax_level),
           if (identical(analysis_target(), "taxa_group")) paste0("Group type: ", tools::toTitleCase(input$group_type)) else NULL,
-          if (identical(analysis_target(), "taxa_group")) paste0("Group variable: ", input$group_var) else NULL
+          if (identical(analysis_target(), "taxa_group")) {
+            paste0(
+              "Group variable: ",
+              if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) input$secondary_var else input$group_var
+            )
+          } else NULL
         ),
         collapse = "\n"
       )
@@ -889,7 +936,13 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
 
     output$heatmap_figure_legend <- renderUI({
       req(input$tax_level, input$transform_method, input$corr_method, input$value_scale)
-      group_label <- if (is.null(input$group_var) || !nzchar(input$group_var)) "selected group variable" else input$group_var
+      group_label <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
+        input$secondary_var
+      } else if (is.null(input$group_var) || !nzchar(input$group_var)) {
+        "selected group variable"
+      } else {
+        input$group_var
+      }
       title_text <- "Association heatmap"
       body_text <- paste0(
         "Cells represent taxa-to-group association values at ",

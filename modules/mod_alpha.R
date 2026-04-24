@@ -435,7 +435,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         graphics::plot.new()
         graphics::text(
           0.5, 0.5,
-          "Applying selected samples and preparing alpha diversity plot.\nPlease wait..."
+          "Applying selected samples and preparing alpha diversity plot.\nPlease wait...",
+          cex = 0.85
         )
         return(invisible(NULL))
       }
@@ -443,7 +444,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         graphics::plot.new()
         graphics::text(
           0.5, 0.5,
-          "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+          "No samples are currently selected.\nPlease select at least one sample in Preprocessing.",
+          cex = 0.85
         )
         return(invisible(NULL))
       }
@@ -453,7 +455,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
           graphics::plot.new()
           graphics::text(
             0.5, 0.5,
-            paste0("Alpha diversity plot is not ready yet. Please wait...\n", conditionMessage(e))
+            paste0("Alpha diversity plot is not ready yet. Please wait...\n", conditionMessage(e)),
+            cex = 0.85
           )
         }
       )

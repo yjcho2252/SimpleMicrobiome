@@ -1176,13 +1176,15 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             graphics::plot.new()
             graphics::text(
               0.5, 0.5,
-              "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+              "No samples are currently selected.\nPlease select at least one sample in Preprocessing.",
+              cex = 0.85
             )
           } else {
             graphics::plot.new()
             graphics::text(
               0.5, 0.5,
-              paste0("PCoA plot is not ready yet. Please wait...\n", msg)
+              paste0("PCoA plot is not ready yet. Please wait...\n", msg),
+              cex = 0.85
             )
           }
         }
@@ -1405,13 +1407,15 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             graphics::plot.new()
             graphics::text(
               0.5, 0.5,
-              "No samples are currently selected.\nPlease select at least one sample in Preprocessing."
+              "No samples are currently selected.\nPlease select at least one sample in Preprocessing.",
+              cex = 0.85
             )
           } else {
             graphics::plot.new()
             graphics::text(
               0.5, 0.5,
-              paste0("NMDS plot is not ready yet. Please wait...\n", msg)
+              paste0("NMDS plot is not ready yet. Please wait...\n", msg),
+              cex = 0.85
             )
           }
         }

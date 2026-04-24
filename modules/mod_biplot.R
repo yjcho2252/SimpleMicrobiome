@@ -579,12 +579,12 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       {
         if (is.null(input$run_biplot) || input$run_biplot < 1) {
           graphics::plot.new()
-          graphics::text(0.5, 0.5, "Click 'Run Biplot' to start analysis.")
+          graphics::text(0.5, 0.5, "Click 'Run Biplot' to start analysis.", cex = 0.85)
           return(invisible(NULL))
         }
         if (isTRUE(biplot_running())) {
           graphics::plot.new()
-          graphics::text(0.5, 0.5, "Biplot analysis is running. Please wait...")
+          graphics::text(0.5, 0.5, "Biplot analysis is running. Please wait...", cex = 0.85)
           return(invisible(NULL))
         }
         biplot_plot()

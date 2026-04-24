@@ -44,32 +44,36 @@ mod_ancom_ui <- function(id) {
         h4(icon("vial-circle-check"), "ANCOM-BC2"),
         hr(),
 
-        selectInput(ns("group_var"), "1. Grouping variable", choices = NULL),
+        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
+
+        selectInput(ns("primary_level"), "2. Primary level to include", choices = NULL),
+
+        selectInput(ns("secondary_var"), "3. Secondary grouping variable", choices = NULL),
 
         selectizeInput(
           ns("group_levels"),
-          "2. Group levels to include",
+          "4. Comparison groups (levels)",
           choices = NULL,
           multiple = TRUE,
           options = list(
-            placeholder = "Select two or more levels",
+            placeholder = "Select two or more groups to compare",
             plugins = list("remove_button")
           )
         ),
 
-        selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
+        selectInput(ns("reference_level"), "5. Reference level", choices = NULL),
 
-        selectInput(ns("tax_level"), "4. Taxonomic level",
+        selectInput(ns("tax_level"), "6. Taxonomic level",
                     choices = c("ASV", "Genus", "Species"), selected = "Genus"),
 
-        selectInput(ns("volcano_y_axis"), "5. Statistical metric",
+        selectInput(ns("volcano_y_axis"), "7. Statistical metric",
                     choices = c("q-value (FDR)" = "q_val",
                                 "p-value" = "p_val"),
                     selected = "q_val"),
 
         numericInput(
           ns("prevalence_filter_pct"),
-          "6. Prevalence filter (0-20%)",
+          "8. Prevalence filter (0-20%)",
           value = 5,
           min = 0,
           max = 20,
@@ -81,7 +85,7 @@ mod_ancom_ui <- function(id) {
           br(),
           selectizeInput(
             ns("fix_covariates"),
-            "7. Additional covariates for fix_formula (optional)",
+            "9. Additional covariates for fix_formula (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -91,7 +95,7 @@ mod_ancom_ui <- function(id) {
           ),
           selectizeInput(
             ns("fix_interactions"),
-            "8. Interaction terms for fix_formula (optional)",
+            "10. Interaction terms for fix_formula (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -101,7 +105,7 @@ mod_ancom_ui <- function(id) {
           ),
           selectizeInput(
             ns("rand_covariates"),
-            "9. Random-effect grouping variables (optional)",
+            "11. Random-effect grouping variables (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -153,7 +157,10 @@ mod_ancom_ui <- function(id) {
                      )),
             tabPanel("Table",
                      downloadButton(ns("download_ancom_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-                     DTOutput(ns("ancom_table")))
+                     tags$div(
+                       style = "position: relative; z-index: 1; overflow-x: auto; margin-bottom: 18px;",
+                       DTOutput(ns("ancom_table"))
+                     ))
           )
         ),
         uiOutput(ns("ancom_legend_box")),
@@ -173,7 +180,7 @@ mod_ancom_server <- function(id, ps_obj) {
       on.exit(graphics::par(old_par), add = TRUE)
       graphics::par(mar = c(0, 0, 0, 0))
       graphics::plot.new()
-      graphics::text(0.5, 0.5, message_text)
+      graphics::text(0.5, 0.5, message_text, cex = 0.85)
     }
 
     observe({
@@ -250,6 +257,14 @@ mod_ancom_server <- function(id, ps_obj) {
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
       resolve_meta_colname(input$group_var, colnames(meta_df))
     })
+    secondary_var_resolved <- reactive({
+      req(ps_obj(), input$secondary_var)
+      if (identical(input$secondary_var, "None")) {
+        return(NULL)
+      }
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      resolve_meta_colname(input$secondary_var, colnames(meta_df))
+    })
     
     build_interaction_choices <- function(group_var, all_metadata_cols) {
       if (is.null(group_var) || !nzchar(group_var)) {
@@ -286,30 +301,64 @@ mod_ancom_server <- function(id, ps_obj) {
       }, logical(1))]
       selected_group <- if (length(group_choices) > 0) group_choices[1] else NULL
 
-      updateSelectInput(session, "group_var",
-                        choices = group_choices,
-                        selected = selected_group)
+      updateSelectInput(session, "group_var", choices = group_choices, selected = selected_group)
     }, ignoreNULL = FALSE)
 
     observeEvent(list(ps_obj(), input$group_var), {
       req(ps_obj(), input$group_var)
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
-      group_var <- group_var_resolved()
+      primary_var <- group_var_resolved()
       validate(
-        need(group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
+        need(primary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
       )
 
-      level_choices <- sort(unique(as.character(meta_df[[group_var]])))
+      level_choices <- sort(unique(as.character(meta_df[[primary_var]])))
       level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      selected_primary_level <- isolate(input$primary_level)
+      if (is.null(selected_primary_level) || !selected_primary_level %in% level_choices) {
+        selected_primary_level <- if (length(level_choices) > 0) level_choices[1] else NULL
+      }
+      updateSelectInput(session, "primary_level", choices = level_choices, selected = selected_primary_level)
+
+      secondary_choices <- setdiff(colnames(meta_df), c("SampleID", primary_var))
+      selected_secondary <- isolate(input$secondary_var)
+      if (is.null(selected_secondary) || (!selected_secondary %in% c("None", secondary_choices))) {
+        selected_secondary <- "None"
+      }
+      updateSelectInput(
+        session,
+        "secondary_var",
+        choices = c("None" = "None", secondary_choices),
+        selected = selected_secondary
+      )
+    }, ignoreNULL = FALSE)
+
+    observeEvent(list(ps_obj(), input$group_var, input$primary_level, input$secondary_var), {
+      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var)
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      primary_var <- group_var_resolved()
+      secondary_var <- secondary_var_resolved()
+      validate(
+        need(primary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
+      )
+      primary_values <- as.character(meta_df[[primary_var]])
+      if (is.null(secondary_var)) {
+        level_choices <- sort(unique(primary_values))
+        level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      } else {
+        validate(
+          need(secondary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$secondary_var, "' not found."))
+        )
+        secondary_values <- as.character(meta_df[[secondary_var]])
+        subset_idx <- !is.na(primary_values) & (primary_values == input$primary_level)
+        level_choices <- sort(unique(secondary_values[subset_idx]))
+        level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      }
 
       selected_levels <- isolate(input$group_levels)
-      if (is.null(selected_levels)) {
-        selected_levels <- character(0)
-      }
+      if (is.null(selected_levels)) selected_levels <- character(0)
       selected_levels <- intersect(selected_levels, level_choices)
-      if (length(selected_levels) == 0) {
-        selected_levels <- head(level_choices, 2)
-      }
+      if (length(selected_levels) == 0) selected_levels <- head(level_choices, 2)
       if (length(selected_levels) > 5) {
         selected_levels <- selected_levels[1:5]
         showNotification("You can select up to 5 group levels. Keeping the first 5 selected levels.", type = "warning")
@@ -317,11 +366,7 @@ mod_ancom_server <- function(id, ps_obj) {
       if (length(selected_levels) < 2 && length(level_choices) >= 2) {
         selected_levels <- head(level_choices, 2)
       }
-
-      updateSelectizeInput(session, "group_levels",
-                           choices = level_choices,
-                           selected = selected_levels,
-                           server = TRUE)
+      updateSelectizeInput(session, "group_levels", choices = level_choices, selected = selected_levels, server = TRUE)
 
       reference_level <- input$reference_level
       if (is.null(reference_level) || !reference_level %in% selected_levels) {
@@ -329,7 +374,7 @@ mod_ancom_server <- function(id, ps_obj) {
       }
       updateSelectInput(session, "reference_level", choices = selected_levels, selected = reference_level)
 
-      covariate_choices <- setdiff(colnames(meta_df), c("SampleID", group_var))
+      covariate_choices <- setdiff(colnames(meta_df), c("SampleID", primary_var, secondary_var))
       selected_covariates <- input$fix_covariates
       if (is.null(selected_covariates)) {
         selected_covariates <- character(0)
@@ -354,7 +399,8 @@ mod_ancom_server <- function(id, ps_obj) {
         server = TRUE
       )
 
-      interaction_choices <- build_interaction_choices(group_var, colnames(meta_df))
+      interaction_base_var <- if (is.null(secondary_var)) primary_var else secondary_var
+      interaction_choices <- build_interaction_choices(interaction_base_var, colnames(meta_df))
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -368,8 +414,12 @@ mod_ancom_server <- function(id, ps_obj) {
       )
     }, ignoreNULL = FALSE)
     
-    observeEvent(list(input$group_var, input$fix_covariates), {
-      interaction_choices <- build_interaction_choices(group_var_resolved(), colnames(as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)))
+    observeEvent(list(input$secondary_var, input$fix_covariates), {
+      base_group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
+      interaction_choices <- build_interaction_choices(
+        base_group_var,
+        colnames(as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE))
+      )
       selected_interactions <- input$fix_interactions
       if (is.null(selected_interactions)) {
         selected_interactions <- character(0)
@@ -384,30 +434,49 @@ mod_ancom_server <- function(id, ps_obj) {
     }, ignoreNULL = FALSE)
 
     group_selection_info <- reactive({
-      req(ps_obj(), input$group_var)
+      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var)
       ps <- ps_obj()
       meta_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
-      group_var <- group_var_resolved()
+      primary_var <- group_var_resolved()
+      secondary_var <- secondary_var_resolved()
       validate(
-        need(group_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found in sample_data."))
+        need(primary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found in sample_data."))
       )
-
       selected_levels <- input$group_levels
       if (is.null(selected_levels)) {
         selected_levels <- character(0)
       }
       selected_levels <- selected_levels[nzchar(selected_levels)]
 
-      group_values <- as.character(meta_df[[group_var]])
+      primary_values <- as.character(meta_df[[primary_var]])
+      if (is.null(secondary_var)) {
+        group_values <- primary_values
+      } else {
+        validate(
+          need(secondary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$secondary_var, "' not found in sample_data."))
+        )
+        group_values <- as.character(meta_df[[secondary_var]])
+      }
       sample_ids <- rownames(meta_df)
-      selected_ids <- sample_ids[group_values %in% selected_levels]
+      selected_ids <- if (is.null(secondary_var)) {
+        sample_ids[group_values %in% selected_levels]
+      } else {
+        sample_ids[(primary_values == input$primary_level) & (group_values %in% selected_levels)]
+      }
 
       counts_by_level <- vapply(selected_levels, function(lvl) {
-        sum(group_values == lvl, na.rm = TRUE)
+        if (is.null(secondary_var)) {
+          sum(group_values == lvl, na.rm = TRUE)
+        } else {
+          sum((primary_values == input$primary_level) & (group_values == lvl), na.rm = TRUE)
+        }
       }, numeric(1))
 
       list(
-        group_var = group_var,
+        primary_var = primary_var,
+        primary_level = input$primary_level,
+        group_var = if (is.null(secondary_var)) primary_var else secondary_var,
+        using_secondary = !is.null(secondary_var),
         selected_levels = selected_levels,
         selected_ids = selected_ids,
         counts_by_level = counts_by_level
@@ -415,12 +484,14 @@ mod_ancom_server <- function(id, ps_obj) {
     })
 
     output$group_sample_counts <- renderText({
-      req(ps_obj(), input$group_var)
+      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var)
       info <- group_selection_info()
       counts <- taxa_counts()
 
       lines <- c(
         "Selected Sample Counts",
+        if (isTRUE(info$using_secondary)) paste0("Primary filter: ", info$primary_var, " = ", info$primary_level) else "Primary-only comparison mode",
+        if (isTRUE(info$using_secondary)) paste0("Secondary variable: ", info$group_var) else paste0("Grouping variable: ", info$group_var),
         paste0("Included levels: ", paste(info$selected_levels, collapse = ", ")),
         paste0("Total selected samples: ", length(info$selected_ids))
       )
@@ -442,13 +513,13 @@ mod_ancom_server <- function(id, ps_obj) {
     })
 
     ps_filtered <- reactive({
-      req(ps_obj(), input$group_var, input$group_levels, input$tax_level)
+      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var, input$group_levels, input$tax_level)
 
       info <- group_selection_info()
       selected_levels <- info$selected_levels
 
       validate(
-        need(length(selected_levels) >= 2, "ERROR: Select at least two group levels.")
+        need(length(selected_levels) >= 2, "ERROR: Select at least two secondary group levels.")
       )
       validate(
         need(!is.null(input$reference_level) && input$reference_level %in% selected_levels,
@@ -458,7 +529,7 @@ mod_ancom_server <- function(id, ps_obj) {
       ps <- ps_obj()
       selected_ids <- info$selected_ids
       validate(
-        need(length(selected_ids) > 0, "ERROR: No samples found for selected group levels.")
+        need(length(selected_ids) > 0, "ERROR: No samples found for selected primary/secondary filter combination.")
       )
       ps_sub <- phyloseq::prune_samples(selected_ids, ps)
 
@@ -531,8 +602,8 @@ mod_ancom_server <- function(id, ps_obj) {
     ancom_running <- reactiveVal(FALSE)
 
     ancom_res <- eventReactive(input$run_ancom_btn, {
-      req(ps_filtered(), input$group_var, input$reference_level)
-      current_group_var <- group_var_resolved()
+      req(ps_filtered(), input$secondary_var, input$reference_level)
+      current_group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
       ancom_running(TRUE)
 
       session$sendCustomMessage("toggle-ancom-run-btn", list(
@@ -742,8 +813,8 @@ mod_ancom_server <- function(id, ps_obj) {
     })
 
     output$formula_preview <- renderText({
-      req(input$group_var)
-      group_var <- group_var_resolved()
+      req(input$secondary_var)
+      group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
       covariates <- input$fix_covariates
       if (is.null(covariates) || length(covariates) == 0) {
         covariates <- character(0)
@@ -810,9 +881,9 @@ mod_ancom_server <- function(id, ps_obj) {
     }
 
     ancom_processed <- reactive({
-      req(ancom_res(), input$group_var, input$reference_level)
+      req(ancom_res(), input$secondary_var, input$reference_level)
       res <- ancom_res()
-      current_group_var <- group_var_resolved()
+      current_group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
 
       selected_levels <- group_selection_info()$selected_levels
       ref_level <- input$reference_level
@@ -979,7 +1050,11 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$download_ancom_table <- downloadHandler(
       filename = function() {
-        group_tag <- gsub("[^A-Za-z0-9_]+", "_", input$group_var)
+        group_tag <- if (identical(input$secondary_var, "None")) {
+          gsub("[^A-Za-z0-9_]+", "_", input$group_var)
+        } else {
+          gsub("[^A-Za-z0-9_]+", "_", input$secondary_var)
+        }
         ref_tag <- gsub("[^A-Za-z0-9_]+", "_", input$reference_level)
         paste0("ancombc2_table_", group_tag, "_ref_", ref_tag, "_", Sys.Date(), ".tsv")
       },
@@ -1287,7 +1362,11 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$download_volcano <- downloadHandler(
       filename = function() {
-        group_tag <- gsub("[^A-Za-z0-9_]+", "_", input$group_var)
+        group_tag <- if (identical(input$secondary_var, "None")) {
+          gsub("[^A-Za-z0-9_]+", "_", input$group_var)
+        } else {
+          gsub("[^A-Za-z0-9_]+", "_", input$secondary_var)
+        }
         ref_tag <- gsub("[^A-Za-z0-9_]+", "_", input$reference_level)
         paste0("ancombc2_volcano_", group_tag, "_ref_", ref_tag, ".png")
       },
@@ -1300,7 +1379,11 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$download_barplot <- downloadHandler(
       filename = function() {
-        group_tag <- gsub("[^A-Za-z0-9_]+", "_", input$group_var)
+        group_tag <- if (identical(input$secondary_var, "None")) {
+          gsub("[^A-Za-z0-9_]+", "_", input$group_var)
+        } else {
+          gsub("[^A-Za-z0-9_]+", "_", input$secondary_var)
+        }
         ref_tag <- gsub("[^A-Za-z0-9_]+", "_", input$reference_level)
         paste0("ancombc2_barplot_", group_tag, "_ref_", ref_tag, ".png")
       },
@@ -1322,6 +1405,8 @@ mod_ancom_server <- function(id, ps_obj) {
         style = paste(
           "margin-top: 12px;",
           "clear: both;",
+          "position: relative;",
+          "z-index: 2;",
           sprintf("width: %spx;", box_width),
           "max-width: 100%;",
           "padding: 12px 14px;",
@@ -1344,7 +1429,7 @@ mod_ancom_server <- function(id, ps_obj) {
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
       tags$div(
         class = "simple-result-card",
-        style = paste0("width: ", box_width, "px; max-width: 100%;"),
+        style = paste0("width: ", box_width, "px; max-width: 100%; position: relative; z-index: 2;"),
         verbatimTextOutput(session$ns("group_sample_counts"))
       )
     })
@@ -1356,6 +1441,8 @@ mod_ancom_server <- function(id, ps_obj) {
         style = paste(
           sprintf("width: %spx;", box_width),
           "max-width: 100%;",
+          "position: relative;",
+          "z-index: 2;",
           "margin: 14px 0 12px 0;",
           "border-top: 1px solid #d1d5db;"
         )

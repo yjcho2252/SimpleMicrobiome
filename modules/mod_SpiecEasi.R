@@ -48,10 +48,12 @@ mod_spieceasi_ui <- function(id) {
         width = 2,
         h4(icon("diagram-project"), "SpiecEasi"),
         hr(),
-        selectInput(ns("group_var"), "1. Group panel", choices = c("All"), selected = "All"),
+        selectInput(ns("group_var"), "1. Primary grouping variable", choices = c("All"), selected = "All"),
+        selectInput(ns("primary_level"), "2. Primary level to include", choices = character(0), selected = NULL),
+        selectInput(ns("secondary_var"), "3. Secondary grouping variable", choices = c("None"), selected = "None"),
         selectizeInput(
           ns("group_levels"),
-          "2. Group levels",
+          "4. Group levels",
           choices = NULL,
           selected = NULL,
           multiple = TRUE,
@@ -62,20 +64,20 @@ mod_spieceasi_ui <- function(id) {
         ),
         selectInput(
           ns("analysis_mode"),
-          "3. Analysis mode",
+          "5. Analysis mode",
           choices = c("Single network", "Compare two groups"),
           selected = "Single network"
         ),
-        selectInput(ns("tax_level"), "4. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
-        numericInput(ns("prevalence_filter_pct"), "5. Prevalence filter (%)", value = 10, min = 0, max = 100, step = 1),
-        selectInput(ns("node_size_by"), "6. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
-        selectInput(ns("node_color_by"), "7. Node color", choices = c("None"), selected = "None"),
+        selectInput(ns("tax_level"), "6. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
+        numericInput(ns("prevalence_filter_pct"), "7. Prevalence filter (%)", value = 10, min = 0, max = 100, step = 1),
+        selectInput(ns("node_size_by"), "8. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
+        selectInput(ns("node_color_by"), "9. Node color", choices = c("None"), selected = "None"),
         tags$details(
           style = "margin-bottom: 8px;",
           tags$summary("Advanced Options"),
-          numericInput(ns("min_edge_weight"), "8. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
-          numericInput(ns("max_taxa"), "9. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
-          numericInput(ns("seed"), "10. Seed", value = 1001, min = 1, step = 1)
+          numericInput(ns("min_edge_weight"), "10. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
+          numericInput(ns("max_taxa"), "11. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
+          numericInput(ns("seed"), "12. Seed", value = 1001, min = 1, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -160,7 +162,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       on.exit(graphics::par(old_par), add = TRUE)
       graphics::par(mar = c(0, 0, 0, 0))
       graphics::plot.new()
-      graphics::text(0.5, 0.5, message_text)
+      graphics::text(0.5, 0.5, message_text, cex = 0.85)
     }
 
     observe({
@@ -212,7 +214,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     }
 
     group_levels_choices_cache <- reactiveVal(character(0))
-    observeEvent(list(ps_obj(), input$group_var), {
+    observeEvent(list(ps_obj(), input$group_var, input$primary_level, input$secondary_var), {
       req(ps_obj())
       ps <- ps_obj()
 
@@ -227,9 +229,28 @@ mod_spieceasi_server <- function(id, ps_obj) {
       if (selected_group != "All" && !is.null(phyloseq::sample_data(ps, errorIfNULL = FALSE))) {
         sd_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
         if (selected_group %in% colnames(sd_df)) {
-          level_choices <- unique(as.character(sd_df[[selected_group]]))
-          level_choices <- sort(level_choices[!is.na(level_choices) & level_choices != ""])
+          primary_level_choices <- unique(as.character(sd_df[[selected_group]]))
+          primary_level_choices <- sort(primary_level_choices[!is.na(primary_level_choices) & primary_level_choices != ""])
+          selected_primary_level <- if (!is.null(input$primary_level) && input$primary_level %in% primary_level_choices) input$primary_level else if (length(primary_level_choices) > 0) primary_level_choices[1] else NULL
+          updateSelectInput(session, "primary_level", choices = primary_level_choices, selected = selected_primary_level)
+
+          secondary_choices <- c("None", setdiff(colnames(sd_df), c("SampleID", selected_group)))
+          selected_secondary <- if (!is.null(input$secondary_var) && input$secondary_var %in% secondary_choices) input$secondary_var else "None"
+          updateSelectInput(session, "secondary_var", choices = secondary_choices, selected = selected_secondary)
+
+          if (identical(selected_secondary, "None")) {
+            level_choices <- primary_level_choices
+          } else if (!is.null(selected_primary_level) && selected_secondary %in% colnames(sd_df)) {
+            primary_vals <- as.character(sd_df[[selected_group]])
+            secondary_vals <- as.character(sd_df[[selected_secondary]])
+            idx <- !is.na(primary_vals) & (primary_vals == selected_primary_level)
+            level_choices <- unique(secondary_vals[idx])
+            level_choices <- sort(level_choices[!is.na(level_choices) & level_choices != ""])
+          }
         }
+      } else {
+        updateSelectInput(session, "primary_level", choices = character(0), selected = NULL)
+        updateSelectInput(session, "secondary_var", choices = "None", selected = "None")
       }
       selected_levels <- input$group_levels
       if (is.null(selected_levels)) selected_levels <- character(0)
@@ -348,22 +369,42 @@ mod_spieceasi_server <- function(id, ps_obj) {
       built <- build_network_inputs()
       otu_mat <- built$otu_mat
       sample_df <- built$sample_df
-      group_var <- input$group_var
-      group_var_resolved <- group_var
-      if (!is.null(group_var) && group_var != "All" && !group_var %in% colnames(sample_df)) {
-        matched_col <- colnames(sample_df)[make.names(colnames(sample_df)) == make.names(group_var)]
+      primary_var <- input$group_var
+      primary_var_resolved <- primary_var
+      if (!is.null(primary_var) && primary_var != "All" && !primary_var %in% colnames(sample_df)) {
+        matched_col <- colnames(sample_df)[make.names(colnames(sample_df)) == make.names(primary_var)]
         if (length(matched_col) >= 1) {
-          group_var_resolved <- matched_col[1]
+          primary_var_resolved <- matched_col[1]
         } else {
-          group_var_resolved <- "All"
+          primary_var_resolved <- "All"
         }
       }
+      secondary_var <- if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) NULL else input$secondary_var
+      secondary_var_resolved <- secondary_var
+      if (!is.null(secondary_var_resolved) && !secondary_var_resolved %in% colnames(sample_df)) {
+        matched_col <- colnames(sample_df)[make.names(colnames(sample_df)) == make.names(secondary_var_resolved)]
+        secondary_var_resolved <- if (length(matched_col) >= 1) matched_col[1] else NULL
+      }
+      effective_group_var <- if (is.null(secondary_var_resolved)) primary_var_resolved else secondary_var_resolved
 
       result <- tryCatch({
         withProgress(message = "Running NetCoMi SpiecEasi...", value = 0, {
           sample_ids <- colnames(otu_mat)
-          if (!is.null(group_var_resolved) && group_var_resolved != "All" && group_var_resolved %in% colnames(sample_df)) {
-            group_values <- as.character(sample_df[[group_var_resolved]])
+          if (!is.null(primary_var_resolved) && primary_var_resolved != "All" && primary_var_resolved %in% colnames(sample_df)) {
+            primary_values <- as.character(sample_df[[primary_var_resolved]])
+            names(primary_values) <- rownames(sample_df)
+            primary_values <- primary_values[sample_ids]
+          } else {
+            primary_values <- rep("All", length(sample_ids))
+            names(primary_values) <- sample_ids
+          }
+          if (!is.null(secondary_var_resolved) && secondary_var_resolved %in% colnames(sample_df)) {
+            selected_primary_level <- input$primary_level
+            sample_ids <- sample_ids[!is.na(primary_values) & primary_values == selected_primary_level]
+          }
+
+          if (!is.null(effective_group_var) && effective_group_var != "All" && effective_group_var %in% colnames(sample_df)) {
+            group_values <- as.character(sample_df[[effective_group_var]])
             names(group_values) <- rownames(sample_df)
             group_values <- group_values[sample_ids]
             group_values <- trimws(group_values)
@@ -375,7 +416,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
 
           selected_levels <- input$group_levels
           analysis_mode <- if (is.null(input$analysis_mode)) "Single network" else input$analysis_mode
-          if (!is.null(group_var_resolved) && group_var_resolved != "All") {
+          if (!is.null(effective_group_var) && effective_group_var != "All") {
             if (is.null(selected_levels)) selected_levels <- character(0)
             selected_levels <- trimws(as.character(selected_levels))
             selected_levels <- selected_levels[nzchar(selected_levels)]
@@ -393,7 +434,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
               "Available (raw): ", paste(available_levels, collapse = ", "), "\n",
               "Selected (normalized): ", paste(selected_levels_key, collapse = ", "), "\n",
               "Available (normalized): ", paste(available_levels_key, collapse = ", "), "\n",
-              "Group variable (input/resolved): ", as.character(group_var), " / ", as.character(group_var_resolved)
+              "Group variable (effective): ", as.character(effective_group_var)
             )
             validate(need(length(matched_levels) > 0, debug_msg))
             group_samples <- group_samples[matched_levels]
@@ -537,7 +578,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
             edge_table = edge_table,
             n_taxa = nrow(otu_mat),
             n_samples = ncol(otu_mat),
-            group_var = if (is.null(group_var) || group_var == "All") "All" else group_var,
+            group_var = if (is.null(effective_group_var) || effective_group_var == "All") "All" else effective_group_var,
             group_status = status_df,
             taxa_annotation = built$taxa_annotation
           )
@@ -585,7 +626,13 @@ mod_spieceasi_server <- function(id, ps_obj) {
     }
 
     output$comparison_status <- renderText({
-      selected_group_var <- if (is.null(input$group_var)) "All" else input$group_var
+      selected_group_var <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
+        input$secondary_var
+      } else if (is.null(input$group_var)) {
+        "All"
+      } else {
+        input$group_var
+      }
       analysis_mode <- if (is.null(input$analysis_mode)) "Single network" else input$analysis_mode
       built <- tryCatch(build_network_inputs(), error = function(e) NULL)
       sample_count_line <- "Sample counts by level: (run data not ready)"
