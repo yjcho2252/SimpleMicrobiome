@@ -534,8 +534,29 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       } else {
         0
       }
+      stat_method_label <- if (identical(input$stat_method, "t.test")) "t-test" else "Wilcoxon rank-sum test"
+      p_adjust_label <- switch(
+        input$p_adjust_method,
+        "holm" = "Holm",
+        "BH" = "Benjamini-Hochberg (BH)",
+        "bonferroni" = "Bonferroni",
+        "none" = "no multiple-testing correction",
+        "BH"
+      )
       sig_sentence <- if (n_groups >= 3) {
-        " Pairwise significance is annotated above each comparison."
+        paste0(
+          " Pairwise significance is annotated above each comparison using ",
+          stat_method_label,
+          " with ",
+          p_adjust_label,
+          "."
+        )
+      } else if (n_groups == 2) {
+        paste0(
+          " Pairwise significance is annotated using ",
+          stat_method_label,
+          " (single comparison)."
+        )
       } else {
         ""
       }

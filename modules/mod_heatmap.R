@@ -74,14 +74,20 @@ mod_heatmap_ui <- function(id) {
           selected = "clr"
         ),
         selectInput(
+          ns("association_mode"),
+          "7. Association mode",
+          choices = c("Abundance-based" = "abundance", "Prevalence-based (binary)" = "prevalence"),
+          selected = "abundance"
+        ),
+        selectInput(
           ns("corr_method"),
-          "7. Correlation method",
+          "8. Correlation method",
           choices = c("Pearson" = "pearson", "Spearman" = "spearman"),
           selected = "pearson"
         ),
         selectInput(
           ns("value_scale"),
-          "8. Heatmap value scale",
+          "9. Heatmap value scale",
           choices = c("Raw" = "raw", "Z-score (by taxa)" = "zscore"),
           selected = "raw"
         ),
@@ -89,7 +95,7 @@ mod_heatmap_ui <- function(id) {
           tags$summary("Advanced options"),
           numericInput(
             ns("prevalence_filter_pct"),
-            "9. Prevalence filter (%)",
+            "10. Prevalence filter (%)",
             value = 10,
             min = 0,
             max = 100,
@@ -97,7 +103,7 @@ mod_heatmap_ui <- function(id) {
           ),
           numericInput(
             ns("max_taxa"),
-            "10. Max taxa",
+            "11. Max taxa",
             value = 30,
             min = 10,
             max = 300,
@@ -144,6 +150,18 @@ mod_heatmap_ui <- function(id) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              if (msg.label) btn.textContent = msg.label;
+           });
+           Shiny.addCustomMessageHandler('toggle-input-disabled', function(msg) {
+             var el = document.getElementById(msg.id);
+             if (!el) return;
+             el.disabled = !!msg.disabled;
+             if (el.selectize) {
+               if (msg.disabled) {
+                 el.selectize.disable();
+               } else {
+                 el.selectize.enable();
+               }
+             }
            });"
         ))
       ),
@@ -162,6 +180,28 @@ mod_heatmap_ui <- function(id) {
 mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
     analysis_target <- reactive("taxa_group")
+
+    observe({
+      disable_prevalence_irrelevant <- identical(input$association_mode, "prevalence")
+      session$sendCustomMessage(
+        "toggle-input-disabled",
+        list(id = session$ns("transform_method"), disabled = disable_prevalence_irrelevant)
+      )
+      session$sendCustomMessage(
+        "toggle-input-disabled",
+        list(id = session$ns("corr_method"), disabled = disable_prevalence_irrelevant)
+      )
+      session$sendCustomMessage(
+        "toggle-input-disabled",
+        list(id = session$ns("value_scale"), disabled = disable_prevalence_irrelevant)
+      )
+    })
+
+    observeEvent(input$association_mode, {
+      if (identical(input$association_mode, "prevalence")) {
+        updateSelectInput(session, "value_scale", selected = "raw")
+      }
+    })
 
     sanitize_taxa_names <- function(ps_data, rank_name) {
       tt <- phyloseq::tax_table(ps_data, errorIfNULL = FALSE)
@@ -308,7 +348,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         },
         add = TRUE
       )
-      req(ps_obj(), input$tax_level, input$transform_method, input$corr_method, input$value_scale)
+      req(ps_obj(), input$tax_level, input$transform_method, input$association_mode, input$corr_method, input$value_scale)
       ps_data <- ps_obj()
       validate(
         need(phyloseq::nsamples(ps_data) >= 3, "At least 3 samples are required."),
@@ -360,15 +400,21 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         sweep(otu_mat, 2, col_totals, "/")
       }
 
-      taxa_var <- apply(transformed, 1, stats::var, na.rm = TRUE)
+      analysis_mat <- if (identical(input$association_mode, "prevalence")) {
+        (otu_mat > 0) * 1
+      } else {
+        transformed
+      }
+
+      taxa_var <- apply(analysis_mat, 1, stats::var, na.rm = TRUE)
       keep_var <- is.finite(taxa_var) & taxa_var > 0
-      transformed <- transformed[keep_var, , drop = FALSE]
+      analysis_mat <- analysis_mat[keep_var, , drop = FALSE]
       validate(
-        need(nrow(transformed) >= 3, "Too few taxa remain after variance filtering.")
+        need(nrow(analysis_mat) >= 3, "Too few taxa remain after variance filtering.")
       )
 
       meta_df <- metadata_df()
-      sample_ids <- colnames(transformed)
+      sample_ids <- colnames(analysis_mat)
       if (nrow(meta_df) > 0) {
         meta_df <- meta_df[sample_ids, , drop = FALSE]
       }
@@ -381,21 +427,30 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       col_hclust <- NULL
 
       if (identical(analysis_target(), "taxa_taxa")) {
-        assoc_mat <- stats::cor(t(transformed), method = input$corr_method, use = "pairwise.complete.obs")
-        assoc_type <- "Taxa vs Taxa correlation"
+        corr_method_eff <- if (identical(input$association_mode, "prevalence")) "pearson" else input$corr_method
+        assoc_mat <- stats::cor(t(analysis_mat), method = corr_method_eff, use = "pairwise.complete.obs")
+        assoc_type <- if (identical(input$association_mode, "prevalence")) {
+          "Taxa vs Taxa prevalence association (phi)"
+        } else {
+          "Taxa vs Taxa correlation"
+        }
         sig_supported <- TRUE
-        sig_note <- "Computed from pairwise correlation tests (BH-adjusted)."
+        sig_note <- if (identical(input$association_mode, "prevalence")) {
+          "Computed from pairwise phi (binary Pearson) tests with BH-adjusted p-values."
+        } else {
+          "Computed from pairwise correlation tests (BH-adjusted)."
+        }
 
-        n_tax <- nrow(transformed)
-        p_mat <- matrix(NA_real_, nrow = n_tax, ncol = n_tax, dimnames = list(rownames(transformed), rownames(transformed)))
+        n_tax <- nrow(analysis_mat)
+        p_mat <- matrix(NA_real_, nrow = n_tax, ncol = n_tax, dimnames = list(rownames(analysis_mat), rownames(analysis_mat)))
         diag(p_mat) <- 0
         if (n_tax >= 2) {
           for (i in seq_len(n_tax - 1)) {
-            xi <- transformed[i, ]
+            xi <- analysis_mat[i, ]
             for (j in (i + 1):n_tax) {
-              xj <- transformed[j, ]
+              xj <- analysis_mat[j, ]
               p_val <- tryCatch(
-                suppressWarnings(stats::cor.test(xi, xj, method = input$corr_method, exact = FALSE)$p.value),
+                suppressWarnings(stats::cor.test(xi, xj, method = corr_method_eff, exact = FALSE)$p.value),
                 error = function(e) NA_real_
               )
               p_mat[i, j] <- p_val
@@ -432,7 +487,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           primary_vec <- primary_vec[sample_ids]
           keep_idx <- !is.na(primary_vec) & (as.character(primary_vec) == as.character(input$primary_level))
           group_vec <- group_vec[keep_idx]
-          transformed <- transformed[, keep_idx, drop = FALSE]
+          analysis_mat <- analysis_mat[, keep_idx, drop = FALSE]
           sample_ids <- sample_ids[keep_idx]
         }
 
@@ -460,19 +515,28 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           validate(
             need(sum(is.finite(group_num)) >= 3, "Continuous group requires at least 3 numeric values.")
           )
-          assoc_vals <- apply(transformed, 1, function(taxa_x) {
-            suppressWarnings(stats::cor(taxa_x, group_num, method = input$corr_method, use = "pairwise.complete.obs"))
+          corr_method_eff <- if (identical(input$association_mode, "prevalence")) "pearson" else input$corr_method
+          assoc_vals <- apply(analysis_mat, 1, function(taxa_x) {
+            suppressWarnings(stats::cor(taxa_x, group_num, method = corr_method_eff, use = "pairwise.complete.obs"))
           })
           assoc_mat <- matrix(as.numeric(assoc_vals), ncol = 1)
           rownames(assoc_mat) <- names(assoc_vals)
           colnames(assoc_mat) <- effective_group_var
-          assoc_type <- "Taxa vs continuous group correlation"
+          assoc_type <- if (identical(input$association_mode, "prevalence")) {
+            "Taxa prevalence vs continuous group association (point-biserial)"
+          } else {
+            "Taxa vs continuous group correlation"
+          }
           sig_supported <- TRUE
-          sig_note <- "Computed from taxa-group correlation tests (BH-adjusted)."
+          sig_note <- if (identical(input$association_mode, "prevalence")) {
+            "Computed from taxa prevalence vs continuous-group point-biserial tests (BH-adjusted)."
+          } else {
+            "Computed from taxa-group correlation tests (BH-adjusted)."
+          }
 
-          p_vals <- apply(transformed, 1, function(taxa_x) {
+          p_vals <- apply(analysis_mat, 1, function(taxa_x) {
             tryCatch(
-              suppressWarnings(stats::cor.test(taxa_x, group_num, method = input$corr_method, exact = FALSE)$p.value),
+              suppressWarnings(stats::cor.test(taxa_x, group_num, method = corr_method_eff, exact = FALSE)$p.value),
               error = function(e) NA_real_
             )
           })
@@ -491,17 +555,32 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
             need(length(levels_keep) >= 2, "Categorical group needs at least 2 levels.")
           )
           assoc_mat <- sapply(levels_keep, function(lv) {
-            idx <- which(group_chr == lv)
-            rowMeans(transformed[, idx, drop = FALSE], na.rm = TRUE)
+            in_idx <- which(group_chr == lv)
+            out_idx <- which(group_chr != lv)
+            in_prev <- rowMeans(analysis_mat[, in_idx, drop = FALSE], na.rm = TRUE)
+            out_prev <- rowMeans(analysis_mat[, out_idx, drop = FALSE], na.rm = TRUE)
+            if (identical(input$association_mode, "prevalence")) {
+              in_prev - out_prev
+            } else {
+              in_prev
+            }
           })
           if (!is.matrix(assoc_mat)) {
             assoc_mat <- matrix(assoc_mat, ncol = length(levels_keep))
           }
-          rownames(assoc_mat) <- rownames(transformed)
+          rownames(assoc_mat) <- rownames(analysis_mat)
           colnames(assoc_mat) <- levels_keep
-          assoc_type <- "Taxa vs categorical group level mean"
+          assoc_type <- if (identical(input$association_mode, "prevalence")) {
+            "Taxa prevalence difference by categorical group level (in-group minus out-group)"
+          } else {
+            "Taxa vs categorical group level mean"
+          }
           sig_supported <- TRUE
-          sig_note <- "Computed per cell by one-vs-rest Wilcoxon rank-sum test (taxa x group level), BH-adjusted."
+          sig_note <- if (identical(input$association_mode, "prevalence")) {
+            "Computed per cell by one-vs-rest Fisher exact test (taxa presence x group level), BH-adjusted."
+          } else {
+            "Computed per cell by one-vs-rest Wilcoxon rank-sum test (taxa x group level), BH-adjusted."
+          }
 
           group_fac <- factor(group_chr, levels = levels_keep)
           p_mat <- matrix(
@@ -517,15 +596,30 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
             if (length(in_group) < 2 || length(out_group) < 2) {
               next
             }
-            p_vec <- apply(transformed, 1, function(taxa_x) {
-              tryCatch(
-                stats::wilcox.test(
-                  x = as.numeric(taxa_x[in_group]),
-                  y = as.numeric(taxa_x[out_group]),
-                  exact = FALSE
-                )$p.value,
-                error = function(e) NA_real_
-              )
+            p_vec <- apply(analysis_mat, 1, function(taxa_x) {
+              if (identical(input$association_mode, "prevalence")) {
+                in_present <- sum(taxa_x[in_group] > 0, na.rm = TRUE)
+                in_absent <- sum(taxa_x[in_group] <= 0, na.rm = TRUE)
+                out_present <- sum(taxa_x[out_group] > 0, na.rm = TRUE)
+                out_absent <- sum(taxa_x[out_group] <= 0, na.rm = TRUE)
+                contingency <- matrix(c(in_present, in_absent, out_present, out_absent), nrow = 2, byrow = TRUE)
+                if (any(contingency < 0) || any(rowSums(contingency) == 0) || any(colSums(contingency) == 0)) {
+                  return(NA_real_)
+                }
+                tryCatch(
+                  stats::fisher.test(contingency)$p.value,
+                  error = function(e) NA_real_
+                )
+              } else {
+                tryCatch(
+                  stats::wilcox.test(
+                    x = as.numeric(taxa_x[in_group]),
+                    y = as.numeric(taxa_x[out_group]),
+                    exact = FALSE
+                  )$p.value,
+                  error = function(e) NA_real_
+                )
+              }
             })
             p_mat[, j] <- as.numeric(p_vec)
           }
@@ -563,7 +657,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         diag(assoc_mat) <- 1
       }
 
-      if (identical(input$value_scale, "zscore")) {
+      if (identical(input$value_scale, "zscore") && !identical(input$association_mode, "prevalence")) {
         z_by_row <- t(apply(assoc_mat, 1, function(row_x) {
           row_sd <- stats::sd(row_x, na.rm = TRUE)
           if (!is.finite(row_sd) || row_sd <= 0) {
@@ -642,8 +736,8 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       list(
         assoc_mat = assoc_mat,
         heat_df = heat_df,
-        n_samples = ncol(transformed),
-        n_taxa = nrow(transformed),
+        n_samples = ncol(analysis_mat),
+        n_taxa = nrow(analysis_mat),
         assoc_type = assoc_type,
         sig_supported = sig_supported,
         sig_note = sig_note,
@@ -723,6 +817,20 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         c("#2166AC", "#F7F7F7", "#B2182B")
       )
 
+      legend_title <- if (identical(input$association_mode, "prevalence")) {
+        if (identical(analysis_target(), "taxa_group")) {
+          "Delta prevalence\n(in vs out)"
+        } else {
+          "Phi coefficient\n(binary association)"
+        }
+      } else {
+        if (identical(input$transform_method, "clr")) {
+          "CLR\nvalue"
+        } else {
+          "TSS\nvalue"
+        }
+      }
+
       show_row_dend_opt <- isTRUE(input$show_row_dendrogram)
       show_col_dend_opt <- isTRUE(input$show_col_dendrogram)
 
@@ -748,7 +856,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
 
       ComplexHeatmap::Heatmap(
         assoc_mat,
-        name = "Value",
+        name = legend_title,
         col = col_fun,
         na_col = "#D9D9D9",
         cluster_rows = cluster_rows_opt,
@@ -762,9 +870,10 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         row_names_gp = grid::gpar(fontsize = max(6, base_size - 2)),
         column_names_gp = grid::gpar(fontsize = max(6, base_size - 2)),
         heatmap_legend_param = list(
-          title = "Value",
-          title_gp = grid::gpar(fontsize = base_size),
-          labels_gp = grid::gpar(fontsize = max(6, base_size - 1))
+          title = legend_title,
+          title_position = "topcenter",
+          title_gp = grid::gpar(fontsize = max(6, base_size - 2)),
+          labels_gp = grid::gpar(fontsize = max(5, base_size - 3))
         ),
         width = grid::unit(ncol(assoc_mat) * cell_width_pt, "pt"),
         height = grid::unit(nrow(assoc_mat) * cell_height_pt, "pt"),
@@ -834,11 +943,23 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       req(corr_payload())
       payload <- corr_payload()
       test_method_label <- if (identical(input$group_type, "continuous")) {
-        paste0("Correlation test (", tools::toTitleCase(input$corr_method), ") + BH correction")
+        if (identical(input$association_mode, "prevalence")) {
+          "Point-biserial correlation test (binary taxa vs continuous group) + BH correction"
+        } else {
+          paste0("Correlation test (", tools::toTitleCase(input$corr_method), ") + BH correction")
+        }
       } else if (identical(input$group_type, "categorical")) {
-        "One-vs-rest Wilcoxon rank-sum test (taxa x group) + BH correction"
+        if (identical(input$association_mode, "prevalence")) {
+          "One-vs-rest Fisher exact test (taxa presence x group) + BH correction"
+        } else {
+          "One-vs-rest Wilcoxon rank-sum test (taxa x group) + BH correction"
+        }
       } else {
-        "Auto: continuous uses correlation test, categorical uses one-vs-rest Wilcoxon + BH correction"
+        if (identical(input$association_mode, "prevalence")) {
+          "Auto: continuous uses point-biserial test, categorical uses one-vs-rest Fisher exact + BH correction"
+        } else {
+          "Auto: continuous uses correlation test, categorical uses one-vs-rest Wilcoxon + BH correction"
+        }
       }
       n_taxa_display <- if (length(input$selected_taxa) > 0) {
         length(intersect(input$selected_taxa, rownames(payload$assoc_mat)))
@@ -851,9 +972,19 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           paste0("Association type: ", payload$assoc_type),
           paste0("Samples used: ", payload$n_samples),
           paste0("Taxa shown: ", n_taxa_display),
-          paste0("Transform: ", if (identical(input$transform_method, "clr")) "CLR" else "TSS"),
-          paste0("Method: ", tools::toTitleCase(input$corr_method)),
-          paste0("Heatmap scale: ", if (identical(input$value_scale, "zscore")) "Z-score (by taxa)" else "Raw"),
+          paste0("Association mode: ", if (identical(input$association_mode, "prevalence")) "Prevalence-based (binary)" else "Abundance-based"),
+          paste0("Transform: ", if (identical(input$association_mode, "prevalence")) "Not applied (binary prevalence)" else if (identical(input$transform_method, "clr")) "CLR" else "TSS"),
+          paste0("Method: ", if (identical(input$association_mode, "prevalence")) "Pearson/phi for correlation context" else tools::toTitleCase(input$corr_method)),
+          paste0(
+            "Heatmap scale: ",
+            if (identical(input$association_mode, "prevalence")) {
+              "Raw (delta prevalence for categorical groups)"
+            } else if (identical(input$value_scale, "zscore")) {
+              "Z-score (by taxa)"
+            } else {
+              "Raw"
+            }
+          ),
           paste0("Color scale abs limit: ", if (is.finite(as.numeric(input$abs_limit)) && as.numeric(input$abs_limit) > 0) format(as.numeric(input$abs_limit), digits = 3) else "Auto"),
           paste0("Cell width (px): ", format(as.numeric(input$cell_width), digits = 3)),
           paste0("Cell height (px): ", format(as.numeric(input$cell_height), digits = 3)),
@@ -935,7 +1066,10 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     output$heatmap_figure_legend <- renderUI({
-      req(input$tax_level, input$transform_method, input$corr_method, input$value_scale)
+      req(input$tax_level, input$transform_method, input$association_mode, input$corr_method, input$value_scale)
+      payload <- tryCatch(corr_payload(), error = function(e) NULL)
+      assoc_type_label <- if (!is.null(payload) && "assoc_type" %in% names(payload)) payload$assoc_type else "N/A"
+      sig_note_label <- if (!is.null(payload) && "sig_note" %in% names(payload)) payload$sig_note else "N/A"
       group_label <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
         input$secondary_var
       } else if (is.null(input$group_var) || !nzchar(input$group_var)) {
@@ -944,23 +1078,46 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         input$group_var
       }
       title_text <- "Association heatmap"
-      body_text <- paste0(
-        "Cells represent taxa-to-group association values at ",
-        tolower(input$tax_level),
-        " level. The analysis uses ",
-        toupper(input$transform_method),
-        " transformed abundance and ",
-        tools::toTitleCase(input$corr_method),
-        " statistics. Color indicates association direction and magnitude, with value scale set to ",
-        if (identical(input$value_scale, "zscore")) "row-wise z-score" else "raw association value",
-        ". Group variable is ",
-        group_label,
-        if (isTRUE(input$apply_sig_filter)) {
-          paste0(", and non-significant cells are masked at FDR q < ", input$q_cutoff, ".")
-        } else {
-          "."
-        }
-      )
+      body_text <- if (identical(input$association_mode, "prevalence")) {
+        paste0(
+          "Cells represent presence/absence-based association values at ",
+          tolower(input$tax_level),
+          " level. Taxa abundance is binarized to prevalence (0/1). For categorical groups, cell values are delta prevalence (in-group minus out-group). Color indicates direction and magnitude, with value scale fixed to raw values",
+          ". Group variable is ",
+          group_label,
+          ". Association type: ",
+          assoc_type_label,
+          ". Significance: ",
+          sig_note_label,
+          if (isTRUE(input$apply_sig_filter)) {
+            paste0(", and non-significant cells are masked at FDR q < ", input$q_cutoff, ".")
+          } else {
+            "."
+          }
+        )
+      } else {
+        paste0(
+          "Cells represent taxa-to-group association values at ",
+          tolower(input$tax_level),
+          " level. The analysis uses ",
+          toupper(input$transform_method),
+          " transformed abundance and ",
+          tools::toTitleCase(input$corr_method),
+          " statistics. Color indicates association direction and magnitude, with value scale set to ",
+          if (identical(input$value_scale, "zscore")) "row-wise z-score" else "raw association value",
+          ". Group variable is ",
+          group_label,
+          ". Association type: ",
+          assoc_type_label,
+          ". Significance: ",
+          sig_note_label,
+          if (isTRUE(input$apply_sig_filter)) {
+            paste0(", and non-significant cells are masked at FDR q < ", input$q_cutoff, ".")
+          } else {
+            "."
+          }
+        )
+      }
       tags$div(
         tags$div(style = "font-weight: 600; margin-bottom: 4px;", title_text),
         tags$div(body_text)

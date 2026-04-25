@@ -46,7 +46,7 @@ mod_beta_ui <- function(id) {
         selectInput(
           ns("distance_metric"),
           "Distance metric:",
-          choices = c("Bray-Curtis" = "bray", "Aitchison" = "aitchison"),
+          choices = c("Bray-Curtis" = "bray", "Jaccard" = "jaccard", "Aitchison" = "aitchison"),
           selected = "bray"
         ),
         selectInput(
@@ -382,6 +382,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       req(input$distance_metric)
       if (identical(input$distance_metric, "aitchison")) {
         "euclidean"
+      } else if (identical(input$distance_metric, "jaccard")) {
+        "jaccard"
       } else {
         "bray"
       }
@@ -446,7 +448,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
 
     distance_label <- reactive({
       if (identical(dist_method(), "euclidean")) {
-        "Aitchison"
+        "Aitchison (CLR log(x+1) pseudocount)"
+      } else if (identical(dist_method(), "jaccard")) {
+        "Jaccard"
       } else {
         "Bray-Curtis"
       }
@@ -487,6 +491,14 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           clr_x <- log_x - mean(log_x)
           names(clr_x) <- names(x)
           clr_x
+        })
+      } else if (identical(input$distance_metric, "jaccard")) {
+        phyloseq::transform_sample_counts(ps_data, function(x) {
+          x_num <- as.numeric(x)
+          names(x_num) <- names(x)
+          pa_x <- ifelse(x_num > 0, 1, 0)
+          names(pa_x) <- names(x)
+          pa_x
         })
       } else {
         phyloseq::transform_sample_counts(ps_data, function(x) {
@@ -775,6 +787,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         ord_mat <- as.matrix(ord_sub[, c(axis_x, axis_y), drop = FALSE])
         rownames(ord_mat) <- ord_sub$SampleID
 
+        # Fix RNG seed for reproducible permutation p-values across reruns.
+        set.seed(20260424)
         fit <- vegan::envfit(ord_mat, env_sub, permutations = 999, na.rm = TRUE)
         vec_num <- tryCatch(vegan::scores(fit, display = "vectors"), error = function(e) NULL)
         vec_fac <- tryCatch(vegan::scores(fit, display = "factors"), error = function(e) NULL)
@@ -843,10 +857,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         vec$y <- 0
         vec$xend <- vec$v1 * scale_factor
         vec$yend <- vec$v2 * scale_factor
+        vec$variable_label <- gsub("^Taxa::", "", as.character(vec$variable))
+        if ("level" %in% colnames(vec)) {
+          vec$level_label <- as.character(vec$level)
+          vec$level_label <- sub("^[^:]+:\\s*", "", vec$level_label)
+          vec$level_label <- sub("^[^.]+\\.", "", vec$level_label)
+        }
         vec$label <- ifelse(
-          vec$type == "factor" & "level" %in% colnames(vec),
-          paste0(vec$level, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")"),
-          paste0(vec$variable, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")")
+          vec$type == "factor" & "level_label" %in% colnames(vec),
+          paste0(vec$level_label, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")"),
+          paste0(vec$variable_label, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")")
         )
         vec
       }
@@ -1082,6 +1102,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
             vec_arrow$yend_plot <- pmin(pmax(vec_arrow$yend, y_min), y_max)
             p <- p +
+              ggplot2::geom_point(
+                data = data.frame(x0 = 0, y0 = 0),
+                ggplot2::aes(x = x0, y = y0),
+                inherit.aes = FALSE,
+                shape = 21,
+                fill = "#2E7D32",
+                color = "white",
+                stroke = 0.4,
+                size = 2.6
+              ) +
               ggplot2::geom_segment(
                 data = vec_arrow,
                 ggplot2::aes(x = x, y = y, xend = xend_plot, yend = yend_plot),
@@ -1097,6 +1127,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#1B5E20",
                 size = text_size_env_arrow,
+                fontface = "bold",
                 min.segment.length = 0,
                 box.padding = 0.2,
                 point.padding = 0.15,
@@ -1109,6 +1140,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#1B5E20",
                 size = text_size_env_arrow,
+                fontface = "bold",
                 hjust = -0.05,
                 check_overlap = TRUE
               )
@@ -1137,6 +1169,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#4A148C",
                 size = text_size_env_point,
+                fontface = "bold",
                 min.segment.length = 0,
                 box.padding = 0.2,
                 point.padding = 0.15,
@@ -1149,6 +1182,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#4A148C",
                 size = text_size_env_point,
+                fontface = "bold",
                 hjust = -0.05,
                 vjust = -0.2,
                 check_overlap = TRUE
@@ -1313,6 +1347,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
             vec_arrow$yend_plot <- pmin(pmax(vec_arrow$yend, y_min), y_max)
             p <- p +
+              ggplot2::geom_point(
+                data = data.frame(x0 = 0, y0 = 0),
+                ggplot2::aes(x = x0, y = y0),
+                inherit.aes = FALSE,
+                shape = 21,
+                fill = "#2E7D32",
+                color = "white",
+                stroke = 0.4,
+                size = 2.6
+              ) +
               ggplot2::geom_segment(
                 data = vec_arrow,
                 ggplot2::aes(x = x, y = y, xend = xend_plot, yend = yend_plot),
@@ -1328,6 +1372,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#1B5E20",
                 size = text_size_env_arrow,
+                fontface = "bold",
                 min.segment.length = 0,
                 box.padding = 0.2,
                 point.padding = 0.15,
@@ -1340,6 +1385,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#1B5E20",
                 size = text_size_env_arrow,
+                fontface = "bold",
                 hjust = -0.05,
                 check_overlap = TRUE
               )
@@ -1368,6 +1414,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#4A148C",
                 size = text_size_env_point,
+                fontface = "bold",
                 min.segment.length = 0,
                 box.padding = 0.2,
                 point.padding = 0.15,
@@ -1380,6 +1427,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
                 inherit.aes = FALSE,
                 color = "#4A148C",
                 size = text_size_env_point,
+                fontface = "bold",
                 hjust = -0.05,
                 vjust = -0.2,
                 check_overlap = TRUE
@@ -1503,7 +1551,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     output$beta_figure_legend <- renderUI({
       req(input$beta_tabs, input$distance_metric, input$beta_tax_level)
       ord_label <- if (identical(input$beta_tabs, "NMDS")) "NMDS beta diversity ordination plot" else "PCoA beta diversity ordination plot"
-      metric_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison distance" else "Bray-Curtis distance"
+      metric_label <- distance_label()
       tax_level_label <- tolower(input$beta_tax_level)
       tags$div(
         tags$div(

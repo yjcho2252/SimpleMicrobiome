@@ -356,7 +356,10 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       topN <- input$top_n_taxa
       plot_mode <- input$plot_mode
 
-      ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) x / sum(x))
+      ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) {
+        total <- sum(x, na.rm = TRUE)
+        if (!is.finite(total) || total <= 0) x else x / total
+      })
       ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
       ps_glom <- phyloseq::tax_glom(ps_rel, taxrank = current_rank)
 
@@ -510,7 +513,10 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       plot_mode <- input$plot_mode
       base_size <- input$base_size
       
-      ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) x / sum(x))
+      ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) {
+        total <- sum(x, na.rm = TRUE)
+        if (!is.finite(total) || total <= 0) x else x / total
+      })
       ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
       ps_glom <- phyloseq::tax_glom(ps_rel, taxrank = current_rank)
       

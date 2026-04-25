@@ -219,9 +219,10 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
     }
 
     size_update_in_progress <- reactiveVal(FALSE)
+    taxa_selected_memory <- reactiveVal(character(0))
 
     compute_taxa_comparison_auto_dims <- function(n_facet_cols, n_bars_per_facet, n_facet_rows) {
-      width <- min(max(300, 220 + n_facet_cols * n_bars_per_facet * 10), 2200)
+      width <- min(max(300, 220 + n_facet_cols * n_bars_per_facet * 20), 2200)
       height <- min(max(360, 220 + n_facet_rows * 200), 1600)
       list(width = width, height = height)
     }
@@ -509,6 +510,11 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       req(isTRUE(is_active_tab()))
       req(taxa_long_data(), input$group_var)
       df <- taxa_long_data()
+      subject_col <- resolve_meta_colname(input$subject_id_var, names(df))
+      has_subject <- isTRUE(input$enable_longitudinal) &&
+        !is.null(subject_col) &&
+        nzchar(subject_col) &&
+        subject_col %in% names(df)
 
       df %>%
         dplyr::group_by(Taxa) %>%
@@ -517,7 +523,46 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           p_value = tryCatch({
             n_groups <- dplyr::n_distinct(Group)
             if (n_groups == 2) {
-              stats::wilcox.test(AbundancePlot ~ Group)$p.value
+              if (!has_subject) {
+                if (identical(input$stat_method, "t.test")) {
+                  stats::t.test(AbundancePlot ~ Group)$p.value
+                } else {
+                  stats::wilcox.test(AbundancePlot ~ Group)$p.value
+                }
+              } else {
+                sub_df <- dplyr::cur_data_all()
+                valid_subject <- !is.na(sub_df[[subject_col]]) & nzchar(as.character(sub_df[[subject_col]]))
+                sub_df <- sub_df[valid_subject, , drop = FALSE]
+                if (nrow(sub_df) == 0) {
+                  return(NA_real_)
+                }
+                g_levels <- unique(as.character(sub_df$Group))
+                if (length(g_levels) != 2) {
+                  return(NA_real_)
+                }
+
+                g1 <- sub_df[sub_df$Group == g_levels[1], c(subject_col, "AbundancePlot"), drop = FALSE]
+                g2 <- sub_df[sub_df$Group == g_levels[2], c(subject_col, "AbundancePlot"), drop = FALSE]
+                colnames(g1) <- c("Subject", "v1")
+                colnames(g2) <- c("Subject", "v2")
+                g1 <- g1 %>%
+                  dplyr::group_by(Subject) %>%
+                  dplyr::summarise(v1 = stats::median(v1, na.rm = TRUE), .groups = "drop")
+                g2 <- g2 %>%
+                  dplyr::group_by(Subject) %>%
+                  dplyr::summarise(v2 = stats::median(v2, na.rm = TRUE), .groups = "drop")
+                paired_df <- dplyr::inner_join(g1, g2, by = "Subject")
+                paired_df <- paired_df[is.finite(paired_df$v1) & is.finite(paired_df$v2), , drop = FALSE]
+                if (nrow(paired_df) <= 1) {
+                  return(NA_real_)
+                }
+
+                if (identical(input$stat_method, "t.test")) {
+                  stats::t.test(paired_df$v1, paired_df$v2, paired = TRUE)$p.value
+                } else {
+                  stats::wilcox.test(paired_df$v1, paired_df$v2, paired = TRUE)$p.value
+                }
+              }
             } else if (n_groups > 2) {
               stats::kruskal.test(AbundancePlot ~ Group)$p.value
             } else {
@@ -604,13 +649,20 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       taxa_choices <- taxa_choices[!is.na(taxa_choices) & nzchar(taxa_choices)]
       
       current_selected <- input$taxa_selected
-      default_selected <- if (length(current_selected) > 0) {
-        intersect(current_selected, taxa_choices)
+      if (is.null(current_selected)) current_selected <- character(0)
+      remembered_selected <- taxa_selected_memory()
+      candidate_selected <- unique(c(as.character(current_selected), as.character(remembered_selected)))
+
+      default_selected <- if (length(candidate_selected) > 0) {
+        intersect(candidate_selected, taxa_choices)
       } else {
         head(taxa_choices, 1)
       }
       if (length(default_selected) == 0 && length(taxa_choices) > 0) {
         default_selected <- head(taxa_choices, 1)
+      }
+      if (length(default_selected) > 0) {
+        taxa_selected_memory(default_selected)
       }
       
       updateSelectizeInput(
@@ -621,6 +673,13 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         server = TRUE
       )
     })
+
+    observeEvent(input$taxa_selected, {
+      selected_now <- input$taxa_selected
+      if (!is.null(selected_now) && length(selected_now) > 0) {
+        taxa_selected_memory(as.character(selected_now))
+      }
+    }, ignoreInit = FALSE)
     
     taxa_plot_data <- reactive({
       req(isTRUE(is_active_tab()))
@@ -752,10 +811,34 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         step <- max(1, ceiling((hi - lo) / 6))
         seq(lo, hi, by = step)
       }
-      p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = AbundancePlot, fill = Group)) +
+      raw_vals <- df$AbundancePlot[is.finite(df$AbundancePlot)]
+      y_min_raw <- if (length(raw_vals) > 0) min(raw_vals, na.rm = TRUE) else 0
+      y_max_raw <- if (length(raw_vals) > 0) max(raw_vals, na.rm = TRUE) else 1
+      if (!is.finite(y_min_raw)) y_min_raw <- 0
+      if (!is.finite(y_max_raw)) y_max_raw <- 1
+      if (identical(abundance_mode, "clr")) {
+        if (y_max_raw <= y_min_raw) y_max_raw <- y_min_raw + 1
+      } else {
+        y_min_raw <- 0
+        if (y_max_raw <= y_min_raw) y_max_raw <- y_min_raw + 1
+      }
+      raw_breaks <- suppressWarnings(pretty(c(y_min_raw, y_max_raw), n = 5))
+      raw_breaks <- raw_breaks[is.finite(raw_breaks) & raw_breaks >= y_min_raw & raw_breaks <= y_max_raw]
+      y_baseline <- y_min_raw
+      df$AbundancePlotBar <- df$AbundancePlot - y_baseline
+      y_plot_col <- if (identical(plot_type, "barplot")) "AbundancePlotBar" else "AbundancePlot"
+      y_limits_val <- if (identical(plot_type, "barplot")) c(0, y_max_raw - y_baseline) else c(y_min_raw, y_max_raw)
+      y_breaks_val <- if (identical(plot_type, "barplot")) raw_breaks - y_baseline else raw_breaks
+      y_labels_fn <- if (identical(plot_type, "barplot")) {
+        function(v) scales::label_number(accuracy = 0.1, trim = TRUE)(v + y_baseline)
+      } else {
+        scales::label_number(accuracy = 0.1, trim = TRUE)
+      }
+      p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = .data[[y_plot_col]], fill = Group)) +
         ggplot2::scale_y_continuous(
-          breaks = integer_breaks,
-          limits = c(0, NA),
+          breaks = y_breaks_val,
+          limits = y_limits_val,
+          labels = y_labels_fn,
           expand = ggplot2::expansion(mult = c(0, 0.08))
         ) +
         ggplot2::theme_bw(base_size = base_size) +
@@ -782,8 +865,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           summary_df <- df %>%
             dplyr::group_by(dplyr::across(dplyr::all_of(summary_group_cols))) %>%
             dplyr::summarise(
-              mean_ab = mean(AbundancePlot, na.rm = TRUE),
-              se_ab = stats::sd(AbundancePlot, na.rm = TRUE) / sqrt(dplyr::n()),
+              mean_ab = mean(.data[[y_plot_col]], na.rm = TRUE),
+              se_ab = stats::sd(.data[[y_plot_col]], na.rm = TRUE) / sqrt(dplyr::n()),
               .groups = "drop"
             )
           summary_df$se_ab[!is.finite(summary_df$se_ab)] <- 0
@@ -848,7 +931,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           )
         }
       } else {
-        p <- p + ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.65)
+        p <- p + ggplot2::geom_boxplot(alpha = 0.6, width = 0.65)
         if (has_subject) {
           p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.5)
         } else {
@@ -899,7 +982,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             data = line_df,
             mapping = ggplot2::aes(
               x = Group,
-              y = AbundancePlot,
+              y = .data[[y_plot_col]],
               group = interaction(PrimaryGroup, Taxa, LongitudinalSubject)
             ),
             inherit.aes = FALSE,
@@ -1014,7 +1097,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           if (sig_only) valid_idx <- valid_idx[adj_p[valid_idx] < 0.05]
           if (length(valid_idx) == 0) next
 
-          y_max <- suppressWarnings(max(sub_data$AbundancePlot, na.rm = TRUE))
+          y_max <- suppressWarnings(max(sub_data[[y_plot_col]], na.rm = TRUE))
           if (!is.finite(y_max) || y_max <= 0) y_max <- 1
           base_mult <- if (sig_as_marks) 1.12 else 1.20
           step_mult <- if (sig_as_marks) 0.08 else 0.12
