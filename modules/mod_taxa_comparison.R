@@ -695,11 +695,12 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       
       df_sub <- df[df$Taxa %in% selected_taxa, , drop = FALSE]
       
-      taxa_order <- df_sub %>%
-        dplyr::group_by(Taxa) %>%
-        dplyr::summarise(med = stats::median(AbundancePlot, na.rm = TRUE), .groups = "drop") %>%
-        dplyr::arrange(dplyr::desc(med)) %>%
-        dplyr::pull(Taxa)
+      selected_order <- unique(as.character(selected_taxa))
+      available_taxa <- unique(as.character(df_sub$Taxa))
+      taxa_order <- selected_order[selected_order %in% available_taxa]
+      if (length(taxa_order) == 0) {
+        taxa_order <- available_taxa
+      }
       df_sub$Taxa <- factor(df_sub$Taxa, levels = taxa_order)
       
       df_sub
@@ -792,52 +793,10 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       names(pattern_values) <- group_levels
       pattern_angle_values <- rep(c(45, -45, 0, 0), length.out = n_groups)
       names(pattern_angle_values) <- group_levels
-      integer_breaks <- function(x) {
-        if (length(x) == 0 || all(!is.finite(x))) {
-          return(NULL)
-        }
-        rng <- range(x, na.rm = TRUE)
-        lo <- 0
-        hi <- ceiling(rng[2])
-        if (!is.finite(lo) || !is.finite(hi)) {
-          return(NULL)
-        }
-        if (hi < 0) {
-          hi <- 0
-        }
-        if (lo == hi) {
-          return(lo)
-        }
-        step <- max(1, ceiling((hi - lo) / 6))
-        seq(lo, hi, by = step)
-      }
-      raw_vals <- df$AbundancePlot[is.finite(df$AbundancePlot)]
-      y_min_raw <- if (length(raw_vals) > 0) min(raw_vals, na.rm = TRUE) else 0
-      y_max_raw <- if (length(raw_vals) > 0) max(raw_vals, na.rm = TRUE) else 1
-      if (!is.finite(y_min_raw)) y_min_raw <- 0
-      if (!is.finite(y_max_raw)) y_max_raw <- 1
-      if (identical(abundance_mode, "clr")) {
-        if (y_max_raw <= y_min_raw) y_max_raw <- y_min_raw + 1
-      } else {
-        y_min_raw <- 0
-        if (y_max_raw <= y_min_raw) y_max_raw <- y_min_raw + 1
-      }
-      raw_breaks <- suppressWarnings(pretty(c(y_min_raw, y_max_raw), n = 5))
-      raw_breaks <- raw_breaks[is.finite(raw_breaks) & raw_breaks >= y_min_raw & raw_breaks <= y_max_raw]
-      y_baseline <- y_min_raw
-      df$AbundancePlotBar <- df$AbundancePlot - y_baseline
-      y_plot_col <- if (identical(plot_type, "barplot")) "AbundancePlotBar" else "AbundancePlot"
-      y_limits_val <- if (identical(plot_type, "barplot")) c(0, y_max_raw - y_baseline) else c(y_min_raw, y_max_raw)
-      y_breaks_val <- if (identical(plot_type, "barplot")) raw_breaks - y_baseline else raw_breaks
-      y_labels_fn <- if (identical(plot_type, "barplot")) {
-        function(v) scales::label_number(accuracy = 0.1, trim = TRUE)(v + y_baseline)
-      } else {
-        scales::label_number(accuracy = 0.1, trim = TRUE)
-      }
+      y_plot_col <- "AbundancePlot"
+      y_labels_fn <- scales::label_number(accuracy = 0.1, trim = TRUE)
       p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = .data[[y_plot_col]], fill = Group)) +
         ggplot2::scale_y_continuous(
-          breaks = y_breaks_val,
-          limits = y_limits_val,
           labels = y_labels_fn,
           expand = ggplot2::expansion(mult = c(0, 0.08))
         ) +
@@ -857,66 +816,94 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         ggplot2::coord_cartesian(clip = "off")
 
       if (plot_type == "barplot") {
-        if (use_pattern) {
-          summary_group_cols <- c("Taxa", "Group")
-          if (is_secondary) {
-            summary_group_cols <- c(summary_group_cols, "PrimaryGroup")
+        facet_group_cols <- c("Taxa")
+        if (is_secondary) {
+          facet_group_cols <- c(facet_group_cols, "PrimaryGroup")
+        }
+        # facet_grid(..., scales = "free_y") shares y-scale by row when secondary grouping is used.
+        # Use row-level minima so bar baselines align with the actual shared y-scale domain.
+        scale_group_cols <- if (is_secondary) c("PrimaryGroup") else c("Taxa")
+        summary_group_cols <- c(facet_group_cols, "Group")
+        summary_df <- df %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(summary_group_cols))) %>%
+          dplyr::summarise(
+            mean_ab = mean(.data[[y_plot_col]], na.rm = TRUE),
+            se_ab = stats::sd(.data[[y_plot_col]], na.rm = TRUE) / sqrt(dplyr::n()),
+            .groups = "drop"
+          )
+        scale_baseline_df <- df %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(scale_group_cols))) %>%
+          dplyr::summarise(
+            scale_min = {
+              vals <- .data[[y_plot_col]]
+              vals <- vals[is.finite(vals)]
+              if (length(vals) == 0) 0 else min(vals)
+            },
+            .groups = "drop"
+          )
+        summary_df <- dplyr::left_join(summary_df, scale_baseline_df, by = scale_group_cols)
+        summary_df$mean_ab[!is.finite(summary_df$mean_ab)] <- NA_real_
+        summary_df$se_ab[!is.finite(summary_df$se_ab)] <- 0
+        summary_df$scale_min[!is.finite(summary_df$scale_min)] <- 0
+        summary_df <- summary_df[is.finite(summary_df$mean_ab), , drop = FALSE]
+        if (nrow(summary_df) > 0) {
+          use_pattern_crossbar <- use_pattern &&
+            "geom_crossbar_pattern" %in% getNamespaceExports("ggpattern")
+          if (isTRUE(use_pattern_crossbar)) {
+            p <- p +
+              ggpattern::geom_crossbar_pattern(
+                data = summary_df,
+                mapping = ggplot2::aes(
+                  x = Group,
+                  y = mean_ab,
+                  ymin = scale_min,
+                  ymax = mean_ab,
+                  fill = Group,
+                  pattern = Group,
+                  pattern_angle = Group
+                ),
+                inherit.aes = FALSE,
+                alpha = 0.85,
+                width = 0.7,
+                color = "#333333",
+                linewidth = 0.25,
+                fatten = 0,
+                pattern_fill = "white",
+                pattern_colour = "#222222",
+                pattern_density = 0.01,
+                pattern_spacing = 0.03
+              ) +
+              ggpattern::scale_pattern_manual(values = pattern_values, drop = FALSE) +
+              ggpattern::scale_pattern_angle_manual(values = pattern_angle_values, drop = FALSE) +
+              ggplot2::guides(pattern = "none", pattern_angle = "none")
+          } else {
+            p <- p +
+              ggplot2::geom_crossbar(
+                data = summary_df,
+                mapping = ggplot2::aes(
+                  x = Group,
+                  y = mean_ab,
+                  ymin = scale_min,
+                  ymax = mean_ab,
+                  fill = Group
+                ),
+                inherit.aes = FALSE,
+                alpha = 0.8,
+                width = 0.7,
+                color = "#333333",
+                linewidth = 0.25,
+                fatten = 0
+              )
           }
-          summary_df <- df %>%
-            dplyr::group_by(dplyr::across(dplyr::all_of(summary_group_cols))) %>%
-            dplyr::summarise(
-              mean_ab = mean(.data[[y_plot_col]], na.rm = TRUE),
-              se_ab = stats::sd(.data[[y_plot_col]], na.rm = TRUE) / sqrt(dplyr::n()),
-              .groups = "drop"
-            )
-          summary_df$se_ab[!is.finite(summary_df$se_ab)] <- 0
           p <- p +
-            ggpattern::geom_col_pattern(
-              data = summary_df,
-              mapping = ggplot2::aes(
-                x = Group,
-                y = mean_ab,
-                fill = Group,
-                pattern = Group,
-                pattern_angle = Group
-              ),
-              inherit.aes = FALSE,
-              alpha = 0.85,
-              width = 0.7,
-              color = "#333333",
-              linewidth = 0.25,
-              pattern_fill = "white",
-              pattern_colour = "#222222",
-              pattern_density = 0.01,
-              pattern_spacing = 0.03
-            ) +
             ggplot2::geom_errorbar(
               data = summary_df,
               mapping = ggplot2::aes(
                 x = Group,
-                ymin = pmax(mean_ab - se_ab, 0),
+                ymin = pmax(mean_ab - se_ab, scale_min),
                 ymax = mean_ab + se_ab
               ),
               inherit.aes = FALSE,
-              width = 0.2,
-              linewidth = 0.4
-            ) +
-            ggpattern::scale_pattern_manual(values = pattern_values, drop = FALSE) +
-            ggpattern::scale_pattern_angle_manual(values = pattern_angle_values, drop = FALSE) +
-            ggplot2::guides(pattern = "none", pattern_angle = "none")
-        } else {
-          p <- p +
-            ggplot2::stat_summary(
-              fun = mean,
-              geom = "col",
-              alpha = 0.8,
-              width = 0.7,
-              color = "#333333",
-              linewidth = 0.25
-            ) +
-            ggplot2::stat_summary(
-              fun.data = ggplot2::mean_se,
-              geom = "errorbar",
               width = 0.2,
               linewidth = 0.4
             )

@@ -328,7 +328,13 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     observeEvent(active_tab(), {
       current_tab <- active_tab()
       if (!is.null(current_tab) && !identical(current_tab, "Preprocessing")) {
-        apply_current_selection(selected_indices_for_apply())
+        selected_indices <- selected_indices_for_apply()
+        total_rows <- nrow(meta_df_for_dt())
+        if (length(selected_indices) == 0 && total_rows > 0) {
+          selected_indices <- seq_len(total_rows)
+          DT::selectRows(proxy, selected_indices)
+        }
+        apply_current_selection(selected_indices)
       }
     }, ignoreInit = TRUE)
     

@@ -33,6 +33,12 @@ mod_maaslin2_ui <- function(id) {
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
     ")),
+    tags$style(HTML(paste0(
+      "#", ns("maaslin2_table"), " th, #", ns("maaslin2_table"), " td {",
+      "font-size: 11px !important;",
+      "padding: 4px !important;",
+      "}"
+    ))),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -76,9 +82,15 @@ mod_maaslin2_ui <- function(id) {
         tags$details(style = "margin-bottom: 12px;",
           tags$summary(strong("Advanced Options")),
           br(),
+          selectInput(
+            ns("analysis_method"),
+            "9. Analysis method",
+            choices = c("LM" = "LM", "ZINB" = "ZINB"),
+            selected = "LM"
+          ),
           selectizeInput(
             ns("fix_covariates"),
-            "9. Additional covariates for fixed effects (optional)",
+            "10. Additional covariates for fixed effects (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -88,7 +100,7 @@ mod_maaslin2_ui <- function(id) {
           ),
           selectizeInput(
             ns("fix_interactions"),
-            "10. Interaction terms for fixed effects (optional)",
+            "11. Interaction terms for fixed effects (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -98,7 +110,7 @@ mod_maaslin2_ui <- function(id) {
           ),
           selectizeInput(
             ns("random_effects"),
-            "11. Random effects (optional)",
+            "12. Random effects (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -151,7 +163,7 @@ mod_maaslin2_ui <- function(id) {
             tabPanel("Table",
                      downloadButton(ns("download_maaslin2_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
                      tags$div(
-                       style = "position: relative; z-index: 1; overflow-x: auto; margin-bottom: 18px;",
+                       style = "position: relative; z-index: 1; margin-bottom: 18px;",
                        DTOutput(ns("maaslin2_table"))
                      ))
           )
@@ -383,9 +395,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
       level_choices <- sort(unique(as.character(meta_df[[primary_var]])))
       level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      level_choices <- c("All", level_choices)
       selected_primary_level <- isolate(input$primary_level)
       if (is.null(selected_primary_level) || !selected_primary_level %in% level_choices) {
-        selected_primary_level <- if (length(level_choices) > 0) level_choices[1] else NULL
+        selected_primary_level <- "All"
       }
       updateSelectInput(session, "primary_level", choices = level_choices, selected = selected_primary_level)
 
@@ -418,7 +431,11 @@ mod_maaslin2_server <- function(id, ps_obj) {
       } else {
         validate(need(secondary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$secondary_var, "' not found.")))
         secondary_values <- as.character(meta_df[[secondary_var]])
-        subset_idx <- !is.na(primary_values) & (primary_values == input$primary_level)
+        if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+          subset_idx <- !is.na(primary_values)
+        } else {
+          subset_idx <- !is.na(primary_values) & (primary_values == input$primary_level)
+        }
         level_choices <- sort(unique(secondary_values[subset_idx]))
         level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       }
@@ -523,14 +540,22 @@ mod_maaslin2_server <- function(id, ps_obj) {
       selected_ids <- if (is.null(secondary_var)) {
         sample_ids[group_values %in% selected_levels]
       } else {
-        sample_ids[(primary_values == input$primary_level) & (group_values %in% selected_levels)]
+        if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+          sample_ids[!is.na(primary_values) & (group_values %in% selected_levels)]
+        } else {
+          sample_ids[(primary_values == input$primary_level) & (group_values %in% selected_levels)]
+        }
       }
 
       counts_by_level <- vapply(selected_levels, function(lvl) {
         if (is.null(secondary_var)) {
           sum(group_values == lvl, na.rm = TRUE)
         } else {
-          sum((primary_values == input$primary_level) & (group_values == lvl), na.rm = TRUE)
+          if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+            sum(!is.na(primary_values) & (group_values == lvl), na.rm = TRUE)
+          } else {
+            sum((primary_values == input$primary_level) & (group_values == lvl), na.rm = TRUE)
+          }
         }
       }, numeric(1))
 
@@ -684,6 +709,33 @@ mod_maaslin2_server <- function(id, ps_obj) {
       result <- tryCatch({
         withProgress(message = "Running MaAsLin2...", value = 0, {
           ps_current <- ps_filtered()
+          otu_for_var <- as.matrix(phyloseq::otu_table(ps_current))
+          if (!phyloseq::taxa_are_rows(phyloseq::otu_table(ps_current))) {
+            otu_for_var <- t(otu_for_var)
+          }
+          taxa_var <- apply(otu_for_var, 1, stats::var, na.rm = TRUE)
+          keep_taxa <- rownames(otu_for_var)[is.finite(taxa_var) & taxa_var > 0]
+          removed_taxa <- setdiff(phyloseq::taxa_names(ps_current), keep_taxa)
+          if (length(removed_taxa) > 0) {
+            ps_current <- phyloseq::prune_taxa(keep_taxa, ps_current)
+            preview_removed <- paste(utils::head(removed_taxa, 5), collapse = ", ")
+            more_suffix <- if (length(removed_taxa) > 5) paste0(" ... (+", length(removed_taxa) - 5, " more)") else ""
+            showNotification(
+              paste0(
+                "Removed ",
+                length(removed_taxa),
+                " zero-variance taxa before MaAsLin2: ",
+                preview_removed,
+                more_suffix
+              ),
+              type = "warning",
+              duration = 8
+            )
+          }
+          validate(
+            need(phyloseq::ntaxa(ps_current) > 0, "No taxa remain after removing zero-variance taxa.")
+          )
+
           otu_mat <- as.matrix(phyloseq::otu_table(ps_current))
           if (!phyloseq::taxa_are_rows(phyloseq::otu_table(ps_current))) {
             otu_mat <- t(otu_mat)
@@ -792,6 +844,13 @@ mod_maaslin2_server <- function(id, ps_obj) {
           readr::write_tsv(input_data_out, input_data_path)
           readr::write_tsv(input_metadata, input_metadata_path)
 
+          analysis_method_selected <- input$analysis_method
+          if (is.null(analysis_method_selected) || !analysis_method_selected %in% c("LM", "ZINB")) {
+            analysis_method_selected <- "LM"
+          }
+          normalization_selected <- if (identical(analysis_method_selected, "ZINB")) "NONE" else "TSS"
+          transform_selected <- if (identical(analysis_method_selected, "ZINB")) "NONE" else "LOG"
+
           fit <- Maaslin2::Maaslin2(
             input_data = input_data_path,
             input_metadata = input_metadata_path,
@@ -799,9 +858,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
             fixed_effects = fixed_effects,
             reference = reference_terms,
             random_effects = random_effects_arg,
-            normalization = "TSS",
-            transform = "LOG",
-            analysis_method = "LM",
+            normalization = normalization_selected,
+            transform = transform_selected,
+            analysis_method = analysis_method_selected,
             standardize = FALSE,
             cores = 4,
             max_significance = 1,
@@ -876,31 +935,49 @@ mod_maaslin2_server <- function(id, ps_obj) {
             need(nrow(res) > 0, "No contrast rows were found for the selected grouping variable.")
           )
 
-          res$feature_id <- if ("feature" %in% colnames(res)) as.character(res$feature) else rownames(res)
+          source_id <- if ("feature" %in% colnames(res)) as.character(res$feature) else as.character(rownames(res))
+          res$feature_id <- source_id
 
           tax_table_current <- phyloseq::tax_table(ps_current)
           if (!is.null(tax_table_current)) {
             tax_df <- as.data.frame(tax_table_current)
-            tax_df$feature_id <- rownames(tax_df)
+            tax_df$feature_id <- as.character(rownames(tax_df))
             res <- dplyr::left_join(res, tax_df, by = "feature_id")
           }
 
-          preferred_order <- c("Species", "Genus", "Family", "Order", "Class", "Phylum", "Kingdom")
-          res$taxa_label <- NA_character_
-          for (col in preferred_order) {
-            if (col %in% colnames(res)) {
-              idx <- is.na(res$taxa_label) & !is.na(res[[col]]) & res[[col]] != ""
-              res$taxa_label[idx] <- as.character(res[[col]][idx])
+          taxonomy_ranks <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+          rank_default_unassigned <- c(
+            Kingdom = "k__Unassigned",
+            Phylum = "p__Unassigned",
+            Class = "c__Unassigned",
+            Order = "o__Unassigned",
+            Family = "f__Unassigned",
+            Genus = "g__Unassigned",
+            Species = "s__Unassigned"
+          )
+          for (rk in taxonomy_ranks) {
+            if (!rk %in% colnames(res)) {
+              res[[rk]] <- NA_character_
             }
+            vals <- as.character(res[[rk]])
+            vals <- gsub("_+$", "", vals)
+            vals[is.na(vals) | !nzchar(trimws(vals))] <- rank_default_unassigned[[rk]]
+            res[[rk]] <- vals
           }
-          missing_idx <- is.na(res$taxa_label) | res$taxa_label == ""
-          res$taxa_label[missing_idx] <- res$feature_id[missing_idx]
+
+          current_labels <- resolve_current_taxa_labels(res, input$tax_level)
+          res$feature_id <- current_labels
+          if ("feature" %in% colnames(res)) {
+            res$feature <- NULL
+          }
           row_key <- if ("value" %in% colnames(res)) {
             paste0(res$feature_id, "__", as.character(res$value))
           } else {
             as.character(res$feature_id)
           }
-          rownames(res) <- make.unique(row_key)
+          row_key <- make.unique(row_key)
+          res$feature_id <- row_key
+          rownames(res) <- row_key
 
           res
         })
@@ -966,9 +1043,6 @@ mod_maaslin2_server <- function(id, ps_obj) {
       req(maaslin2_res())
       res <- maaslin2_res()
 
-      if (!"feature" %in% colnames(res) && "feature_id" %in% colnames(res)) {
-        res$feature <- res$feature_id
-      }
       if ("coef" %in% colnames(res)) {
         coef_num_raw <- suppressWarnings(as.numeric(res$coef))
         coef_num <- coef_num_raw
@@ -980,12 +1054,12 @@ mod_maaslin2_server <- function(id, ps_obj) {
         res$lfc <- NA_real_
       }
 
-      core_cols <- c("feature", "metadata", "value", "coef", "exp_coef", "lfc", "stderr", "N", "pval", "qval")
+      core_cols <- c("metadata", "value", "coef", "exp_coef", "lfc", "stderr", "N", "pval", "qval")
       taxonomy_cols <- intersect(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), colnames(res))
-      id_cols <- intersect(c("taxa_label", "feature_id"), colnames(res))
+      id_cols <- intersect(c("feature_id"), colnames(res))
       metric_cols <- intersect(core_cols, colnames(res))
       used_cols <- unique(c(taxonomy_cols, id_cols, metric_cols))
-      remaining_cols <- setdiff(colnames(res), used_cols)
+      remaining_cols <- setdiff(colnames(res), c(used_cols, "feature"))
       res <- res[, c(used_cols, remaining_cols), drop = FALSE]
       round_numeric_columns(res, digits = 2)
     })
@@ -1008,8 +1082,6 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
       base_df <- data.frame(
         contrast = if ("value" %in% colnames(res)) as.character(res$value) else NA_character_,
-        taxon = res$taxa_label,
-        taxa_label = res$taxa_label,
         feature_id = res$feature_id,
         coef = coef_values,
         lfc = lfc_values,
@@ -1091,21 +1163,55 @@ mod_maaslin2_server <- function(id, ps_obj) {
         is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_norm, ignore.case = TRUE)
       }
 
-      # Extract current rank only from potential full hierarchy
+      # Extract the token that matches the requested rank prefix from a hierarchy string.
       extract_current_rank <- function(x, rank_name) {
         x <- as.character(x)
-        
-        # If contains ";", extract the part corresponding to current rank
-        if (grepl(";", x, fixed = TRUE)) {
-          parts <- strsplit(x, ";", fixed = TRUE)[[1]]
-          parts <- trimws(parts)
-          # Return the last non-empty part (assumed to be current rank)
-          parts <- parts[nzchar(parts)]
-          if (length(parts) > 0) return(parts[length(parts)])
+        if (is.na(x) || !nzchar(trimws(x))) {
+          return(NA_character_)
         }
-        
-        # Keep original rank prefix (e.g., f__, g__) if present.
-        x
+
+        prefix_map <- list(
+          Kingdom = c("k__", "d__", "kingdom__", "domain__"),
+          Phylum = c("p__", "phylum__"),
+          Class = c("c__", "class__"),
+          Order = c("o__", "order__"),
+          Family = c("f__", "family__"),
+          Genus = c("g__", "genus__"),
+          Species = c("s__", "species__")
+        )
+        prefixes <- prefix_map[[rank_name]]
+        if (is.null(prefixes) || length(prefixes) == 0) {
+          return(x)
+        }
+
+        x_trim <- trimws(x)
+        parts <- if (grepl(";", x_trim, fixed = TRUE)) {
+          trimws(unlist(strsplit(x_trim, ";", fixed = TRUE)))
+        } else {
+          x_trim
+        }
+        parts <- parts[nzchar(parts)]
+        if (length(parts) == 0) {
+          return(NA_character_)
+        }
+
+        lower_parts <- tolower(parts)
+        hit_mask <- Reduce(`|`, lapply(prefixes, function(px) {
+          startsWith(lower_parts, tolower(px))
+        }))
+        hit_idx <- which(hit_mask)
+        if (length(hit_idx) > 0) {
+          token <- parts[hit_idx[1]]
+          token <- gsub("_+$", "", token)
+          return(token)
+        }
+
+        # For non-hierarchy scalar values, keep the original token.
+        if (!grepl(";", x_trim, fixed = TRUE)) {
+          return(x_trim)
+        }
+
+        NA_character_
       }
 
       rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
@@ -1143,10 +1249,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
         label_vec
       }
 
-      fallback_taxa <- if ("taxa_label" %in% colnames(df)) as.character(df$taxa_label) else rep("", nrow(df))
-      fallback_feature <- if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep("", nrow(df))
-      out[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)] <- fallback_taxa[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)]
-      out[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)] <- fallback_feature[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)]
+      fallback_label <- rep("UnclassifiedParent", nrow(df))
+      out[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)] <- fallback_label[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)]
       out
     }
 
@@ -1175,7 +1279,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
         TRUE ~ "Not significant"
       )
       plot_df$diffexpressed <- factor(plot_df$diffexpressed, levels = c("Decreased", "Not significant", "Increased"))
-      label_by_rank <- resolve_current_taxa_labels(plot_df, input$tax_level)
+      label_by_rank <- make.unique(resolve_current_taxa_labels(plot_df, input$tax_level))
       plot_df$delabel <- ifelse(plot_df$diffexpressed == "Not significant", "", label_by_rank)
       y_vals <- plot_df$y_metric[is.finite(plot_df$y_metric) & !is.na(plot_df$y_metric)]
       y_upper <- if (length(y_vals) > 0) max(stats::quantile(y_vals, probs = 0.99, na.rm = TRUE), max(y_vals, na.rm = TRUE) * 0.1) + 1 else 10

@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-26]
+
+### Added
+- Added `All` as a default/selectable option for `2. Primary level to include` to align filtering behavior across:
+  - `modules/mod_ancom.R`
+  - `modules/mod_maaslin2.R`
+  - `modules/mod_randomforest.R`
+- Added a dedicated `Result` tab in Random Forest for model status/metrics output:
+  - `modules/mod_randomforest.R`
+
+### Changed
+- Random Forest (`modules/mod_randomforest.R`):
+  - Split display responsibilities:
+    - Bottom `Random Forest Status` now shows sample-selection context only
+    - `Result` tab now shows model status + model metrics
+  - Replaced verbose `SampleID preview` with a concise pattern-goal description in status text
+  - Added training-target context in status text (classification group list or target type)
+  - Increased result panel display area in the `Result` tab
+  - Made SHAP bar-plot fonts follow `Base Font Size` for row labels, column labels, and axis text (render + download)
+- Heatmap (`modules/mod_heatmap.R`):
+  - Added normalized metadata-column resolution fallback
+  - Aligned primary-level behavior with `All` option handling
+  - Expanded status/legend text for analysis scope and z-score/prevalence context
+- ANCOM/MaAsLin2 (`modules/mod_ancom.R`, `modules/mod_maaslin2.R`):
+  - Updated primary-level subset logic so `All` behaves as no strict primary-level equality filter
+- Taxa comparison (`modules/mod_taxa_comparison.R`):
+  - Improved selected-taxa ordering stability and faceted bar-scale behavior
+- Preprocessing (`modules/mod_preprocessing.R`):
+  - Applied full-row default selection when switching away from preprocessing without manual selection
+
+### Notes
+- Detailed release notes: `docs/releases/2026-04-26.md`
+
 ## [2026-04-25]
 
 ### Added

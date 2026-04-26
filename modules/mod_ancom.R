@@ -38,6 +38,12 @@ mod_ancom_ui <- function(id) {
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
     ")),
+    tags$style(HTML(paste0(
+      "#", ns("ancom_table"), " th, #", ns("ancom_table"), " td {",
+      "font-size: 11px !important;",
+      "padding: 4px !important;",
+      "}"
+    ))),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -158,7 +164,7 @@ mod_ancom_ui <- function(id) {
             tabPanel("Table",
                      downloadButton(ns("download_ancom_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
                      tags$div(
-                       style = "position: relative; z-index: 1; overflow-x: auto; margin-bottom: 18px;",
+                       style = "position: relative; z-index: 1; margin-bottom: 18px;",
                        DTOutput(ns("ancom_table"))
                      ))
           )
@@ -314,9 +320,10 @@ mod_ancom_server <- function(id, ps_obj) {
 
       level_choices <- sort(unique(as.character(meta_df[[primary_var]])))
       level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      level_choices <- c("All", level_choices)
       selected_primary_level <- isolate(input$primary_level)
       if (is.null(selected_primary_level) || !selected_primary_level %in% level_choices) {
-        selected_primary_level <- if (length(level_choices) > 0) level_choices[1] else NULL
+        selected_primary_level <- "All"
       }
       updateSelectInput(session, "primary_level", choices = level_choices, selected = selected_primary_level)
 
@@ -350,7 +357,11 @@ mod_ancom_server <- function(id, ps_obj) {
           need(secondary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$secondary_var, "' not found."))
         )
         secondary_values <- as.character(meta_df[[secondary_var]])
-        subset_idx <- !is.na(primary_values) & (primary_values == input$primary_level)
+        if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+          subset_idx <- !is.na(primary_values)
+        } else {
+          subset_idx <- !is.na(primary_values) & (primary_values == input$primary_level)
+        }
         level_choices <- sort(unique(secondary_values[subset_idx]))
         level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       }
@@ -461,14 +472,22 @@ mod_ancom_server <- function(id, ps_obj) {
       selected_ids <- if (is.null(secondary_var)) {
         sample_ids[group_values %in% selected_levels]
       } else {
-        sample_ids[(primary_values == input$primary_level) & (group_values %in% selected_levels)]
+        if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+          sample_ids[!is.na(primary_values) & (group_values %in% selected_levels)]
+        } else {
+          sample_ids[(primary_values == input$primary_level) & (group_values %in% selected_levels)]
+        }
       }
 
       counts_by_level <- vapply(selected_levels, function(lvl) {
         if (is.null(secondary_var)) {
           sum(group_values == lvl, na.rm = TRUE)
         } else {
-          sum((primary_values == input$primary_level) & (group_values == lvl), na.rm = TRUE)
+          if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+            sum(!is.na(primary_values) & (group_values == lvl), na.rm = TRUE)
+          } else {
+            sum((primary_values == input$primary_level) & (group_values == lvl), na.rm = TRUE)
+          }
         }
       }, numeric(1))
 
@@ -718,7 +737,7 @@ mod_ancom_server <- function(id, ps_obj) {
           )
 
           res <- out$res
-          res$feature_id <- res$taxon
+          res$feature_id <- as.character(res$taxon)
 
           tax_table_current <- phyloseq::tax_table(ps_current)
           if (!is.null(tax_table_current)) {
@@ -743,61 +762,17 @@ mod_ancom_server <- function(id, ps_obj) {
             }
           }
 
-          extract_rank_from_feature <- function(feature_vec, rank_name) {
-            prefix_map <- list(
-              Kingdom = c("k__", "d__", "kingdom__"),
-              Phylum = c("p__", "phylum__"),
-              Class = c("c__", "class__"),
-              Order = c("o__", "order__"),
-              Family = c("f__", "family__"),
-              Genus = c("g__", "genus__"),
-              Species = c("s__", "species__")
-            )
-            prefixes <- prefix_map[[rank_name]]
-            out <- rep(NA_character_, length(feature_vec))
-            if (is.null(prefixes) || length(prefixes) == 0) return(out)
-
-            for (i in seq_along(feature_vec)) {
-              fid <- as.character(feature_vec[i])
-              if (is.na(fid) || !nzchar(trimws(fid))) next
-              fid_norm <- trimws(fid)
-              if (!grepl(";", fid_norm, fixed = TRUE) && grepl("__", fid_norm, fixed = TRUE)) {
-                fid_norm <- gsub("(?<!^)([A-Za-z][A-Za-z0-9]*__)", "; \\1", fid_norm, perl = TRUE)
-              }
-              parts <- trimws(unlist(strsplit(fid_norm, ";", fixed = TRUE)))
-              if (length(parts) == 0) next
-              lower_parts <- tolower(parts)
-              hit_mask <- Reduce(`|`, lapply(prefixes, function(px) {
-                startsWith(lower_parts, tolower(px))
-              }))
-              hit_idx <- which(hit_mask)
-              if (length(hit_idx) > 0) {
-                token <- parts[hit_idx[1]]
-                token <- gsub("_+$", "", token)
-                out[i] <- token
-              }
-            }
-            out
-          }
-
           for (rk in taxonomy_ranks) {
             vals <- as.character(res[[rk]])
             vals <- gsub("_+$", "", vals)
-            missing_idx <- is.na(vals) | !nzchar(trimws(vals))
-            if (any(missing_idx) && "feature_id" %in% colnames(res)) {
-              parsed_vals <- extract_rank_from_feature(res$feature_id, rk)
-              vals[missing_idx] <- parsed_vals[missing_idx]
-            }
-            still_missing <- is.na(vals) | !nzchar(trimws(vals))
-            vals[still_missing] <- rank_default_unassigned[[rk]]
+            vals[is.na(vals) | !nzchar(trimws(vals))] <- rank_default_unassigned[[rk]]
             res[[rk]] <- vals
           }
 
           current_labels <- resolve_current_taxa_labels(res, input$tax_level)
-          res$taxa_label <- current_labels
-          res$taxon <- current_labels
+          res$feature_id <- current_labels
 
-          rownames(res) <- res$feature_id
+          rownames(res) <- make.unique(as.character(res$feature_id))
           res
         })
       }, error = function(e) {
@@ -970,12 +945,7 @@ mod_ancom_server <- function(id, ps_obj) {
         q_col <- get_col_for_level(c("q_", "q_val_"), suffix_candidates, fallbacks = c("q_val", "padj"))
         diff_col <- get_col_for_level(c("diff_"), suffix_candidates, fallbacks = c("diff", "diff_abn"))
 
-        if (is.na(lfc_col) || (is.na(p_col) && is.na(q_col))) {
-          return(NULL)
-        }
-
-        lfc_values_raw <- to_numeric(res[[lfc_col]])
-        lfc_values <- lfc_values_raw
+        lfc_values <- if (!is.na(lfc_col)) to_numeric(res[[lfc_col]]) else rep(NA_real_, nrow(res))
         se_values <- if (!is.na(se_col)) to_numeric(res[[se_col]]) else rep(NA_real_, nrow(res))
         w_values <- if (!is.na(w_col)) to_numeric(res[[w_col]]) else rep(NA_real_, nrow(res))
         p_values <- if (!is.na(p_col)) to_numeric(res[[p_col]]) else rep(NA_real_, nrow(res))
@@ -990,8 +960,6 @@ mod_ancom_server <- function(id, ps_obj) {
 
         base_df <- data.frame(
           contrast = as.character(level_name),
-          taxon = if ("taxon" %in% colnames(res)) res$taxon else res$taxa_label,
-          taxa_label = res$taxa_label,
           feature_id = res$feature_id,
           lfc = lfc_values,
           se = se_values,
@@ -1009,14 +977,11 @@ mod_ancom_server <- function(id, ps_obj) {
         base_df
       })
 
-      contrast_results <- Filter(Negate(is.null), contrast_results)
-      validate(
-        need(length(contrast_results) > 0,
-             "No contrast-specific ANCOM-BC2 columns were found for selected levels and reference.")
-      )
-
       base_df <- dplyr::bind_rows(contrast_results)
       base_df$contrast <- factor(base_df$contrast, levels = contrast_levels)
+      contrast_key <- as.character(base_df$contrast)
+      contrast_key[is.na(contrast_key) | !nzchar(contrast_key)] <- "selected_comparison_levels"
+      base_df$feature_id <- make.unique(paste0(as.character(base_df$feature_id), "__", contrast_key))
       contrast_label <- as.character(base_df$contrast)
       contrast_label[is.na(contrast_label) | !nzchar(contrast_label)] <- "selected comparison levels"
       base_df$direction <- ifelse(
@@ -1030,7 +995,7 @@ mod_ancom_server <- function(id, ps_obj) {
     output$ancom_table <- renderDT({
       req(ancom_processed())
       res <- ancom_processed()
-      leading_cols <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "contrast", "taxon", "taxa_label", "feature_id")
+      leading_cols <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "contrast", "feature_id")
       existing_leading <- intersect(leading_cols, colnames(res))
       remaining_cols <- setdiff(colnames(res), existing_leading)
       res <- res[, c(existing_leading, remaining_cols), drop = FALSE]
@@ -1079,21 +1044,55 @@ mod_ancom_server <- function(id, ps_obj) {
         is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_norm, ignore.case = TRUE)
       }
 
-      # Extract current rank only from potential full hierarchy
+      # Extract the token that matches the requested rank prefix from a hierarchy string.
       extract_current_rank <- function(x, rank_name) {
         x <- as.character(x)
-        
-        # If contains ";", extract the part corresponding to current rank
-        if (grepl(";", x, fixed = TRUE)) {
-          parts <- strsplit(x, ";", fixed = TRUE)[[1]]
-          parts <- trimws(parts)
-          # Return the last non-empty part (assumed to be current rank)
-          parts <- parts[nzchar(parts)]
-          if (length(parts) > 0) return(parts[length(parts)])
+        if (is.na(x) || !nzchar(trimws(x))) {
+          return(NA_character_)
         }
-        
-        # Keep original rank prefix (e.g., f__, g__) if present.
-        x
+
+        prefix_map <- list(
+          Kingdom = c("k__", "d__", "kingdom__", "domain__"),
+          Phylum = c("p__", "phylum__"),
+          Class = c("c__", "class__"),
+          Order = c("o__", "order__"),
+          Family = c("f__", "family__"),
+          Genus = c("g__", "genus__"),
+          Species = c("s__", "species__")
+        )
+        prefixes <- prefix_map[[rank_name]]
+        if (is.null(prefixes) || length(prefixes) == 0) {
+          return(x)
+        }
+
+        x_trim <- trimws(x)
+        parts <- if (grepl(";", x_trim, fixed = TRUE)) {
+          trimws(unlist(strsplit(x_trim, ";", fixed = TRUE)))
+        } else {
+          x_trim
+        }
+        parts <- parts[nzchar(parts)]
+        if (length(parts) == 0) {
+          return(NA_character_)
+        }
+
+        lower_parts <- tolower(parts)
+        hit_mask <- Reduce(`|`, lapply(prefixes, function(px) {
+          startsWith(lower_parts, tolower(px))
+        }))
+        hit_idx <- which(hit_mask)
+        if (length(hit_idx) > 0) {
+          token <- parts[hit_idx[1]]
+          token <- gsub("_+$", "", token)
+          return(token)
+        }
+
+        # For non-hierarchy scalar values, keep the original token.
+        if (!grepl(";", x_trim, fixed = TRUE)) {
+          return(x_trim)
+        }
+
+        NA_character_
       }
 
       rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
@@ -1132,8 +1131,8 @@ mod_ancom_server <- function(id, ps_obj) {
         label_vec
       }
 
-      # Final fallback: use feature_id only (avoid falling back to full hierarchy labels).
-      fallback_feature <- if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep("", nrow(df))
+      # Keep labels rank-focused: unresolved entries remain as a generic parent placeholder.
+      fallback_feature <- rep("UnclassifiedParent", nrow(df))
       use_idx <- is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)
       out[use_idx] <- fallback_feature[use_idx]
       out
@@ -1168,7 +1167,7 @@ mod_ancom_server <- function(id, ps_obj) {
         plot_df$diffexpressed,
         levels = c("Decreased", "Not significant", "Increased")
       )
-      label_by_rank <- resolve_current_taxa_labels(plot_df, input$tax_level)
+      label_by_rank <- make.unique(resolve_current_taxa_labels(plot_df, input$tax_level))
       plot_df$delabel <- ifelse(plot_df$diffexpressed == "Not significant", "", label_by_rank)
 
       y_vals <- plot_df$y_metric[is.finite(plot_df$y_metric) & !is.na(plot_df$y_metric)]

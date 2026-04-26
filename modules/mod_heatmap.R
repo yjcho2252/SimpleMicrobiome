@@ -180,6 +180,19 @@ mod_heatmap_ui <- function(id) {
 mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
     analysis_target <- reactive("taxa_group")
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
 
     observe({
       disable_prevalence_irrelevant <- identical(input$association_mode, "prevalence")
@@ -269,9 +282,10 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         level_choices <- sort(unique(as.character(meta_df[[selected_val]])))
         level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       }
+      level_choices <- c("All", level_choices)
       selected_primary_level <- isolate(input$primary_level)
       if (is.null(selected_primary_level) || !selected_primary_level %in% level_choices) {
-        selected_primary_level <- if (length(level_choices) > 0) level_choices[1] else NULL
+        selected_primary_level <- "All"
       }
       updateSelectInput(session, "primary_level", choices = level_choices, selected = selected_primary_level)
 
@@ -282,6 +296,29 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       }
       updateSelectInput(session, "secondary_var", choices = c("None" = "None", secondary_choices), selected = selected_secondary)
     })
+
+    observeEvent(list(metadata_df(), input$group_var), {
+      meta_df <- metadata_df()
+      req(nrow(meta_df) >= 0)
+      group_col <- input$group_var
+      if (is.null(group_col) || !nzchar(group_col)) {
+        updateSelectInput(session, "primary_level", choices = character(0), selected = character(0))
+        return()
+      }
+      resolved_group_col <- resolve_meta_colname(group_col, colnames(meta_df))
+      if (is.null(resolved_group_col) || !resolved_group_col %in% colnames(meta_df)) {
+        updateSelectInput(session, "primary_level", choices = character(0), selected = character(0))
+        return()
+      }
+      level_choices <- sort(unique(as.character(meta_df[[resolved_group_col]])))
+      level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      level_choices <- c("All", level_choices)
+      selected_primary_level <- isolate(input$primary_level)
+      if (is.null(selected_primary_level) || !selected_primary_level %in% level_choices) {
+        selected_primary_level <- "All"
+      }
+      updateSelectInput(session, "primary_level", choices = level_choices, selected = selected_primary_level)
+    }, ignoreInit = FALSE)
 
     taxa_choices_preview <- reactive({
       req(ps_obj(), input$tax_level)
@@ -485,7 +522,11 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           primary_vec <- meta_df[[input$group_var]]
           names(primary_vec) <- rownames(meta_df)
           primary_vec <- primary_vec[sample_ids]
-          keep_idx <- !is.na(primary_vec) & (as.character(primary_vec) == as.character(input$primary_level))
+          if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+            keep_idx <- !is.na(primary_vec)
+          } else {
+            keep_idx <- !is.na(primary_vec) & (as.character(primary_vec) == as.character(input$primary_level))
+          }
           group_vec <- group_vec[keep_idx]
           analysis_mat <- analysis_mat[, keep_idx, drop = FALSE]
           sample_ids <- sample_ids[keep_idx]
@@ -823,6 +864,8 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         } else {
           "Phi coefficient\n(binary association)"
         }
+      } else if (identical(input$value_scale, "zscore")) {
+        "Z-score\n(by taxa)"
       } else {
         if (identical(input$transform_method, "clr")) {
           "CLR\nvalue"
@@ -942,6 +985,22 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     output$heatmap_status <- renderText({
       req(corr_payload())
       payload <- corr_payload()
+      primary_group_label <- if (is.null(input$group_var) || !nzchar(input$group_var)) "(Not selected)" else input$group_var
+      primary_level_label <- if (is.null(input$primary_level) || !nzchar(input$primary_level)) "(All / Not selected)" else as.character(input$primary_level)
+      secondary_group_label <- if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) "(None)" else input$secondary_var
+      analysis_scope_label <- if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) {
+        "Primary group is used directly (no primary-level prefilter)."
+      } else {
+        paste0(
+          "Filtered to Primary level '", primary_level_label,
+          "' and compared across Secondary group levels."
+        )
+      }
+      analyzed_group_levels <- if (ncol(payload$assoc_mat) > 1) {
+        paste(colnames(payload$assoc_mat), collapse = ", ")
+      } else {
+        colnames(payload$assoc_mat)[1]
+      }
       test_method_label <- if (identical(input$group_type, "continuous")) {
         if (identical(input$association_mode, "prevalence")) {
           "Point-biserial correlation test (binary taxa vs continuous group) + BH correction"
@@ -970,6 +1029,11 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         c(
           paste0("Analysis target: ", if (identical(analysis_target(), "taxa_taxa")) "Taxa vs Taxa" else "Taxa vs Group"),
           paste0("Association type: ", payload$assoc_type),
+          paste0("1) Primary group variable: ", primary_group_label),
+          paste0("2) Primary level filter: ", primary_level_label),
+          paste0("3) Secondary group variable: ", secondary_group_label),
+          paste0("Current analysis scope: ", analysis_scope_label),
+          paste0("Analyzed group levels/axis: ", analyzed_group_levels),
           paste0("Samples used: ", payload$n_samples),
           paste0("Taxa shown: ", n_taxa_display),
           paste0("Association mode: ", if (identical(input$association_mode, "prevalence")) "Prevalence-based (binary)" else "Abundance-based"),
@@ -1096,12 +1160,21 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           }
         )
       } else {
+        transform_desc <- if (identical(input$value_scale, "zscore")) {
+          if (identical(input$transform_method, "clr")) {
+            "CLR-transformed abundance with row-wise z-score scaling"
+          } else {
+            "TSS-transformed abundance with row-wise z-score scaling"
+          }
+        } else {
+          paste0(toupper(input$transform_method), " transformed abundance")
+        }
         paste0(
           "Cells represent taxa-to-group association values at ",
           tolower(input$tax_level),
           " level. The analysis uses ",
-          toupper(input$transform_method),
-          " transformed abundance and ",
+          transform_desc,
+          " and ",
           tools::toTitleCase(input$corr_method),
           " statistics. Color indicates association direction and magnitude, with value scale set to ",
           if (identical(input$value_scale, "zscore")) "row-wise z-score" else "raw association value",

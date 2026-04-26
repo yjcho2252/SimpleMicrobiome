@@ -151,7 +151,7 @@ mod_randomforest_ui <- function(id) {
               ),
               div(
                 style = "display: flex; justify-content: center; margin-top: 8px;",
-                plotOutput(ns("roc_plot"), width = "1160px", height = "500px")
+                uiOutput(ns("roc_plot_ui"))
               ),
               verbatimTextOutput(ns("roc_auc_text"))
             ),
@@ -175,12 +175,16 @@ mod_randomforest_ui <- function(id) {
                 style = "display: flex; justify-content: center; margin-top: 8px;",
                 uiOutput(ns("shap_summary_plot_ui"))
               )
+            ),
+            tabPanel(
+              "Result",
+              uiOutput(ns("rf_result_box"))
             )
           )
         ),
         uiOutput(ns("rf_legend_box")),
         uiOutput(ns("rf_results_separator")),
-        h4(icon("square-poll-vertical"), "Result"),
+        h5(icon("circle-info"), "Random Forest Status"),
         uiOutput(ns("rf_metrics_box"))
       )
     )
@@ -246,6 +250,105 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       ps
     }
 
+    resolve_current_taxa_labels <- function(df, tax_level) {
+      is_unassigned_taxa <- function(x) {
+        x <- as.character(x)
+        x_trim <- trimws(x)
+        is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_trim, ignore.case = TRUE)
+      }
+
+      is_raw_placeholder_taxa <- function(x) {
+        x <- as.character(x)
+        x_trim <- trimws(x)
+        x_norm <- tolower(gsub("^[a-z]__", "", x_trim))
+        is.na(x_trim) | !nzchar(x_trim) | grepl("unassigned|uncultured", x_norm, ignore.case = TRUE)
+      }
+
+      extract_current_rank <- function(x, rank_name) {
+        x <- as.character(x)
+        if (is.na(x) || !nzchar(trimws(x))) {
+          return(NA_character_)
+        }
+
+        prefix_map <- list(
+          Kingdom = c("k__", "d__", "kingdom__", "domain__"),
+          Phylum = c("p__", "phylum__"),
+          Class = c("c__", "class__"),
+          Order = c("o__", "order__"),
+          Family = c("f__", "family__"),
+          Genus = c("g__", "genus__"),
+          Species = c("s__", "species__")
+        )
+        prefixes <- prefix_map[[rank_name]]
+        if (is.null(prefixes) || length(prefixes) == 0) {
+          return(x)
+        }
+
+        x_trim <- trimws(x)
+        parts <- if (grepl(";", x_trim, fixed = TRUE)) {
+          trimws(unlist(strsplit(x_trim, ";", fixed = TRUE)))
+        } else {
+          x_trim
+        }
+        parts <- parts[nzchar(parts)]
+        if (length(parts) == 0) {
+          return(NA_character_)
+        }
+
+        lower_parts <- tolower(parts)
+        hit_mask <- Reduce(`|`, lapply(prefixes, function(px) {
+          startsWith(lower_parts, tolower(px))
+        }))
+        hit_idx <- which(hit_mask)
+        if (length(hit_idx) > 0) {
+          token <- parts[hit_idx[1]]
+          token <- gsub("_+$", "", token)
+          return(token)
+        }
+
+        if (!grepl(";", x_trim, fixed = TRUE)) {
+          return(x_trim)
+        }
+
+        NA_character_
+      }
+
+      rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+      out <- if (identical(tax_level, "ASV")) {
+        if ("FeatureID" %in% colnames(df)) as.character(df$FeatureID) else rep(NA_character_, nrow(df))
+      } else {
+        label_vec <- rep(NA_character_, nrow(df))
+        if (tax_level %in% rank_order) {
+          selected_idx <- match(tax_level, rank_order)
+          raw_rank_vals <- as.character(df[[tax_level]])
+          current_rank_vals <- sapply(raw_rank_vals, function(x) extract_current_rank(x, tax_level), USE.NAMES = FALSE)
+          label_vec <- current_rank_vals
+
+          is_unassigned_idx <- is_unassigned_taxa(label_vec)
+          if (any(is_unassigned_idx)) {
+            parent_ranks <- rev(rank_order[seq_len(selected_idx - 1)])
+            parent_ranks <- parent_ranks[parent_ranks %in% colnames(df)]
+            if (length(parent_ranks) > 0) {
+              parent_vals <- rep("UnclassifiedParent", nrow(df))
+              for (parent_rank in parent_ranks) {
+                candidate_vals <- as.character(df[[parent_rank]])
+                candidate_vals <- sapply(candidate_vals, function(x) extract_current_rank(x, parent_rank), USE.NAMES = FALSE)
+                candidate_placeholder_idx <- is_unassigned_taxa(candidate_vals)
+                use_idx <- is_unassigned_idx & parent_vals == "UnclassifiedParent" & !candidate_placeholder_idx
+                parent_vals[use_idx] <- candidate_vals[use_idx]
+              }
+              label_vec[is_unassigned_idx] <- parent_vals[is_unassigned_idx]
+            }
+          }
+        }
+        label_vec
+      }
+
+      fallback_label <- rep("UnclassifiedParent", nrow(df))
+      out[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)] <- fallback_label[is.na(out) | !nzchar(out) | is_raw_placeholder_taxa(out)]
+      out
+    }
+
     model_result <- reactiveVal(NULL)
     status_text <- reactiveVal("Waiting for model run.")
     rf_running <- reactiveVal(FALSE)
@@ -270,6 +373,61 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       }
       md <- data.frame(phyloseq::sample_data(ps_obj_filtered_raw()))
       resolve_meta_colname(input$outcome_var, colnames(md))
+    })
+    selected_sample_status <- reactive({
+      req(ps_obj_filtered_raw(), input$group_var, input$primary_level, input$outcome_var)
+      ps <- ps_obj_filtered_raw()
+      md <- data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      otu_mat <- as.matrix(phyloseq::otu_table(ps))
+      if (!phyloseq::taxa_are_rows(phyloseq::otu_table(ps))) {
+        otu_mat <- t(otu_mat)
+      }
+      x <- as.data.frame(t(otu_mat), stringsAsFactors = FALSE, check.names = FALSE)
+
+      common_samples <- intersect(rownames(md), rownames(x))
+      md <- md[common_samples, , drop = FALSE]
+
+      primary_var <- group_var_resolved()
+      outcome_var <- outcome_var_resolved()
+      if (!is.null(primary_var) && nzchar(primary_var) && primary_var %in% colnames(md)) {
+        if (!is.null(input$primary_level) && !identical(as.character(input$primary_level), "All")) {
+          keep_primary <- as.character(md[[primary_var]]) == as.character(input$primary_level)
+          keep_primary[is.na(keep_primary)] <- FALSE
+          md <- md[keep_primary, , drop = FALSE]
+        } else {
+          md <- md[!is.na(md[[primary_var]]), , drop = FALSE]
+        }
+      }
+
+      if (!is.null(outcome_var) && outcome_var %in% colnames(md) && length(input$outcome_levels) > 0) {
+        level_chr <- as.character(md[[outcome_var]])
+        keep_levels <- level_chr %in% input$outcome_levels
+        keep_levels[is.na(keep_levels)] <- FALSE
+        md <- md[keep_levels, , drop = FALSE]
+      }
+
+      selected_ids <- rownames(md)
+      training_groups <- character(0)
+      training_target_type <- "Unknown"
+      if (!is.null(outcome_var) && outcome_var %in% colnames(md)) {
+        outcome_vec <- md[[outcome_var]]
+        if (is.factor(outcome_vec) || is.character(outcome_vec)) {
+          training_target_type <- "Classification"
+          training_groups <- sort(unique(as.character(outcome_vec)))
+          training_groups <- training_groups[!is.na(training_groups) & nzchar(training_groups)]
+        } else if (is.numeric(outcome_vec) || is.integer(outcome_vec)) {
+          training_target_type <- "Regression"
+        }
+      }
+
+      list(
+        primary_var = primary_var,
+        primary_level = input$primary_level,
+        outcome_var = outcome_var,
+        total_selected = length(selected_ids),
+        training_target_type = training_target_type,
+        training_groups = training_groups
+      )
     })
     group_var_resolved <- reactive({
       req(ps_obj_filtered_raw(), input$group_var)
@@ -344,9 +502,10 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       } else {
         character(0)
       }
+      primary_level_choices <- c("All", primary_level_choices)
       current_primary_level <- input$primary_level
       if (is.null(current_primary_level) || !current_primary_level %in% primary_level_choices) {
-        current_primary_level <- if (length(primary_level_choices) > 0) primary_level_choices[1] else NULL
+        current_primary_level <- "All"
       }
       updateSelectInput(session, "primary_level", choices = primary_level_choices, selected = current_primary_level)
 
@@ -463,10 +622,16 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           md <- md[common_samples, , drop = FALSE]
           x <- x[common_samples, , drop = FALSE]
           if (!identical(input$outcome_var, "None")) {
-            keep_primary <- as.character(md[[primary_var]]) == as.character(input$primary_level)
-            keep_primary[is.na(keep_primary)] <- FALSE
-            md <- md[keep_primary, , drop = FALSE]
-            x <- x[keep_primary, , drop = FALSE]
+            if (!is.null(input$primary_level) && !identical(as.character(input$primary_level), "All")) {
+              keep_primary <- as.character(md[[primary_var]]) == as.character(input$primary_level)
+              keep_primary[is.na(keep_primary)] <- FALSE
+              md <- md[keep_primary, , drop = FALSE]
+              x <- x[keep_primary, , drop = FALSE]
+            } else {
+              keep_primary <- !is.na(md[[primary_var]])
+              md <- md[keep_primary, , drop = FALSE]
+              x <- x[keep_primary, , drop = FALSE]
+            }
           }
           y_raw <- md[[outcome_var]]
 
@@ -961,47 +1126,8 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           taxonomy_cols_present <- intersect(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), colnames(imp_tbl))
           metric_cols <- setdiff(colnames(imp_tbl), c(leading_cols, taxonomy_cols_present))
           imp_tbl <- imp_tbl[, c(leading_cols, taxonomy_cols_present, metric_cols), drop = FALSE]
-          if (length(taxonomy_cols_present) > 0) {
-            rank_prefix_map <- c(
-              Kingdom = "k__",
-              Phylum = "p__",
-              Class = "c__",
-              Order = "o__",
-              Family = "f__",
-              Genus = "g__",
-              Species = "s__"
-            )
-            get_rank_unassigned_label <- function(rank_name) {
-              prefix <- rank_prefix_map[[rank_name]]
-              if (is.null(prefix) || !nzchar(prefix)) {
-                prefix <- paste0(substr(tolower(rank_name), 1, 1), "__")
-              }
-              paste0(prefix, "Unassigned")
-            }
-            label_rank_order <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
-            if (!identical(input$tax_level, "ASV") && input$tax_level %in% label_rank_order) {
-              label_rank_order <- label_rank_order[seq_len(match(input$tax_level, label_rank_order))]
-            }
-            label_ranks_present <- intersect(label_rank_order, taxonomy_cols_present)
-            tax_mat <- as.data.frame(imp_tbl[, label_ranks_present, drop = FALSE], stringsAsFactors = FALSE)
-            for (cc in colnames(tax_mat)) tax_mat[[cc]] <- as.character(tax_mat[[cc]])
-            taxa_label <- apply(tax_mat, 1, function(taxa_row) {
-              parts <- vapply(seq_along(taxa_row), function(i) {
-                v <- taxa_row[i]
-                rk <- names(taxa_row)[i]
-                if (is.na(v) || !nzchar(v)) {
-                  get_rank_unassigned_label(rk)
-                } else {
-                  v
-                }
-              }, character(1))
-              paste(parts, collapse = ";")
-            })
-            taxa_label[is.na(taxa_label) | !nzchar(taxa_label)] <- imp_tbl$FeatureID[is.na(taxa_label) | !nzchar(taxa_label)]
-            imp_tbl$taxa_label <- taxa_label
-          } else {
-            imp_tbl$taxa_label <- imp_tbl$FeatureID
-          }
+          current_labels <- resolve_current_taxa_labels(imp_tbl, input$tax_level)
+          imp_tbl$FeatureID <- make.unique(current_labels)
 
           shap_values_long <- NULL
           shap_summary_tbl <- NULL
@@ -1267,6 +1393,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           model_result(list(
             metrics = metrics_text,
             importance = imp_tbl,
+            tax_level = input$tax_level,
             score_col = "PermutationImportance",
             roc = roc_payload,
             shap_values = shap_values_long,
@@ -1289,10 +1416,71 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       })
     })
 
-    output$rf_metrics <- renderText({
+    output$rf_sample_status <- renderText({
+      info <- selected_sample_status()
+      selected_outcome_levels <- if (length(input$outcome_levels) > 0) paste(input$outcome_levels, collapse = ", ") else "All"
+      pattern_goal <- if (identical(info$primary_var, info$outcome_var)) {
+        paste0(
+          "Pattern goal: Explore within-group microbiome structure in ",
+          info$primary_var,
+          " = ",
+          info$primary_level,
+          " (taxonomic level: ",
+          input$tax_level,
+          ", transform: ",
+          input$transform_method,
+          ")."
+        )
+      } else {
+        paste0(
+          "Pattern goal: Identify microbiome patterns within ",
+          info$primary_var,
+          " = ",
+          info$primary_level,
+          " that predict ",
+          info$outcome_var,
+          " (levels: ",
+          selected_outcome_levels,
+          ")."
+        )
+      }
+      lines <- c(
+        "Selected Sample Status",
+        paste0("Primary filter: ", info$primary_var, " = ", info$primary_level),
+        paste0("Outcome variable: ", info$outcome_var),
+        paste0("Selected outcome levels: ", selected_outcome_levels),
+        if (identical(info$training_target_type, "Classification")) {
+          paste0(
+            "Training groups: ",
+            if (length(info$training_groups) > 0) paste(info$training_groups, collapse = ", ") else "(none)"
+          )
+        } else {
+          paste0("Training target type: ", info$training_target_type)
+        },
+        paste0("Total selected samples: ", info$total_selected),
+        pattern_goal
+      )
+      paste(lines, collapse = "\n")
+    })
+
+    output$rf_result_text <- renderText({
       res <- model_result()
-      if (is.null(res)) return("Run the model to see results.")
-      res$metrics
+      if (isTRUE(rf_running())) {
+        return("Model status: Running Random Forest...")
+      }
+
+      current_status <- isolate(status_text())
+      lines <- character(0)
+      if (!is.null(current_status) && nzchar(current_status)) {
+        lines <- c(lines, paste0("Model status: ", current_status))
+      }
+      if (is.null(res)) {
+        if (length(lines) == 0) {
+          return("Model status: Waiting for model run.")
+        }
+        return(paste(lines, collapse = "\n"))
+      }
+      paste(c(lines, "", "Model metrics", res$metrics), collapse = "\n")
     })
 
     output$rf_metrics_box <- renderUI({
@@ -1301,7 +1489,17 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       tags$div(
         class = "simple-result-card",
         style = paste0("width: ", box_width, "px; max-width: 100%;"),
-        verbatimTextOutput(session$ns("rf_metrics"))
+        verbatimTextOutput(session$ns("rf_sample_status"))
+      )
+    })
+
+    output$rf_result_box <- renderUI({
+      req(input$plot_width)
+      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1160 else input$plot_width
+      tags$div(
+        class = "simple-result-card",
+        style = paste0("width: ", box_width, "px; max-width: 100%; height: 420px;"),
+        verbatimTextOutput(session$ns("rf_result_text"))
       )
     })
 
@@ -1382,7 +1580,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           res$importance %>%
             dplyr::select(
               Feature,
-              dplyr::any_of(c("FeatureID", "taxa_label", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"))
+              dplyr::any_of(c("FeatureID", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"))
             ),
           by = "Feature"
         ) %>%
@@ -1450,7 +1648,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         dplyr::left_join(
           imp_tbl %>% dplyr::select(
             Feature,
-            dplyr::any_of(c("taxa_label", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"))
+            dplyr::any_of(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"))
           ),
           by = "Feature"
         ) %>%
@@ -1468,7 +1666,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           BaselineProbability = res$shap_baseline
         )
       front_cols <- c(
-        "Feature", "taxa_label",
+        "Feature",
         "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species",
         "TargetClass"
       )
@@ -1494,8 +1692,9 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       if (is.na(w) || w < 100) w <- 1160L
       if (is.na(h) || h < 100) h <- 500L
       nr <- max(1L, as.integer(n_rows))
-      cell_mm <- max(3, min(14, (h * 0.72) / (nr * 3.78)))
-      bar_width_pt <- max(90, min(360, w * 0.16 * 0.75))
+      # Let geometry scale with canvas size (avoid tight upper caps that freeze visual growth).
+      cell_mm <- max(3, min(40, (h * 0.78) / (nr * 3.2)))
+      bar_width_pt <- max(90, min(1200, w * 0.28))
       list(cell_mm = cell_mm, bar_width_pt = bar_width_pt)
     }
 
@@ -1503,24 +1702,16 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       ss <- derive_shap_summary(res)
       validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
       ss <- as.data.frame(ss, check.names = FALSE)
-      if (!"taxa_label" %in% colnames(ss)) {
-        ss <- ss %>%
-          dplyr::left_join(
-            res$importance %>% dplyr::select(Feature, taxa_label),
-            by = "Feature"
-          )
-      }
-      if (!"taxa_label" %in% colnames(ss)) ss$taxa_label <- NA_character_
 
       top_shap <- ss %>%
         dplyr::mutate(
           Feature = as.character(Feature),
-          taxa_label = as.character(taxa_label),
-          taxa_label_plot = dplyr::if_else(is.na(taxa_label) | !nzchar(taxa_label), Feature, taxa_label),
+          taxa_label_plot = as.character(Feature),
           MeanAbsSHAP = as.numeric(MeanAbsSHAP)
         ) %>%
         dplyr::arrange(dplyr::desc(MeanAbsSHAP)) %>%
         utils::head(top_n)
+      top_shap$taxa_label_plot <- make.unique(resolve_current_taxa_labels(top_shap, res$tax_level))
 
       dup_label <- duplicated(top_shap$taxa_label_plot) | duplicated(top_shap$taxa_label_plot, fromLast = TRUE)
       if (any(dup_label)) {
@@ -1612,7 +1803,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         row_names_side = "left",
         row_names_gp = grid::gpar(fontsize = taxa_fontsize),
         row_names_max_width = row_label_width,
-        column_names_gp = grid::gpar(fontsize = 9),
+        column_names_gp = grid::gpar(fontsize = max(8, base_size - 2)),
         column_names_rot = 90,
         width = grid::unit(cell_mm * ncol(hm_mat), "mm"),
         height = grid::unit(cell_mm * nrow(hm_mat), "mm")
@@ -1627,7 +1818,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             at = c(0, bar_x_max / 2, bar_x_max),
             labels = sprintf("%.2f", c(0, bar_x_max / 2, bar_x_max)),
             side = "bottom",
-            gp = grid::gpar(fontsize = 8)
+            gp = grid::gpar(fontsize = max(8, base_size - 3))
           ),
           ylim = c(0, bar_x_max),
           bar_width = 0.7,
@@ -1658,10 +1849,11 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         ss <- derive_shap_summary(res)
         validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP plot is not available."))
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
+        taxa_font <- max(6, as.integer(input$base_size) - 3)
         p <- build_shap_plot(
           res,
           top_n = 20,
-          taxa_fontsize = 8,
+          taxa_fontsize = taxa_font,
           cell_mm = geom$cell_mm,
           bar_width_pt = geom$bar_width_pt,
           base_size = input$base_size
@@ -1711,10 +1903,11 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         h <- ifelse(is.na(h) || h < 100, 500L, h)
         grDevices::png(filename = file, width = w, height = h, res = 72)
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 25L)
+        taxa_font <- max(6, as.integer(input$base_size) - 3)
         p <- build_shap_plot(
           res,
           top_n = 25,
-          taxa_fontsize = 7,
+          taxa_fontsize = taxa_font,
           cell_mm = geom$cell_mm,
           bar_width_pt = geom$bar_width_pt,
           base_size = input$base_size
@@ -1730,7 +1923,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
 
     build_importance_plot <- function(res, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120, base_size = 11) {
       top_imp <- head(res$importance, 20)
-      top_imp$taxa_label_plot <- as.character(top_imp$taxa_label)
+      top_imp$taxa_label_plot <- make.unique(resolve_current_taxa_labels(top_imp, res$tax_level))
       dup_label <- duplicated(top_imp$taxa_label_plot) | duplicated(top_imp$taxa_label_plot, fromLast = TRUE)
       if (any(dup_label)) {
         top_imp$taxa_label_plot[dup_label] <- paste0(
@@ -1815,7 +2008,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         row_names_side = "left",
         row_names_gp = grid::gpar(fontsize = taxa_fontsize),
         row_names_max_width = row_label_width,
-        column_names_gp = grid::gpar(fontsize = 9),
+        column_names_gp = grid::gpar(fontsize = max(8, base_size - 2)),
         column_names_rot = 90,
         width = grid::unit(cell_mm * ncol(hm_mat), "mm"),
         height = grid::unit(cell_mm * nrow(hm_mat), "mm")
@@ -1830,7 +2023,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             at = c(0, bar_x_max / 2, bar_x_max),
             labels = sprintf("%.2f", c(0, bar_x_max / 2, bar_x_max)),
             side = "bottom",
-            gp = grid::gpar(fontsize = 8)
+            gp = grid::gpar(fontsize = max(8, base_size - 3))
           ),
           ylim = c(0, bar_x_max),
           bar_width = 0.7,
@@ -1860,9 +2053,10 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           return(invisible(NULL))
         }
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
+        taxa_font <- max(6, as.integer(input$base_size) - 3)
         p <- build_importance_plot(
           res,
-          taxa_fontsize = 8,
+          taxa_fontsize = taxa_font,
           cell_mm = geom$cell_mm,
           bar_width_pt = geom$bar_width_pt,
           base_size = input$base_size
@@ -1896,9 +2090,10 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         h <- ifelse(is.na(h) || h < 100, 500L, h)
         grDevices::png(filename = file, width = w, height = h, res = 72)
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
+        taxa_font <- max(6, as.integer(input$base_size) - 3)
         p <- build_importance_plot(
           res,
-          taxa_fontsize = 7,
+          taxa_fontsize = taxa_font,
           cell_mm = geom$cell_mm,
           bar_width_pt = geom$bar_width_pt,
           base_size = input$base_size
@@ -2009,8 +2204,14 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         p <- build_roc_plot(res, base_size = input$base_size)
         print(p)
       },
-      width = 1160,
-      height = 500
+      width = function() {
+        req(input$plot_width)
+        as.integer(input$plot_width)
+      },
+      height = function() {
+        req(input$plot_height)
+        as.integer(input$plot_height)
+      }
     )
 
     output$download_rf_rocplot <- downloadHandler(
@@ -2120,6 +2321,18 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             "."
           )
         )
+      )
+    })
+
+    output$roc_plot_ui <- renderUI({
+      w <- as.integer(input$plot_width)
+      h <- as.integer(input$plot_height)
+      w <- ifelse(is.na(w) || w < 100, 1160L, w)
+      h <- ifelse(is.na(h) || h < 100, 500L, h)
+      plotOutput(
+        session$ns("roc_plot"),
+        width = paste0(w, "px"),
+        height = paste0(h, "px")
       )
     })
   })
