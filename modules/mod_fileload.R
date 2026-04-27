@@ -40,6 +40,19 @@ mod_fileload_ui <- function(id) {
       .file-input-control .btn-file {
         font-size: 11px;
       }
+      .file-input-control .input-group-btn .btn,
+      .file-input-control .input-group .form-control {
+        height: 34px;
+        line-height: 1.2;
+      }
+      .file-input-control .input-group-btn .btn {
+        display: inline-flex;
+        align-items: center;
+      }
+      .file-input-control .input-group .form-control {
+        padding-top: 6px;
+        padding-bottom: 6px;
+      }
     ")),
     h4(icon("upload"), "Data Input"),
     div(
@@ -91,12 +104,13 @@ mod_fileload_ui <- function(id) {
     ),
     tags$div(
       style = "font-size: 12px; color: #555; margin-top: 2px; margin-bottom: 8px;",
-      tags$p("This tool requires 3 files:", style = "margin: 0 0 4px 0;"),
+      tags$p("This tool requires 3 tsv files:", style = "margin: 0 0 4px 0;"),
       tags$ul(
         style = "margin: 0 0 0 18px; padding: 0;",
         tags$li("ASV/OTU Abundance Matrix from table.qza of QIIME2"),
         tags$li("Taxonomy table from taxonomy.qza of QIIME2"),
-        tags$li("Metadata table prepared manually by the user (see the example file)")
+        tags$li("Metadata table prepared manually by the user (see the example file)"),
+        tags$p("- The first column should contain sample IDs, and its column name must be 'SampleID'.")
       ),
       tags$p(
         tagList(

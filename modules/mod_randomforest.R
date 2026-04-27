@@ -39,17 +39,22 @@ mod_randomforest_ui <- function(id) {
         h4(icon("tree"), "Random Forest"),
         hr(),
         selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
-        selectInput(ns("primary_level"), "2. Primary level to include", choices = NULL),
-        selectInput(ns("outcome_var"), "3. Secondary grouping variable", choices = NULL),
+        checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
+        conditionalPanel(
+          condition = "input.use_subgroup",
+          ns = ns,
+          selectInput(ns("primary_level"), "Primary level to include", choices = NULL),
+          selectInput(ns("outcome_var"), "Secondary grouping variable", choices = NULL)
+        ),
         selectInput(
           ns("outcome_type"),
-          "4. Outcome type",
+          "2. Outcome type",
           choices = c("Auto", "Classification", "Regression"),
           selected = "Classification"
         ),
         selectizeInput(
           ns("outcome_levels"),
-          "5. Levels to include (optional)",
+          "3. Levels to include (optional)",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -57,36 +62,36 @@ mod_randomforest_ui <- function(id) {
             plugins = list("remove_button")
           )
         ),
-        selectInput(ns("shap_target_class"), "6. SHAP target class", choices = NULL),
+        selectInput(ns("shap_target_class"), "4. SHAP target class", choices = NULL),
         selectInput(
           ns("tax_level"),
-          "7. Taxonomic level",
+          "5. Taxonomic level",
           choices = c("ASV", "Genus", "Species"),
           selected = "Genus"
         ),
         selectInput(
           ns("transform_method"),
-          "8. Feature transform",
+          "6. Feature transform",
           choices = c("TSS", "CLR", "Presence/Absence", "log"),
           selected = "TSS"
         ),
-        numericInput(ns("prevalence_filter_pct"), "9. Feature prevalence cutoff (0-20%)", value = 5, min = 0, max = 20, step = 1),
-        sliderInput(ns("train_ratio"), "10. Train ratio", min = 0.6, max = 0.9, value = 0.8, step = 0.05),
+        numericInput(ns("prevalence_filter_pct"), "7. Feature prevalence cutoff (0-20%)", value = 5, min = 0, max = 20, step = 1),
+        sliderInput(ns("train_ratio"), "8. Train ratio", min = 0.6, max = 0.9, value = 0.8, step = 0.05),
         tags$details(
           style = "margin-bottom: 10px;",
           tags$summary("Advanced Options"),
           br(),
-          numericInput(ns("top_n_features"), "11. Top N features by mean abundance", value = 100, min = 10, max = 5000, step = 10),
-          numericInput(ns("ntree"), "12. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
-          numericInput(ns("mtry"), "13. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
+          numericInput(ns("top_n_features"), "9. Top N features by mean abundance", value = 100, min = 10, max = 5000, step = 10),
+          numericInput(ns("ntree"), "10. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
+          numericInput(ns("mtry"), "11. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
           selectInput(
             ns("validation_mode"),
-            "14. Validation mode",
+            "12. Validation mode",
             choices = c("Holdout split", "K-fold CV"),
             selected = "Holdout split"
           ),
-          numericInput(ns("cv_folds"), "15. K for K-fold CV", value = 5, min = 3, max = 10, step = 1),
-          numericInput(ns("seed"), "16. Random seed", value = 1234, min = 1, max = 999999, step = 1)
+          numericInput(ns("cv_folds"), "13. K for K-fold CV", value = 5, min = 3, max = 10, step = 1),
+          numericInput(ns("seed"), "14. Random seed", value = 1234, min = 1, max = 999999, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -374,6 +379,16 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       md <- data.frame(phyloseq::sample_data(ps_obj_filtered_raw()))
       resolve_meta_colname(input$outcome_var, colnames(md))
     })
+    observeEvent(input$use_subgroup, {
+      if (!isTRUE(input$use_subgroup)) {
+        if (!is.null(input$primary_level) && !identical(as.character(input$primary_level), "All")) {
+          updateSelectInput(session, "primary_level", selected = "All")
+        }
+        if (!is.null(input$outcome_var) && !identical(input$outcome_var, "None")) {
+          updateSelectInput(session, "outcome_var", selected = "None")
+        }
+      }
+    }, ignoreInit = TRUE)
     selected_sample_status <- reactive({
       req(ps_obj_filtered_raw(), input$group_var, input$primary_level, input$outcome_var)
       ps <- ps_obj_filtered_raw()
@@ -504,14 +519,18 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       }
       primary_level_choices <- c("All", primary_level_choices)
       current_primary_level <- input$primary_level
-      if (is.null(current_primary_level) || !current_primary_level %in% primary_level_choices) {
+      if (!isTRUE(input$use_subgroup)) {
+        current_primary_level <- "All"
+      } else if (is.null(current_primary_level) || !current_primary_level %in% primary_level_choices) {
         current_primary_level <- "All"
       }
       updateSelectInput(session, "primary_level", choices = primary_level_choices, selected = current_primary_level)
 
       current <- input$outcome_var
       choices_outcome <- c("None", vars)
-      if (is.null(current) || !current %in% choices_outcome) {
+      if (!isTRUE(input$use_subgroup)) {
+        current <- "None"
+      } else if (is.null(current) || !current %in% choices_outcome) {
         current <- "None"
       }
       updateSelectInput(session, "outcome_var", choices = choices_outcome, selected = current)

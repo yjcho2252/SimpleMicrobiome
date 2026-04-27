@@ -1,57 +1,176 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="980" height="260" viewBox="0 0 980 260" role="img" aria-label="SimpleMicrobiome analysis modules">
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="540" viewBox="0 0 980 540" role="img" aria-label="SimpleMicrobiome workflow overview">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f8fbff"/>
       <stop offset="100%" stop-color="#eef6ff"/>
     </linearGradient>
-    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="primary" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#0f4c92"/>
       <stop offset="100%" stop-color="#0e7490"/>
     </linearGradient>
+    <linearGradient id="secondary" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8f1ff"/>
+      <stop offset="100%" stop-color="#f6fbff"/>
+    </linearGradient>
+    <filter id="shadow" x="-8%" y="-12%" width="116%" height="124%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#143863" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#5d789c"/>
+    </marker>
     <style>
-      .title { font: 700 24px 'Segoe UI', Arial, sans-serif; fill: #0f3568; }
+      .title { font: 700 25px 'Segoe UI', Arial, sans-serif; fill: #0f3568; }
       .subtitle { font: 600 13px 'Segoe UI', Arial, sans-serif; fill: #355074; }
-      .label { font: 700 14px 'Segoe UI', Arial, sans-serif; fill: #ffffff; text-anchor: middle; }
-      .icon { stroke: #e8f4ff; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-      .dot { fill: #fef08a; }
+      .step-title { font: 700 15px 'Segoe UI', Arial, sans-serif; fill: #ffffff; text-anchor: middle; }
+      .step-body { font: 600 11px 'Segoe UI', Arial, sans-serif; fill: #eaf5ff; text-anchor: middle; }
+      .module-title { font: 700 14px 'Segoe UI', Arial, sans-serif; fill: #123b70; text-anchor: middle; }
+      .module-body { font: 600 10.5px 'Segoe UI', Arial, sans-serif; fill: #355074; text-anchor: middle; }
+      .output-title { font: 700 15px 'Segoe UI', Arial, sans-serif; fill: #0f3568; text-anchor: middle; }
+      .output-body { font: 600 11px 'Segoe UI', Arial, sans-serif; fill: #355074; text-anchor: middle; }
+      .line { stroke: #5d789c; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .branch { stroke: #9bb4d2; stroke-width: 1.8; fill: none; marker-end: url(#arrow); }
+      .icon { stroke: currentColor; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-light { color: #eaf5ff; }
+      .icon-dark { color: #0f4c92; }
+      .pill { fill: #fef08a; }
     </style>
   </defs>
 
-  <rect x="1" y="1" width="978" height="258" rx="16" fill="url(#bg)" stroke="#cfe0f5"/>
-  <text x="30" y="44" class="title">Analysis Modules</text>
-  <text x="30" y="68" class="subtitle">Choose one or more modules based on your analysis goal.</text>
+  <rect x="1" y="1" width="978" height="538" rx="18" fill="url(#bg)" stroke="#cfe0f5"/>
 
-  <g transform="translate(40,94)">
-    <rect width="210" height="130" rx="16" fill="url(#card)"/>
-    <path d="M44 86l30-24 24 16 30-34" class="icon"/>
-    <circle cx="44" cy="86" r="3" class="dot"/>
-    <circle cx="74" cy="62" r="3" class="dot"/>
-    <circle cx="98" cy="78" r="3" class="dot"/>
-    <circle cx="128" cy="44" r="3" class="dot"/>
-    <text x="105" y="114" class="label">Visualization</text>
+  <text x="36" y="45" class="title">SimpleMicrobiome Workflow</text>
+  <text x="36" y="69" class="subtitle">From microbiome tables to publication-ready downstream analyses in one GUI workflow.</text>
+
+  <g filter="url(#shadow)">
+    <g transform="translate(42,104)">
+      <rect width="180" height="96" rx="14" fill="url(#primary)"/>
+      <g transform="translate(76,17)" class="icon-light">
+        <path class="icon" d="M8 8h32v42H8z"/>
+        <path class="icon" d="M16 18h16M16 28h16M16 38h10"/>
+      </g>
+      <text x="90" y="68" class="step-title">Data Loading</text>
+      <text x="90" y="84" class="step-body">ASV/OTU, taxonomy, metadata</text>
+    </g>
+
+    <g transform="translate(286,104)">
+      <rect width="180" height="96" rx="14" fill="url(#primary)"/>
+      <g transform="translate(74,17)" class="icon-light">
+        <path class="icon" d="M8 14h36"/>
+        <path class="icon" d="M14 24h24"/>
+        <path class="icon" d="M20 34h12"/>
+        <path class="icon" d="M26 34v14"/>
+      </g>
+      <text x="90" y="68" class="step-title">Preprocessing</text>
+      <text x="90" y="84" class="step-body">sample and taxa filtering</text>
+    </g>
+
+    <g transform="translate(530,104)">
+      <rect width="180" height="96" rx="14" fill="url(#primary)"/>
+      <g transform="translate(73,16)" class="icon-light">
+        <path class="icon" d="M8 42h38"/>
+        <path class="icon" d="M14 42V24"/>
+        <path class="icon" d="M27 42V14"/>
+        <path class="icon" d="M40 42V30"/>
+      </g>
+      <text x="90" y="68" class="step-title">Analysis Modules</text>
+      <text x="90" y="84" class="step-body">choose by analysis goal</text>
+    </g>
+
+    <g transform="translate(774,104)">
+      <rect width="164" height="96" rx="14" fill="url(#primary)"/>
+      <g transform="translate(64,17)" class="icon-light">
+        <path class="icon" d="M10 40h34"/>
+        <path class="icon" d="M14 24l10 9 18-20"/>
+        <path class="icon" d="M12 12h34v34H12z"/>
+      </g>
+      <text x="82" y="68" class="step-title">Outputs</text>
+      <text x="82" y="84" class="step-body">plots, tables, citations</text>
+    </g>
   </g>
 
-  <g transform="translate(275,94)">
-    <rect width="210" height="130" rx="16" fill="url(#card)"/>
-    <circle cx="105" cy="68" r="28" class="icon"/>
-    <path d="M105 40v56M77 68h56" class="icon"/>
-    <text x="105" y="114" class="label">Diversity Analysis</text>
+  <path d="M222 152H280" class="line"/>
+  <path d="M466 152H524" class="line"/>
+  <path d="M710 152H768" class="line"/>
+
+  <g transform="translate(326,234)">
+    <rect x="0" y="0" width="330" height="34" rx="17" fill="#dcecff" stroke="#b8d1f2"/>
+    <text x="165" y="22" class="subtitle" text-anchor="middle">Integrated downstream analysis modules</text>
+  </g>
+  <path d="M620 200V228" class="line"/>
+
+  <g filter="url(#shadow)">
+    <g transform="translate(42,306)">
+      <rect width="170" height="94" rx="14" fill="url(#secondary)" stroke="#c5d8f0"/>
+      <g transform="translate(67,13)" class="icon-dark">
+        <path class="icon" d="M8 42V18M22 42V10M36 42V26"/>
+        <path class="icon" d="M4 42h38"/>
+      </g>
+      <text x="85" y="64" class="module-title">Taxa Profiles</text>
+      <text x="85" y="80" class="module-body">bar plot and comparison</text>
+    </g>
+
+    <g transform="translate(232,306)">
+      <rect width="170" height="94" rx="14" fill="url(#secondary)" stroke="#c5d8f0"/>
+      <g transform="translate(66,13)" class="icon-dark">
+        <circle class="icon" cx="24" cy="25" r="18"/>
+        <path class="icon" d="M24 7v36M6 25h36"/>
+      </g>
+      <text x="85" y="64" class="module-title">Diversity</text>
+      <text x="85" y="80" class="module-body">alpha and beta diversity</text>
+    </g>
+
+    <g transform="translate(422,306)">
+      <rect width="170" height="94" rx="14" fill="url(#secondary)" stroke="#c5d8f0"/>
+      <g transform="translate(64,14)" class="icon-dark">
+        <path class="icon" d="M8 40h38"/>
+        <path class="icon" d="M14 40V18M27 40V8M40 40V27"/>
+        <path class="icon" d="M12 16h6M25 6h6M38 25h6"/>
+      </g>
+      <text x="85" y="64" class="module-title">Differential</text>
+      <text x="85" y="80" class="module-body">ANCOM-BC2, MaAsLin2, RF</text>
+    </g>
+
+    <g transform="translate(612,306)">
+      <rect width="170" height="94" rx="14" fill="url(#secondary)" stroke="#c5d8f0"/>
+      <g transform="translate(62,15)" class="icon-dark">
+        <circle cx="12" cy="18" r="4" fill="#0f4c92"/>
+        <circle cx="34" cy="10" r="4" fill="#0f4c92"/>
+        <circle cx="50" cy="30" r="4" fill="#0f4c92"/>
+        <circle cx="26" cy="42" r="4" fill="#0f4c92"/>
+        <path class="icon" d="M12 18L34 10L50 30L26 42L12 18M34 10L26 42"/>
+      </g>
+      <text x="85" y="64" class="module-title">Network</text>
+      <text x="85" y="80" class="module-body">SparCC and SpiecEasi</text>
+    </g>
+
+    <g transform="translate(802,306)">
+      <rect width="136" height="94" rx="14" fill="url(#secondary)" stroke="#c5d8f0"/>
+      <g transform="translate(45,14)" class="icon-dark">
+        <path class="icon" d="M8 8h32v32H8z"/>
+        <path class="icon" d="M8 19h32M8 30h32M19 8v32M30 8v32"/>
+      </g>
+      <text x="68" y="64" class="module-title">Association</text>
+      <text x="68" y="80" class="module-body">heatmap and biplot</text>
+    </g>
   </g>
 
-  <g transform="translate(510,94)">
-    <rect width="210" height="130" rx="16" fill="url(#card)"/>
-    <path d="M52 88V58M78 88V46M104 88V64M130 88V52M156 88V70" class="icon"/>
-    <text x="105" y="114" class="label">Differential Abundance</text>
+  <path d="M491 268V286" class="branch"/>
+  <path d="M491 286H127V300" class="branch"/>
+  <path d="M491 286H317V300" class="branch"/>
+  <path d="M491 286H507V300" class="branch"/>
+  <path d="M491 286H697V300" class="branch"/>
+  <path d="M491 286H870V300" class="branch"/>
+
+  <g transform="translate(120,444)">
+    <rect width="740" height="52" rx="14" fill="#ffffff" stroke="#c5d8f0"/>
+    <circle cx="32" cy="26" r="10" class="pill"/>
+    <text x="60" y="23" class="output-title" text-anchor="start">Export and Report</text>
+    <text x="60" y="39" class="output-body" text-anchor="start">Download figures and result tables, then check package and method references in Citation.</text>
   </g>
 
-  <g transform="translate(745,94)">
-    <rect width="190" height="130" rx="16" fill="url(#card)"/>
-    <circle cx="52" cy="56" r="6" class="dot"/>
-    <circle cx="95" cy="42" r="6" class="dot"/>
-    <circle cx="138" cy="58" r="6" class="dot"/>
-    <circle cx="95" cy="84" r="6" class="dot"/>
-    <path d="M52 56L95 42L138 58L95 84Z" class="icon"/>
-    <path d="M52 56L95 84M95 42L95 84" class="icon"/>
-    <text x="95" y="114" class="label">Network Analysis</text>
-  </g>
+  <path d="M127 400V430H468V438" class="branch"/>
+  <path d="M317 400V430H468V438" class="branch"/>
+  <path d="M507 400V438" class="branch"/>
+  <path d="M697 400V430H512V438" class="branch"/>
+  <path d="M870 400V430H512V438" class="branch"/>
 </svg>

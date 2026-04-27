@@ -52,13 +52,18 @@ mod_ancom_ui <- function(id) {
 
         selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
 
-        selectInput(ns("primary_level"), "2. Primary level to include", choices = NULL),
+        checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
 
-        selectInput(ns("secondary_var"), "3. Secondary grouping variable", choices = NULL),
+        conditionalPanel(
+          condition = "input.use_subgroup",
+          ns = ns,
+          selectInput(ns("primary_level"), "Primary level to include", choices = NULL),
+          selectInput(ns("secondary_var"), "Secondary grouping variable", choices = NULL)
+        ),
 
         selectizeInput(
           ns("group_levels"),
-          "4. Comparison groups (levels)",
+          "2. Comparison groups (levels)",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -67,19 +72,19 @@ mod_ancom_ui <- function(id) {
           )
         ),
 
-        selectInput(ns("reference_level"), "5. Reference level", choices = NULL),
+        selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
 
-        selectInput(ns("tax_level"), "6. Taxonomic level",
+        selectInput(ns("tax_level"), "4. Taxonomic level",
                     choices = c("ASV", "Genus", "Species"), selected = "Genus"),
 
-        selectInput(ns("volcano_y_axis"), "7. Statistical metric",
+        selectInput(ns("volcano_y_axis"), "5. Statistical metric",
                     choices = c("q-value (FDR)" = "q_val",
                                 "p-value" = "p_val"),
                     selected = "q_val"),
 
         numericInput(
           ns("prevalence_filter_pct"),
-          "8. Prevalence filter (0-20%)",
+          "6. Prevalence filter (0-20%)",
           value = 5,
           min = 0,
           max = 20,
@@ -91,7 +96,7 @@ mod_ancom_ui <- function(id) {
           br(),
           selectizeInput(
             ns("fix_covariates"),
-            "9. Additional covariates for fix_formula (optional)",
+            "7. Additional covariates for fix_formula (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -101,7 +106,7 @@ mod_ancom_ui <- function(id) {
           ),
           selectizeInput(
             ns("fix_interactions"),
-            "10. Interaction terms for fix_formula (optional)",
+            "8. Interaction terms for fix_formula (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -111,7 +116,7 @@ mod_ancom_ui <- function(id) {
           ),
           selectizeInput(
             ns("rand_covariates"),
-            "11. Random-effect grouping variables (optional)",
+            "9. Random-effect grouping variables (optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -264,13 +269,28 @@ mod_ancom_server <- function(id, ps_obj) {
       resolve_meta_colname(input$group_var, colnames(meta_df))
     })
     secondary_var_resolved <- reactive({
-      req(ps_obj(), input$secondary_var)
+      req(ps_obj())
+      if (!isTRUE(input$use_subgroup)) {
+        return(NULL)
+      }
+      req(input$secondary_var)
       if (identical(input$secondary_var, "None")) {
         return(NULL)
       }
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
       resolve_meta_colname(input$secondary_var, colnames(meta_df))
     })
+
+    observeEvent(input$use_subgroup, {
+      if (!isTRUE(input$use_subgroup)) {
+        if (!is.null(input$primary_level) && !identical(as.character(input$primary_level), "All")) {
+          updateSelectInput(session, "primary_level", selected = "All")
+        }
+        if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
+          updateSelectInput(session, "secondary_var", selected = "None")
+        }
+      }
+    }, ignoreInit = TRUE)
     
     build_interaction_choices <- function(group_var, all_metadata_cols) {
       if (is.null(group_var) || !nzchar(group_var)) {

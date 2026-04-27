@@ -43,59 +43,64 @@ mod_heatmap_ui <- function(id) {
           choices = character(0),
           selected = NULL
         ),
-        selectInput(
-          ns("primary_level"),
-          "2. Primary level to include",
-          choices = character(0),
-          selected = NULL
-        ),
-        selectInput(
-          ns("secondary_var"),
-          "3. Secondary grouping variable",
-          choices = c("None"),
-          selected = "None"
+        checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
+        conditionalPanel(
+          condition = "input.use_subgroup",
+          ns = ns,
+          selectInput(
+            ns("primary_level"),
+            "Primary level to include",
+            choices = character(0),
+            selected = NULL
+          ),
+          selectInput(
+            ns("secondary_var"),
+            "Secondary grouping variable",
+            choices = c("None"),
+            selected = "None"
+          )
         ),
         selectInput(
           ns("group_type"),
-          "4. Group type",
+          "2. Group type",
           choices = c("Auto" = "auto", "Continuous" = "continuous", "Categorical" = "categorical"),
           selected = "auto"
         ),
         selectInput(
           ns("tax_level"),
-          "5. Taxonomic level",
+          "3. Taxonomic level",
           choices = c("ASV", "Genus", "Species"),
           selected = "Genus"
         ),
         selectInput(
-          ns("transform_method"),
-          "6. Data transform",
-          choices = c("TSS" = "tss", "CLR" = "clr"),
-          selected = "clr"
-        ),
-        selectInput(
           ns("association_mode"),
-          "7. Association mode",
+          "4. Association mode",
           choices = c("Abundance-based" = "abundance", "Prevalence-based (binary)" = "prevalence"),
           selected = "abundance"
         ),
         selectInput(
-          ns("corr_method"),
-          "8. Correlation method",
-          choices = c("Pearson" = "pearson", "Spearman" = "spearman"),
-          selected = "pearson"
-        ),
-        selectInput(
           ns("value_scale"),
-          "9. Heatmap value scale",
+          "5. Heatmap value scale",
           choices = c("Raw" = "raw", "Z-score (by taxa)" = "zscore"),
           selected = "raw"
         ),
         tags$details(
           tags$summary("Advanced options"),
+          selectInput(
+            ns("transform_method"),
+            "Data transform",
+            choices = c("TSS" = "tss", "CLR" = "clr"),
+            selected = "clr"
+          ),
+          selectInput(
+            ns("corr_method"),
+            "Correlation method",
+            choices = c("Pearson" = "pearson", "Spearman" = "spearman"),
+            selected = "pearson"
+          ),
           numericInput(
             ns("prevalence_filter_pct"),
-            "10. Prevalence filter (%)",
+            "Prevalence filter (%)",
             value = 10,
             min = 0,
             max = 100,
@@ -103,7 +108,7 @@ mod_heatmap_ui <- function(id) {
           ),
           numericInput(
             ns("max_taxa"),
-            "11. Max taxa",
+            "Max taxa",
             value = 30,
             min = 10,
             max = 300,
@@ -124,7 +129,7 @@ mod_heatmap_ui <- function(id) {
           numericInput(ns("q_cutoff"), "FDR cutoff (q)", value = 0.05, min = 0.0001, max = 1, step = 0.01)
         ),
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Cell Size"),
+        h4(icon("sliders"), "Plot Dimensions"),
         numericInput(ns("cell_width"), "Cell width (px)", value = 30, min = 6, max = 80, step = 1),
         numericInput(ns("cell_height"), "Cell height (px)", value = 10, min = 6, max = 80, step = 1),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
@@ -264,6 +269,28 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       as.data.frame(sd, stringsAsFactors = FALSE)
     })
 
+    secondary_var_resolved <- reactive({
+      meta_df <- metadata_df()
+      if (!isTRUE(input$use_subgroup)) {
+        return(NULL)
+      }
+      if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) {
+        return(NULL)
+      }
+      resolve_meta_colname(input$secondary_var, colnames(meta_df))
+    })
+
+    observeEvent(input$use_subgroup, {
+      if (!isTRUE(input$use_subgroup)) {
+        if (!is.null(input$primary_level) && !identical(as.character(input$primary_level), "All")) {
+          updateSelectInput(session, "primary_level", selected = "All")
+        }
+        if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
+          updateSelectInput(session, "secondary_var", selected = "None")
+        }
+      }
+    }, ignoreInit = TRUE)
+
     observe({
       meta_df <- metadata_df()
       candidate_cols <- setdiff(colnames(meta_df), "SampleID")
@@ -291,7 +318,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
 
       secondary_choices <- if (!is.null(selected_val) && nzchar(selected_val)) setdiff(candidate_cols, selected_val) else candidate_cols
       selected_secondary <- isolate(input$secondary_var)
-      if (is.null(selected_secondary) || !selected_secondary %in% c("None", secondary_choices)) {
+      if (!isTRUE(input$use_subgroup)) {
+        selected_secondary <- "None"
+      } else if (is.null(selected_secondary) || !selected_secondary %in% c("None", secondary_choices)) {
         selected_secondary <- "None"
       }
       updateSelectInput(session, "secondary_var", choices = c("None" = "None", secondary_choices), selected = selected_secondary)
@@ -511,14 +540,15 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         validate(
           need(input$group_var %in% colnames(meta_df), "Selected group variable is not available in metadata.")
         )
-        effective_group_var <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) input$secondary_var else input$group_var
+        current_secondary_var <- secondary_var_resolved()
+        effective_group_var <- if (!is.null(current_secondary_var)) current_secondary_var else input$group_var
         validate(
           need(effective_group_var %in% colnames(meta_df), "Selected secondary/primary grouping variable is not available in metadata.")
         )
         group_vec <- meta_df[[effective_group_var]]
         names(group_vec) <- rownames(meta_df)
         group_vec <- group_vec[sample_ids]
-        if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
+        if (!is.null(current_secondary_var)) {
           primary_vec <- meta_df[[input$group_var]]
           names(primary_vec) <- rownames(meta_df)
           primary_vec <- primary_vec[sample_ids]
@@ -987,8 +1017,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       payload <- corr_payload()
       primary_group_label <- if (is.null(input$group_var) || !nzchar(input$group_var)) "(Not selected)" else input$group_var
       primary_level_label <- if (is.null(input$primary_level) || !nzchar(input$primary_level)) "(All / Not selected)" else as.character(input$primary_level)
-      secondary_group_label <- if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) "(None)" else input$secondary_var
-      analysis_scope_label <- if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) {
+      current_secondary_var <- secondary_var_resolved()
+      secondary_group_label <- if (is.null(current_secondary_var)) "(None)" else current_secondary_var
+      analysis_scope_label <- if (is.null(current_secondary_var)) {
         "Primary group is used directly (no primary-level prefilter)."
       } else {
         paste0(
@@ -1066,7 +1097,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           if (identical(analysis_target(), "taxa_group")) {
             paste0(
               "Group variable: ",
-              if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) input$secondary_var else input$group_var
+              if (!is.null(current_secondary_var)) current_secondary_var else input$group_var
             )
           } else NULL
         ),
@@ -1134,8 +1165,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       payload <- tryCatch(corr_payload(), error = function(e) NULL)
       assoc_type_label <- if (!is.null(payload) && "assoc_type" %in% names(payload)) payload$assoc_type else "N/A"
       sig_note_label <- if (!is.null(payload) && "sig_note" %in% names(payload)) payload$sig_note else "N/A"
-      group_label <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
-        input$secondary_var
+      current_secondary_var <- secondary_var_resolved()
+      group_label <- if (!is.null(current_secondary_var)) {
+        current_secondary_var
       } else if (is.null(input$group_var) || !nzchar(input$group_var)) {
         "selected group variable"
       } else {

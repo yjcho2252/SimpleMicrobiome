@@ -32,6 +32,12 @@ mod_biplot_ui <- function(id) {
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
     ")),
+    tags$style(HTML(paste0(
+      "#", ns("selected_taxa"), "-selectized::placeholder { font-size: 10px; }",
+      "#", ns("selected_taxa"), "-selectized::-webkit-input-placeholder { font-size: 10px; }",
+      "#", ns("selected_taxa"), "-selectized::-moz-placeholder { font-size: 10px; }",
+      "#", ns("selected_taxa"), "-selectized:-ms-input-placeholder { font-size: 10px; }"
+    ))),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -50,9 +56,11 @@ mod_biplot_ui <- function(id) {
           choices = c("Bray-Curtis" = "bray", "Aitchison" = "aitchison"),
           selected = "bray"
         ),
+        hr(),
+        h4(icon("dna"), "Taxa Settings"),
         numericInput(
           ns("prevalence_filter_pct"),
-          "4. Prevalence filter (%)",
+          "Prevalence filter (%)",
           value = 10,
           min = 0,
           max = 100,
@@ -60,7 +68,7 @@ mod_biplot_ui <- function(id) {
         ),
         numericInput(
           ns("max_taxa"),
-          "5. Max taxa",
+          "Max taxa",
           value = 100,
           min = 10,
           max = 500,
@@ -68,7 +76,7 @@ mod_biplot_ui <- function(id) {
         ),
         numericInput(
           ns("top_taxa_vectors"),
-          "6. Top taxa vectors",
+          "Top taxa vectors",
           value = 15,
           min = 0,
           max = 100,
@@ -81,21 +89,21 @@ mod_biplot_ui <- function(id) {
           selected = NULL,
           multiple = TRUE,
           options = list(
-            placeholder = "If selected, these taxa are drawn instead of Top taxa vectors",
+            placeholder = "Selected taxa are drawn instead of top taxa vectors",
             plugins = list("remove_button")
           )
         ),
+        hr(),
+        h4(icon("up-right-and-down-left-from-center"), "Plot Settings"),
+        numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
+        numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (point size):", value = 3, min = 0.5, max = 10, step = 0.5),
+        checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_taxa_vectors"), "Show taxa vectors", value = TRUE),
         checkboxInput(ns("show_group_vectors"), "Show group vectors", value = TRUE),
         checkboxInput(ns("show_group_centroid"), "Show group centroids", value = TRUE),
         checkboxInput(ns("show_sample_names"), "Show sample names", value = FALSE),
-        numericInput(ns("dot_size"), "Dot Size (point size):", value = 3, min = 0.5, max = 10, step = 0.5),
-        checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
-        hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         actionButton(ns("run_biplot"), "Run Biplot", class = "btn-danger", style = "font-size: 12px;"),
         hr(),
         h5(icon("download"), "Download"),

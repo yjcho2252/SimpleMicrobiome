@@ -256,58 +256,124 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         )
 
       if (plot_type == "barplot") {
-        if (use_pattern) {
-          summary_group_cols <- c("Alpha_Index", x_axis_col)
-          if (is_secondary) {
-            summary_group_cols <- c(summary_group_cols, primary_col)
-          }
-          summary_df <- alpha_long %>%
-            dplyr::group_by(dplyr::across(dplyr::all_of(summary_group_cols))) %>%
-            dplyr::summarise(
-              mean_val = mean(Value, na.rm = TRUE),
-              se_val = stats::sd(Value, na.rm = TRUE) / sqrt(dplyr::n()),
-              .groups = "drop"
-            )
-          summary_df$se_val[!is.finite(summary_df$se_val)] <- 0
+        facet_group_cols <- c("Alpha_Index")
+        if (is_secondary) {
+          facet_group_cols <- c(facet_group_cols, primary_col)
+        }
+        # facet_grid(Alpha_Index ~ PrimaryGroup, scales = "free_y") shares y-scale by row.
+        # Use row-level minima so bar baselines align with the effective y-domain.
+        scale_group_cols <- c("Alpha_Index")
+        summary_group_cols <- c(facet_group_cols, x_axis_col)
+        summary_df <- alpha_long %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(summary_group_cols))) %>%
+          dplyr::summarise(
+            mean_val = mean(Value, na.rm = TRUE),
+            se_val = stats::sd(Value, na.rm = TRUE) / sqrt(dplyr::n()),
+            .groups = "drop"
+          )
+        scale_baseline_df <- alpha_long %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(scale_group_cols))) %>%
+          dplyr::summarise(
+            scale_min = {
+              vals <- Value[is.finite(Value)]
+              if (length(vals) == 0) 0 else min(vals, na.rm = TRUE)
+            },
+            .groups = "drop"
+          )
+        summary_df <- dplyr::left_join(summary_df, scale_baseline_df, by = scale_group_cols)
+        summary_df$mean_val[!is.finite(summary_df$mean_val)] <- NA_real_
+        summary_df$se_val[!is.finite(summary_df$se_val)] <- 0
+        summary_df$scale_min[!is.finite(summary_df$scale_min)] <- 0
+        summary_df <- summary_df[is.finite(summary_df$mean_val), , drop = FALSE]
 
+        if (use_pattern) {
+          if ("geom_crossbar_pattern" %in% getNamespaceExports("ggpattern")) {
+            p <- p +
+              ggpattern::geom_crossbar_pattern(
+                data = summary_df,
+                mapping = ggplot2::aes(
+                  x = .data[[x_axis_col]],
+                  y = mean_val,
+                  ymin = scale_min,
+                  ymax = mean_val,
+                  fill = .data[[x_axis_col]],
+                  pattern = .data[[x_axis_col]],
+                  pattern_angle = .data[[x_axis_col]]
+                ),
+                inherit.aes = FALSE,
+                color = "black",
+                linewidth = 0.25,
+                alpha = 0.85,
+                width = 0.7,
+                fatten = 0,
+                pattern_fill = "white",
+                pattern_colour = "#222222",
+                pattern_density = 0.01,
+                pattern_spacing = 0.03
+              ) +
+              ggpattern::scale_pattern_manual(values = pattern_values, drop = FALSE) +
+              ggpattern::scale_pattern_angle_manual(values = pattern_angle_values, drop = FALSE) +
+              ggplot2::guides(pattern = "none", pattern_angle = "none")
+          } else {
+            p <- p +
+              ggplot2::geom_crossbar(
+                data = summary_df,
+                mapping = ggplot2::aes(
+                  x = .data[[x_axis_col]],
+                  y = mean_val,
+                  ymin = scale_min,
+                  ymax = mean_val,
+                  fill = .data[[x_axis_col]]
+                ),
+                inherit.aes = FALSE,
+                alpha = 0.8,
+                width = 0.7,
+                color = "#333333",
+                linewidth = 0.25,
+                fatten = 0
+              )
+          }
           p <- p +
-            ggpattern::geom_col_pattern(
-              data = summary_df,
-              mapping = ggplot2::aes(
-                x = .data[[x_axis_col]],
-                y = mean_val,
-                fill = .data[[x_axis_col]],
-                pattern = .data[[x_axis_col]],
-                pattern_angle = .data[[x_axis_col]]
-              ),
-              inherit.aes = FALSE,
-              color = "black",
-              linewidth = 0.25,
-              alpha = 0.85,
-              width = 0.7,
-              pattern_fill = "white",
-              pattern_colour = "#222222",
-              pattern_density = 0.01,
-              pattern_spacing = 0.03
-            ) +
             ggplot2::geom_errorbar(
               data = summary_df,
               mapping = ggplot2::aes(
                 x = .data[[x_axis_col]],
-                ymin = pmax(mean_val - se_val, 0),
+                ymin = pmax(mean_val - se_val, scale_min),
                 ymax = mean_val + se_val
               ),
               inherit.aes = FALSE,
               width = 0.2,
               linewidth = 0.4
-            ) +
-            ggpattern::scale_pattern_manual(values = pattern_values, drop = FALSE) +
-            ggpattern::scale_pattern_angle_manual(values = pattern_angle_values, drop = FALSE) +
-            ggplot2::guides(pattern = "none", pattern_angle = "none")
+            )
         } else {
           p <- p +
-            ggplot2::stat_summary(fun = mean, geom = "col", alpha = 0.8, width = 0.7, color = "black", linewidth = 0.25) +
-            ggplot2::stat_summary(fun.data = ggplot2::mean_se, geom = "errorbar", width = 0.2, linewidth = 0.4)
+            ggplot2::geom_crossbar(
+              data = summary_df,
+              mapping = ggplot2::aes(
+                x = .data[[x_axis_col]],
+                y = mean_val,
+                ymin = scale_min,
+                ymax = mean_val,
+                fill = .data[[x_axis_col]]
+              ),
+              inherit.aes = FALSE,
+              alpha = 0.8,
+              width = 0.7,
+              color = "#333333",
+              linewidth = 0.25,
+              fatten = 0
+            ) +
+            ggplot2::geom_errorbar(
+              data = summary_df,
+              mapping = ggplot2::aes(
+                x = .data[[x_axis_col]],
+                ymin = pmax(mean_val - se_val, scale_min),
+                ymax = mean_val + se_val
+              ),
+              inherit.aes = FALSE,
+              width = 0.2,
+              linewidth = 0.4
+            )
         }
         p <- p + ggplot2::geom_point(
           position = ggplot2::position_jitter(width = 0.1, height = 0),

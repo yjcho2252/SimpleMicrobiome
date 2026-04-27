@@ -51,7 +51,7 @@ mod_preprocessing_ui <- function(id) {
           hr(),
           actionButton(ns("reset_selection"), "Select All", 
                        icon = icon("sync"), class = "btn-secondary btn-sm", style = "font-size: 12px;", width = "100%"),
-          br(),
+          div(style = "height: 4px;"),
           actionButton(
             ns("unselect_all"),
             "Unselect All",

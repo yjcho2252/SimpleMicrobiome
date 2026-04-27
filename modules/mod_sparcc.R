@@ -48,12 +48,17 @@ mod_sparcc_ui <- function(id) {
         width = 2,
         h4(icon("diagram-project"), "SparCC"),
         hr(),
-        selectInput(ns("group_var"), "1. Primary grouping variable", choices = c("All"), selected = "All"),
-        selectInput(ns("primary_level"), "2. Primary level to include", choices = character(0), selected = NULL),
-        selectInput(ns("secondary_var"), "3. Secondary grouping variable", choices = c("None"), selected = "None"),
+        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
+        checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
+        conditionalPanel(
+          condition = "input.use_subgroup",
+          ns = ns,
+          selectInput(ns("primary_level"), "Primary level to include", choices = NULL),
+          selectInput(ns("secondary_var"), "Secondary grouping variable", choices = c("None"), selected = "None")
+        ),
         selectizeInput(
           ns("group_levels"),
-          "4. Group levels",
+          "2. Group levels",
           choices = NULL,
           selected = NULL,
           multiple = TRUE,
@@ -64,20 +69,20 @@ mod_sparcc_ui <- function(id) {
         ),
         selectInput(
           ns("analysis_mode"),
-          "5. Analysis mode",
+          "3. Analysis mode",
           choices = c("Single network", "Compare two groups"),
           selected = "Single network"
         ),
-        selectInput(ns("tax_level"), "6. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
-        numericInput(ns("prevalence_filter_pct"), "7. Prevalence filter (%)", value = 10, min = 0, max = 100, step = 1),
-        selectInput(ns("node_size_by"), "8. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
-        selectInput(ns("node_color_by"), "9. Node color", choices = c("None"), selected = "None"),
+        selectInput(ns("tax_level"), "4. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
+        numericInput(ns("prevalence_filter_pct"), "5. Prevalence filter (%)", value = 10, min = 0, max = 100, step = 1),
+        selectInput(ns("node_size_by"), "6. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
+        selectInput(ns("node_color_by"), "7. Node color", choices = c("None"), selected = "None"),
         tags$details(
           style = "margin-bottom: 8px;",
           tags$summary("Advanced Options"),
-          numericInput(ns("min_edge_weight"), "10. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
-          numericInput(ns("max_taxa"), "11. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
-          numericInput(ns("seed"), "12. Seed", value = 1001, min = 1, step = 1)
+          numericInput(ns("min_edge_weight"), "8. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
+          numericInput(ns("max_taxa"), "9. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
+          numericInput(ns("seed"), "10. Seed", value = 1001, min = 1, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
@@ -217,62 +222,126 @@ mod_sparcc_server <- function(id, ps_obj) {
       ps
     }
 
-    group_levels_choices_cache <- reactiveVal(character(0))
+    resolve_meta_colname <- function(requested, available) {
+      if (is.null(requested) || is.null(available) || length(available) == 0) {
+        return(requested)
+      }
+      if (requested %in% available) {
+        return(requested)
+      }
+      matched <- available[make.names(available) == make.names(requested)]
+      if (length(matched) > 0) {
+        return(matched[1])
+      }
+      requested
+    }
+
+    group_var_resolved <- reactive({
+      req(ps_obj(), input$group_var)
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      resolve_meta_colname(input$group_var, colnames(meta_df))
+    })
+
+    secondary_var_selected <- reactive({
+      req(ps_obj())
+      if (!isTRUE(input$use_subgroup)) {
+        return(NULL)
+      }
+      req(input$secondary_var)
+      if (identical(input$secondary_var, "None")) {
+        return(NULL)
+      }
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      resolve_meta_colname(input$secondary_var, colnames(meta_df))
+    })
+
+    observeEvent(input$use_subgroup, {
+      if (!isTRUE(input$use_subgroup)) {
+        if (!is.null(input$primary_level) && !identical(as.character(input$primary_level), "All")) {
+          updateSelectInput(session, "primary_level", selected = "All")
+        }
+        if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
+          updateSelectInput(session, "secondary_var", selected = "None")
+        }
+      }
+    }, ignoreInit = TRUE)
+
+    observeEvent(ps_obj(), {
+      req(ps_obj())
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      meta_cols <- colnames(meta_df)
+      candidate_groups <- setdiff(meta_cols, "SampleID")
+      group_choices <- candidate_groups[vapply(candidate_groups, function(col) {
+        level_values <- as.character(meta_df[[col]])
+        level_values <- level_values[!is.na(level_values) & nzchar(level_values)]
+        length(unique(level_values)) <= 10
+      }, logical(1))]
+      selected_group <- if (length(group_choices) > 0) group_choices[1] else NULL
+      updateSelectInput(session, "group_var", choices = group_choices, selected = selected_group)
+    }, ignoreNULL = FALSE)
+
+    observeEvent(list(ps_obj(), input$group_var), {
+      req(ps_obj(), input$group_var)
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      primary_var <- group_var_resolved()
+      validate(
+        need(primary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
+      )
+
+      level_choices <- sort(unique(as.character(meta_df[[primary_var]])))
+      level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
+      level_choices <- c("All", level_choices)
+      selected_primary_level <- isolate(input$primary_level)
+      if (is.null(selected_primary_level) || !selected_primary_level %in% level_choices) {
+        selected_primary_level <- "All"
+      }
+      updateSelectInput(session, "primary_level", choices = level_choices, selected = selected_primary_level)
+
+      secondary_choices <- setdiff(colnames(meta_df), c("SampleID", primary_var))
+      selected_secondary <- isolate(input$secondary_var)
+      if (is.null(selected_secondary) || (!selected_secondary %in% c("None", secondary_choices))) {
+        selected_secondary <- "None"
+      }
+      updateSelectInput(
+        session,
+        "secondary_var",
+        choices = c("None" = "None", secondary_choices),
+        selected = selected_secondary
+      )
+    }, ignoreNULL = FALSE)
 
     observeEvent(list(ps_obj(), input$group_var, input$primary_level, input$secondary_var), {
-      req(ps_obj())
-      ps <- ps_obj()
-
-      group_choices <- "All"
-      if (!is.null(phyloseq::sample_data(ps, errorIfNULL = FALSE))) {
-        group_choices <- c("All", colnames(as.data.frame(phyloseq::sample_data(ps))))
-      }
-      selected_group <- if (!is.null(input$group_var) && input$group_var %in% group_choices) input$group_var else "All"
-      updateSelectInput(session, "group_var", choices = group_choices, selected = selected_group)
-
-      level_choices <- character(0)
-      secondary_choices <- "None"
-      if (selected_group != "All" && !is.null(phyloseq::sample_data(ps, errorIfNULL = FALSE))) {
-        sd_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
-        if (selected_group %in% colnames(sd_df)) {
-          primary_level_choices <- unique(as.character(sd_df[[selected_group]]))
-          primary_level_choices <- sort(primary_level_choices[!is.na(primary_level_choices) & primary_level_choices != ""])
-          selected_primary_level <- if (!is.null(input$primary_level) && input$primary_level %in% primary_level_choices) input$primary_level else if (length(primary_level_choices) > 0) primary_level_choices[1] else NULL
-          updateSelectInput(session, "primary_level", choices = primary_level_choices, selected = selected_primary_level)
-
-          secondary_choices <- c("None", setdiff(colnames(sd_df), c("SampleID", selected_group)))
-          selected_secondary <- if (!is.null(input$secondary_var) && input$secondary_var %in% secondary_choices) input$secondary_var else "None"
-          updateSelectInput(session, "secondary_var", choices = secondary_choices, selected = selected_secondary)
-
-          if (identical(selected_secondary, "None")) {
-            level_choices <- primary_level_choices
-          } else if (!is.null(selected_primary_level) && selected_secondary %in% colnames(sd_df)) {
-            primary_vals <- as.character(sd_df[[selected_group]])
-            secondary_vals <- as.character(sd_df[[selected_secondary]])
-            idx <- !is.na(primary_vals) & (primary_vals == selected_primary_level)
-            level_choices <- unique(secondary_vals[idx])
-            level_choices <- sort(level_choices[!is.na(level_choices) & level_choices != ""])
-          }
-        }
+      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var)
+      meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+      primary_var <- group_var_resolved()
+      secondary_var <- secondary_var_selected()
+      validate(
+        need(primary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
+      )
+      primary_values <- as.character(meta_df[[primary_var]])
+      if (is.null(secondary_var)) {
+        level_choices <- sort(unique(primary_values))
+        level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       } else {
-        updateSelectInput(session, "primary_level", choices = character(0), selected = NULL)
-        updateSelectInput(session, "secondary_var", choices = "None", selected = "None")
+        validate(
+          need(secondary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$secondary_var, "' not found."))
+        )
+        secondary_values <- as.character(meta_df[[secondary_var]])
+        if (!is.null(input$primary_level) && identical(as.character(input$primary_level), "All")) {
+          subset_idx <- !is.na(primary_values)
+        } else {
+          subset_idx <- !is.na(primary_values) & (primary_values == input$primary_level)
+        }
+        level_choices <- sort(unique(secondary_values[subset_idx]))
+        level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       }
-      selected_levels <- input$group_levels
+
+      selected_levels <- isolate(input$group_levels)
       if (is.null(selected_levels)) selected_levels <- character(0)
       selected_levels <- intersect(selected_levels, level_choices)
-
-      old_choices <- group_levels_choices_cache()
-      old_selected <- input$group_levels
-      if (is.null(old_selected)) old_selected <- character(0)
-      choices_changed <- !identical(old_choices, level_choices)
-      selection_changed <- !setequal(selected_levels, old_selected)
-      if (choices_changed || selection_changed) {
-        freezeReactiveValue(input, "group_levels")
-        updateSelectizeInput(session, "group_levels", choices = level_choices, selected = selected_levels, server = TRUE)
-        group_levels_choices_cache(level_choices)
-      }
-    }, ignoreInit = FALSE)
+      if (length(selected_levels) == 0) selected_levels <- head(level_choices, 2)
+      updateSelectizeInput(session, "group_levels", choices = level_choices, selected = selected_levels, server = TRUE)
+    }, ignoreNULL = FALSE)
 
     observe({
       req(ps_obj())
@@ -375,28 +444,14 @@ mod_sparcc_server <- function(id, ps_obj) {
       built <- build_network_inputs()
       otu_mat <- built$otu_mat
       sample_df <- built$sample_df
-      primary_var <- input$group_var
-      primary_var_resolved <- primary_var
-      if (!is.null(primary_var) && primary_var != "All" && !primary_var %in% colnames(sample_df)) {
-        matched_col <- colnames(sample_df)[make.names(colnames(sample_df)) == make.names(primary_var)]
-        if (length(matched_col) >= 1) {
-          primary_var_resolved <- matched_col[1]
-        } else {
-          primary_var_resolved <- "All"
-        }
-      }
-      secondary_var <- if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) NULL else input$secondary_var
-      secondary_var_resolved <- secondary_var
-      if (!is.null(secondary_var_resolved) && !secondary_var_resolved %in% colnames(sample_df)) {
-        matched_col <- colnames(sample_df)[make.names(colnames(sample_df)) == make.names(secondary_var_resolved)]
-        secondary_var_resolved <- if (length(matched_col) >= 1) matched_col[1] else NULL
-      }
+      primary_var_resolved <- group_var_resolved()
+      secondary_var_resolved <- secondary_var_selected()
       effective_group_var <- if (is.null(secondary_var_resolved)) primary_var_resolved else secondary_var_resolved
 
       result <- tryCatch({
         withProgress(message = "Running NetCoMi SparCC...", value = 0, {
           sample_ids <- colnames(otu_mat)
-          if (!is.null(primary_var_resolved) && primary_var_resolved != "All" && primary_var_resolved %in% colnames(sample_df)) {
+          if (!is.null(primary_var_resolved) && primary_var_resolved %in% colnames(sample_df)) {
             primary_values <- as.character(sample_df[[primary_var_resolved]])
             names(primary_values) <- rownames(sample_df)
             primary_values <- primary_values[sample_ids]
@@ -407,7 +462,11 @@ mod_sparcc_server <- function(id, ps_obj) {
 
           if (!is.null(secondary_var_resolved) && secondary_var_resolved %in% colnames(sample_df)) {
             selected_primary_level <- input$primary_level
-            sample_ids <- sample_ids[!is.na(primary_values) & primary_values == selected_primary_level]
+            if (is.null(selected_primary_level) || identical(as.character(selected_primary_level), "All")) {
+              sample_ids <- sample_ids[!is.na(primary_values)]
+            } else {
+              sample_ids <- sample_ids[!is.na(primary_values) & primary_values == selected_primary_level]
+            }
           }
 
           if (!is.null(effective_group_var) && effective_group_var != "All" && effective_group_var %in% colnames(sample_df)) {

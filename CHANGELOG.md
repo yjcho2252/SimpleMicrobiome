@@ -2,6 +2,40 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-27]
+
+### Added
+- Replaced the workflow overview SVG with a full end-to-end app workflow diagram:
+  - `www/workflow-overview.svg`
+- Added explicit subgroup toggles to simplify primary/secondary grouping flows across major analysis modules:
+  - `modules/mod_ancom.R`
+  - `modules/mod_maaslin2.R`
+  - `modules/mod_randomforest.R`
+  - `modules/mod_sparcc.R`
+  - `modules/mod_SpiecEasi.R`
+  - `modules/mod_heatmap.R`
+
+### Changed
+- Alpha diversity (`modules/mod_alpha.R`):
+  - Updated bar-plot rendering to use facet-aware baseline minima, matching the taxa comparison bar-plot scale behavior.
+  - Applied the same baseline logic to regular and `ggpattern` bar plots.
+- Heatmap (`modules/mod_heatmap.R`):
+  - Renamed `Cell Size` to `Plot Dimensions`.
+  - Updated the section icon and moved advanced transform/correlation controls under `Advanced options`.
+- Preprocessing (`modules/mod_preprocessing.R`):
+  - Added a small visual gap between the `Select All` and `Unselect All` buttons.
+- Grouping-dependent modules:
+  - Reset subgroup-specific inputs when subgroup selection is disabled.
+  - Renumbered visible controls after hiding subgroup-only controls.
+  - Improved metadata column resolution for subgroup-aware workflows.
+- Association biplot/file loading UI:
+  - Refined compact sidebar text/placeholder styling and upload guidance.
+- License:
+  - Updated the MIT copyright holder to `Kangwon National University`.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-04-27.md`
+
 ## [2026-04-26]
 
 ### Added
