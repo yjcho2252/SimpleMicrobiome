@@ -8,13 +8,18 @@ SimpleMicrobiome is an R Shiny application for end-to-end microbiome analysis wi
 It integrates data loading, preprocessing, taxa profiling, diversity, differential abundance, network analysis, and association analysis in a single workflow.
 Public app: https://simplemicrobiome.mglab.org/
 
+## About the App
+
+SimpleMicrobiome is developed and maintained by the Microbial Genomics Laboratory at Kangwon National University in Korea.
+
 ## Current App Modules
 
 - **Top**
-  - App overview, quick workflow, version history, and external QZA converter link
+  - App overview, quick workflow and version history
 - **Data Loading**
   - Upload ASV/OTU table, taxonomy table, metadata
   - Load/download bundled example data
+  - external QZA converter link
 - **Preprocessing**
   - Sample/taxa filtering before downstream analyses
 - **Taxa Profiles**
@@ -36,31 +41,52 @@ Public app: https://simplemicrobiome.mglab.org/
 - **Citation**
   - Method/package references
 
-## Requirements
+## How to Use
+
+SimpleMicrobiome supports two usage modes:
+
+- Use the hosted web app (no local installation required)
+- Run locally (requires dependency installation)
+
+### Use on Web
+
+- Open: https://simplemicrobiome.mglab.org/
+- Upload your input files in **Data Loading**
+- Continue analysis through each module
+
+### Run Locally
+
+#### Prerequisites
 
 - R (recommended: 4.2+)
-- Main R packages:
-  - shiny
-  - phyloseq
-  - tidyverse
-  - ANCOMBC
-  - DT
-  - bslib
-  - ggplot2
-  - ggpubr
-  - shinyWidgets
-  - Maaslin2
-  - microbiome
-  - cluster
-  - vegan
-  - dplyr
-  - randomForest
-  - ComplexHeatmap
-  - NetCoMi
-  - igraph
-  - ggraph
-  - ggrepel
-  - shapr
+- Internet access for package installation
+- System build tools may be required for some packages:
+  - Windows: Rtools
+  - macOS: Xcode Command Line Tools
+  - Linux: compiler/system libraries
+
+#### 1) Clone the repository
+
+```bash
+git clone https://github.com/yjcho2252/SimpleMicrobiome.git
+cd SimpleMicrobiome
+```
+
+#### 2) Install dependencies
+
+Run the installer script from the project root:
+
+```r
+source("install.R")
+```
+
+#### 3) Run the app
+
+```r
+shiny::runApp("app.R")
+```
+
+If startup fails, rerun `source("install.R")` and check package/system dependency errors in the console.
 
 ## Input Data
 
@@ -96,6 +122,7 @@ The app automatically:
 - Verify sample ID matching between abundance and metadata.
 - Verify taxa ID matching between abundance and taxonomy.
 - If a module output is empty, revisit preprocessing filters and group sizes.
+- For local mode, ensure `source("install.R")` completes without missing-package errors.
 
 ## License
 

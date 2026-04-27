@@ -14,6 +14,8 @@ All notable changes to this project are documented in this file.
   - `modules/mod_sparcc.R`
   - `modules/mod_SpiecEasi.R`
   - `modules/mod_heatmap.R`
+- Added a root-level local dependency installer script:
+  - `install.R`
 
 ### Changed
 - Alpha diversity (`modules/mod_alpha.R`):
@@ -32,6 +34,13 @@ All notable changes to this project are documented in this file.
   - Refined compact sidebar text/placeholder styling and upload guidance.
 - License:
   - Updated the MIT copyright holder to `Kangwon National University`.
+- Local setup workflow:
+  - Aligned dependency installation logic with Docker build strategy, including Bioconductor and GitHub package installation flow for `SpiecEasi`, `SPRING`, and `NetCoMi`.
+  - `install.R`
+- Documentation:
+  - Split README usage guidance into `Use on Web` and `Run Locally`.
+  - Standardized local quick-start sequence to `source("install.R")` then `shiny::runApp("app.R")`.
+  - `README.md`
 
 ### Notes
 - Detailed release notes: `docs/releases/2026-04-27.md`
