@@ -1,5 +1,9 @@
 # SimpleMicrobiome
 
+<p align="center">
+  <img src="www/SimpleMicrobiome_icon3.png" alt="SimpleMicrobiome icon" width="220" />
+</p>
+
 [![R](https://img.shields.io/badge/R-%3E%3D4.2-276DC3)](https://www.r-project.org/)
 [![Shiny](https://img.shields.io/badge/Shiny-App-1F77B4)](https://shiny.posit.co/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

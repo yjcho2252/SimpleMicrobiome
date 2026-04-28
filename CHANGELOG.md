@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-28]
+
+### Added
+- Added a new icon asset for documentation branding updates:
+  - `www/SimpleMicrobiome_icon3.png`
+
+### Changed
+- README branding (`README.md`):
+  - Placed the project icon under the title section.
+  - Tuned icon display width for GitHub readability (`width="220"`).
+
+### Notes
+- Detailed release notes: `docs/releases/2026-04-28.md`
+
 ## [2026-04-27]
 
 ### Added
