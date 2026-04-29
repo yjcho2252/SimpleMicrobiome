@@ -30,6 +30,9 @@ The distance choice is the most important modeling decision in this module.
 - **Effect of setting**:
   - Defines the primary visual separation narrative.
   - Too many levels reduce readability.
+- **Current behavior**:
+  - `SampleID` can be selected.
+  - If non-`SampleID` variables exist, the default is a non-`SampleID` variable.
 
 ### 2.3 Secondary Variable (Shape)
 - **What it controls**: Shape encoding for subgroup context.
@@ -76,6 +79,11 @@ Used to segment samples in ordination-derived space.
 - Adds cluster IDs to ordination view.
 - Helpful for communication and downstream cluster-specific review.
 
+#### Overlay cluster colors on dots
+- Overlays clustering-result colors directly on ordination dots.
+- Adds a `Cluster` legend category for visual cluster membership tracing.
+- Useful for checking how algorithmic clusters align with metadata-colored structure.
+
 #### Run Clustering / Download Cluster Assignment
 - Executes clustering with current settings.
 - Export table should be used to trace sample-to-cluster mapping in downstream interpretation.
@@ -84,6 +92,8 @@ Used to segment samples in ordination-derived space.
 - Clusters are algorithmic partitions, not automatic biological classes.
 - Always compare cluster assignment with known metadata.
 - Validate whether cluster structure persists across distance methods.
+- `Average silhouette width` is the mean silhouette value across all samples (not a mean of per-cluster means).
+- In auto mode, optimal `k` is selected by maximizing average silhouette width.
 
 ### 3.2 EnvFit
 Fits metadata/taxa vectors onto ordination to identify directional associations.

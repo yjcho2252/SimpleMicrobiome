@@ -47,6 +47,9 @@ All notable changes to this project are documented in this file.
   - Clarified clustering result text: average silhouette width definition and optimal `k` selection rule (maximize average silhouette width).
 - Association navigation (`app.R`):
   - Removed the Correlation Plot entry and server wiring after module removal (`mod_scatter`).
+- Manual documentation:
+  - Updated `docs/manual/taxa-profiles.md` with scatter plot and trend-line workflow options/behavior.
+  - Updated `docs/manual/beta-diversity.md` with cluster color overlay guidance, `SampleID` primary-variable default behavior, and silhouette interpretation notes.
 
 ### Removed
 - Removed previous icon file:

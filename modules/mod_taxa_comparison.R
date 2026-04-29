@@ -76,20 +76,32 @@ mod_taxa_comparison_ui <- function(id) {
           tags$span(
             style = "display: inline-flex; align-items: center; gap: 4px;",
             icon("chart-line"),
-            "Show trend line"
+            "Show Trend Line"
           )
         ),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_trend_line")),
-          selectInput(
-            ns("trend_line_method"),
-            "Trend Line Method:",
-            choices = c(
-              "Spearman" = "spearman",
-              "Pearson" = "pearson",
-              "Linear regression (lm)" = "lm"
+          tagList(
+            selectInput(
+              ns("trend_group_type"),
+              "Group variable type:",
+              choices = c(
+                "Auto" = "auto",
+                "Categorical" = "categorical",
+                "Continuous (numeric)" = "continuous"
+              ),
+              selected = "auto"
             ),
-            selected = "spearman"
+            selectInput(
+              ns("trend_line_method"),
+              "Trend Line Method:",
+              choices = c(
+                "Spearman" = "spearman",
+                "Pearson" = "pearson",
+                "Linear regression (lm)" = "lm"
+              ),
+              selected = "spearman"
+            )
           )
         ),
         hr(),
@@ -438,6 +450,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       }
       if (isTRUE(input$show_trend_line) && !identical(input$plot_type, "scatter")) {
         updateSelectInput(session, "plot_type", selected = "scatter")
+      }
+      if (!isTRUE(input$show_trend_line)) {
+        if (!identical(input$plot_type, "barplot")) {
+          updateSelectInput(session, "plot_type", selected = "barplot")
+        }
+        if (!isTRUE(input$show_p_val)) {
+          updateCheckboxInput(session, "show_p_val", value = TRUE)
+        }
       }
     }, ignoreInit = TRUE)
 
@@ -987,8 +1007,23 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
 
       if (isTRUE(input$show_trend_line)) {
         trend_df <- df
-        trend_df$GroupOrder <- as.numeric(factor(trend_df$Group, levels = group_levels))
-        trend_df <- trend_df[is.finite(trend_df$GroupOrder) & is.finite(trend_df[[y_plot_col]]), , drop = FALSE]
+        trend_group_type <- input$trend_group_type
+        if (is.null(trend_group_type) || !trend_group_type %in% c("auto", "categorical", "continuous")) {
+          trend_group_type <- "auto"
+        }
+        if (identical(trend_group_type, "continuous")) {
+          trend_df$TrendX <- suppressWarnings(as.numeric(as.character(trend_df$Group)))
+        } else if (identical(trend_group_type, "categorical")) {
+          trend_df$TrendX <- as.numeric(factor(trend_df$Group, levels = group_levels))
+        } else {
+          x_auto <- suppressWarnings(as.numeric(as.character(trend_df$Group)))
+          if (sum(is.finite(x_auto)) >= 3) {
+            trend_df$TrendX <- x_auto
+          } else {
+            trend_df$TrendX <- as.numeric(factor(trend_df$Group, levels = group_levels))
+          }
+        }
+        trend_df <- trend_df[is.finite(trend_df$TrendX) & is.finite(trend_df[[y_plot_col]]), , drop = FALSE]
         if (nrow(trend_df) >= 3) {
           trend_method <- input$trend_line_method
           if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson", "lm")) {
@@ -997,7 +1032,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           smooth_method <- if (identical(trend_method, "spearman")) "loess" else "lm"
           p <- p + ggplot2::geom_smooth(
             data = trend_df,
-            mapping = ggplot2::aes(x = GroupOrder, y = .data[[y_plot_col]], group = 1),
+            mapping = ggplot2::aes(x = TrendX, y = .data[[y_plot_col]], group = 1),
             inherit.aes = FALSE,
             method = smooth_method,
             se = TRUE,
@@ -1013,7 +1048,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
 
           for (sub_data in trend_facet_data) {
             if (nrow(sub_data) < 3) next
-            x_vals <- sub_data$GroupOrder
+            x_vals <- sub_data$TrendX
             y_vals <- sub_data[[y_plot_col]]
             ok <- is.finite(x_vals) & is.finite(y_vals)
             if (sum(ok) < 3) next

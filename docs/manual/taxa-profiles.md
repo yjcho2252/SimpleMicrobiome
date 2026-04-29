@@ -160,21 +160,39 @@ This document explains what each left-panel parameter does and how different set
   - Communication figure: `Relative` or `Log TSS` as supplementary.
 
 ### 3.9 Plot Type
-- **Options**: `Box plot`, `Bar plot`.
+- **Options**: `Box plot`, `Bar plot`, `Scatter plot`.
 - **Interpretation impact**:
   - `Box plot`: shows distribution/spread/outliers.
   - `Bar plot`: emphasizes mean-level differences.
+  - `Scatter plot`: emphasizes sample-level point structure; useful with trend lines.
 - **Recommendation**:
   - Use box plot for statistical interpretation.
   - Use bar plot for summary presentation.
 
-### 3.10 Color Palette / Use ggpattern
+### 3.10 Show trend line / Group variable type / Trend Line Method
+- **Show trend line**:
+  - When enabled, the plot automatically switches to `Scatter plot`.
+  - Pairwise p-value bars are turned off while trend-line mode is active.
+  - Facet-level trend p-values are shown as `p-value = ...`.
+- **Group variable type**:
+  - `Auto`: if group values are numeric for enough samples, uses continuous mode; otherwise categorical encoding.
+  - `Categorical`: group levels are encoded as ordered indices for trend fitting.
+  - `Continuous (numeric)`: group values are converted to numeric directly.
+- **Trend Line Method**:
+  - `Spearman`: uses a loess smoothing line for visualization.
+  - `Pearson`: uses linear-model smoothing.
+  - `Linear regression (lm)`: uses linear-model smoothing and regression-based p-value.
+- **When disabled**:
+  - Plot type returns to `Bar plot`.
+  - `Show p-value bars` is re-enabled.
+
+### 3.11 Color Palette / Use ggpattern
 - **Color Palette**: group visual distinction.
 - **Use ggpattern (bar plot)**:
   - Adds pattern cues for accessibility/print contexts.
   - Slightly heavier rendering.
 
-### 3.11 Show p-value bars / significance display
+### 3.12 Show p-value bars / significance display
 - **Show p-value bars**: toggles bracket annotations.
 - **Show only p-value < 0.05**: hides non-significant brackets.
 - **Show as significant marks**: converts numeric labels to symbolic marks.
@@ -182,25 +200,25 @@ This document explains what each left-panel parameter does and how different set
   - Numeric p-values are better for technical reports.
   - Significance marks are better for compact slides.
 
-### 3.12 Statistical Method
+### 3.13 Statistical Method
 - **Options**: `Wilcoxon`, `T-test`.
 - **Selection logic**:
   - `Wilcoxon`: robust for non-normal/heavy-tailed data.
   - `T-test`: suitable when approximate normality assumptions are acceptable.
 
-### 3.13 Pairwise Multiple Testing Correction
+### 3.14 Pairwise Multiple Testing Correction
 - **Options**: `None`, `Holm`, `BH (FDR)`, `Bonferroni`.
 - **Interpretation impact**:
   - `None`: highest sensitivity, highest false-positive risk.
   - `BH`: balanced default for microbiome screening.
   - `Bonferroni`: strict, low false positives, high false negatives.
 
-### 3.14 Manual facet rows/cols (ncol/nrow)
+### 3.15 Manual facet rows/cols (ncol/nrow)
 - **What it controls**: explicit panel grid.
 - **Use case**:
   - Standardize layout across figures for publication consistency.
 
-### 3.15 Plot Width / Height / Base Font Size
+### 3.16 Plot Width / Height / Base Font Size
 - **Recommendation**:
   - Multi-taxa comparisons typically need larger width.
   - Increase base font for presentation exports.
