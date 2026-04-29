@@ -1,0 +1,59 @@
+﻿<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Data Loading | SimpleMicrobiome Guide</title>
+  <script src='https://cdn.jsdelivr.net/npm/marked/marked.min.js'></script>
+  <style>
+    :root{--bg:#f4f7fb;--ink:#1f2937;--muted:#5b6b82;--brand:#0f3568;--card:#fff;--line:#dbe5f2;--code:#f8fafc}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,'Noto Sans',sans-serif;background:linear-gradient(180deg,#eef3fb 0%, var(--bg) 140px);color:var(--ink)}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px 18px 40px}
+    .hero{background:linear-gradient(135deg,#0f3568 0%, #1c4f8e 100%);color:#fff;border-radius:16px;padding:18px 20px;box-shadow:0 10px 24px rgba(15,53,104,.18);display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+    .hero h1{margin:0;font-size:20px}.hero p{margin:4px 0 0;font-size:13px;opacity:.9}
+    .layout{display:grid;grid-template-columns:240px 1fr;gap:16px}
+    .side,.main{background:var(--card);border:1px solid var(--line);border-radius:14px}
+    .side{padding:12px;position:sticky;top:14px;height:fit-content}
+    .side h3{margin:0 0 8px;font-size:13px;color:var(--brand);text-transform:uppercase;letter-spacing:.6px}
+    .side a{display:block;text-decoration:none;color:#0f4c92;padding:7px 9px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:2px}
+    .side a:hover{background:#eef4ff}
+    .side a.active{background:#dfeafc;color:#0a3567}
+    .main{padding:24px}
+    #content h1,#content h2,#content h3{color:var(--brand);line-height:1.3} #content h1{font-size:28px;margin-top:0} #content h2{font-size:22px;margin-top:30px} #content h3{font-size:18px;margin-top:20px}
+    #content p,#content li{line-height:1.72} #content a{color:#0f4c92;font-weight:600}
+    #content pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto} #content code{background:var(--code);padding:2px 5px;border-radius:5px}
+    #content table{width:100%;border-collapse:collapse;margin:10px 0} #content th,#content td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+    .loading{color:var(--muted);font-size:14px}
+    @media (max-width:920px){.layout{grid-template-columns:1fr}.side{position:static}}
+  </style>
+</head>
+<body>
+  <div class='wrap'>
+    <div class='hero'><div><h1>SimpleMicrobiome Guide</h1><p>Data Loading</p></div></div>
+    <div class='layout'>
+      <aside class='side'>
+        <h3>Modules</h3>
+        <a href='/manual/README.html'>Guide Index</a>
+<a class='active' href='/manual/data-loading.html'>Data Loading</a>
+<a href='/manual/preprocessing.html'>Preprocessing</a>
+<a href='/manual/taxa-profiles.html'>Taxa Profiles</a>
+<a href='/manual/alpha-diversity.html'>Alpha Diversity</a>
+<a href='/manual/beta-diversity.html'>Beta Diversity</a>
+<a href='/manual/ancom-bc2.html'>ANCOM-BC2</a>
+<a href='/manual/maaslin2.html'>MaAsLin2</a>
+<a href='/manual/random-forest.html'>Random Forest</a>
+<a href='/manual/sparcc.html'>SparCC</a>
+<a href='/manual/spieceasi.html'>SpiecEasi</a>
+<a href='/manual/correlation-heatmap.html'>Correlation Heatmap</a>
+<a href='/manual/association-biplot.html'>Association Biplot</a>
+<a href='/manual/citation.html'>Citation</a>
+      </aside>
+      <main class='main'><div id='content' class='loading'>Loading guide...</div></main>
+    </div>
+  </div>
+  <script>
+    fetch('/docs/manual/data-loading.md').then(r=>{if(!r.ok) throw new Error('HTTP '+r.status); return r.text();}).then(md=>{document.getElementById('content').innerHTML=marked.parse(md);}).catch(()=>{document.getElementById('content').textContent='Failed to load guide content.';});
+  </script>
+</body>
+</html>

@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-29]
+
+### Added
+- Added module guide documentation under `docs/manual/`:
+  - `README.md` (guide index)
+  - `data-loading.md`
+  - `preprocessing.md`
+  - `taxa-profiles.md`
+  - `alpha-diversity.md`
+  - `beta-diversity.md`
+  - `ancom-bc2.md`
+  - `maaslin2.md`
+  - `random-forest.md`
+  - `sparcc.md`
+  - `spieceasi.md`
+  - `correlation-heatmap.md`
+  - `association-biplot.md`
+  - `citation.md`
+- Added browser-rendered guide pages in `docs/manual_html/`.
+- Added transparent icon asset:
+  - `www/icon_transparent.png`
+
+### Changed
+- Top page guide access (`modules/mod_top.R`):
+  - Added Guide link on Top page.
+  - Updated path to `/manual/README.html`.
+- Static resource mapping (`app.R`):
+  - Added `addResourcePath("docs", ...)`.
+  - Added `addResourcePath("manual", ...)`.
+- Manual index links (`docs/manual/README.md`):
+  - Updated links to `/manual/*.html` endpoints.
+- README branding (`README.md`):
+  - Updated top icon to `www/icon_transparent.png`.
+
+### Removed
+- Removed previous icon file:
+  - `www/SimpleMicrobiome_icon3.png`
+
+### Notes
+- Detailed release notes: `docs/releases/2026-04-29.md`
+
 ## [2026-04-28]
 
 ### Added

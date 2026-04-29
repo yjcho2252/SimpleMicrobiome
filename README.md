@@ -1,7 +1,7 @@
 # SimpleMicrobiome
 
 <p align="center">
-  <img src="www/SimpleMicrobiome_icon3.png" alt="SimpleMicrobiome icon" width="220" />
+  <img src="www/icon_transparent.png" alt="SimpleMicrobiome icon" width="220" />
 </p>
 
 [![R](https://img.shields.io/badge/R-%3E%3D4.2-276DC3)](https://www.r-project.org/)
@@ -14,7 +14,7 @@ Public app: https://simplemicrobiome.mglab.org/
 
 ## About the App
 
-SimpleMicrobiome is developed and maintained by the Microbial Genomics Laboratory at Kangwon National University in Korea.
+SimpleMicrobiome is developed and maintained by the Microbial Genomics Laboratory at Kangwon National University, Korea.
 
 ## Current App Modules
 

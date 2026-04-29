@@ -126,6 +126,22 @@ mod_top_ui <- function(id) {
             " menu first."
           )
         ),
+        div(
+          class = "top-start",
+          style = "margin-top: 8px;",
+          tagList(
+            icon("book-open"),
+            strong(" Guide: "),
+            "Open the user manual index ",
+            tags$a(
+              href = "/manual/README.html",
+              target = "_blank",
+              rel = "noopener noreferrer",
+              "here"
+            ),
+            "."
+          )
+        ),
         
       ),
       fluidRow(
@@ -152,6 +168,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260429: User guides added."),
             tags$li("260423: UI improvements and bug fixes."),
             tags$li("260421: Bar plot in Taxa Profiles and Alpha Diversity added."),
             tags$li("260420: Association analysis modules added."),
