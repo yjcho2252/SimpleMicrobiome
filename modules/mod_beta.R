@@ -97,6 +97,7 @@ mod_beta_ui <- function(id) {
             numericInput(ns("cluster_k_max"), "Auto k max:", value = 10, min = 3, max = 30, step = 1)
           ),
           checkboxInput(ns("show_cluster_labels"), "Show cluster labels on plot", value = TRUE),
+          checkboxInput(ns("overlay_cluster_colors"), "Overlay cluster colors on dots", value = FALSE),
           tags$div(
             style = "display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
             actionButton(ns("run_clustering"), "Run Clustering", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
@@ -260,10 +261,17 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     
     observe({
       req(meta_cols())
-      group_choices <- setdiff(meta_cols(), "SampleID")
+      group_choices <- meta_cols()
       current_primary <- input$primary_group_var
       if (is.null(current_primary) || !current_primary %in% group_choices) {
-        current_primary <- if (length(group_choices) > 0) group_choices[1] else NULL
+        non_sampleid_choices <- setdiff(group_choices, "SampleID")
+        current_primary <- if (length(non_sampleid_choices) > 0) {
+          non_sampleid_choices[1]
+        } else if (length(group_choices) > 0) {
+          group_choices[1]
+        } else {
+          NULL
+        }
       }
       updateSelectInput(session, "primary_group_var", choices = group_choices, selected = current_primary)
 
@@ -1039,6 +1047,33 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
+        clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
+        if (!is.null(clu_df)) {
+          plot_data$SampleID <- as.character(plot_data$SampleID)
+          plot_data <- dplyr::left_join(plot_data, clu_df, by = "SampleID")
+          if ("Cluster" %in% colnames(plot_data)) {
+            plot_data <- plot_data[!is.na(plot_data$Cluster), , drop = FALSE]
+            if (nrow(plot_data) > 0) {
+              cluster_levels <- levels(factor(plot_data$Cluster))
+              cluster_colors <- grDevices::hcl.colors(length(cluster_levels), palette = "Dark 3")
+              names(cluster_colors) <- cluster_levels
+              p <- p +
+                ggplot2::geom_point(
+                  data = plot_data,
+                  mapping = ggplot2::aes(x = Axis.1, y = Axis.2, fill = Cluster),
+                  inherit.aes = FALSE,
+                  shape = 21,
+                  color = "black",
+                  stroke = 0.25,
+                  size = input$dot_size + 0.2,
+                  alpha = 0.85
+                ) +
+                ggplot2::scale_fill_manual(values = cluster_colors, drop = FALSE, name = "Cluster")
+            }
+          }
+        }
+      }
       
       if (input$show_sample_names) {
         if (requireNamespace("ggrepel", quietly = TRUE)) {
@@ -1284,6 +1319,33 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
+        clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
+        if (!is.null(clu_df)) {
+          plot_data$SampleID <- as.character(plot_data$SampleID)
+          plot_data <- dplyr::left_join(plot_data, clu_df, by = "SampleID")
+          if ("Cluster" %in% colnames(plot_data)) {
+            plot_data <- plot_data[!is.na(plot_data$Cluster), , drop = FALSE]
+            if (nrow(plot_data) > 0) {
+              cluster_levels <- levels(factor(plot_data$Cluster))
+              cluster_colors <- grDevices::hcl.colors(length(cluster_levels), palette = "Dark 3")
+              names(cluster_colors) <- cluster_levels
+              p <- p +
+                ggplot2::geom_point(
+                  data = plot_data,
+                  mapping = ggplot2::aes(x = NMDS1, y = NMDS2, fill = Cluster),
+                  inherit.aes = FALSE,
+                  shape = 21,
+                  color = "black",
+                  stroke = 0.25,
+                  size = input$dot_size + 0.2,
+                  alpha = 0.85
+                ) +
+                ggplot2::scale_fill_manual(values = cluster_colors, drop = FALSE, name = "Cluster")
+            }
+          }
+        }
+      }
       
       if (input$show_sample_names) {
         if (requireNamespace("ggrepel", quietly = TRUE)) {
@@ -1615,6 +1677,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           mode_line,
           paste0("Selected k: ", res$k),
           paste0("Average silhouette width: ", format(round(res$silhouette, 4), nsmall = 4)),
+          "Definition: average silhouette width is the mean of silhouette widths across all samples (not a mean of cluster means).",
+          "Selection rule: the optimal k is chosen as the k with the maximum average silhouette width.",
           "Cluster sizes:",
           cluster_lines
         ),

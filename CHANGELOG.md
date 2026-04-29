@@ -35,10 +35,24 @@ All notable changes to this project are documented in this file.
   - Updated links to `/manual/*.html` endpoints.
 - README branding (`README.md`):
   - Updated top icon to `www/icon_transparent.png`.
+- Taxa comparison (`modules/mod_taxa_comparison.R`):
+  - Added trend-line controls near Within-Subject Pairing (`Show trend line`, `Trend Line Method`).
+  - Added `Scatter plot` mode and auto-switched to scatter when trend line is enabled.
+  - Added facet-level trend p-value annotations (`p-value = ...`) during trend-line display.
+  - Enabled smoothing interval display for trend lines (`se = TRUE`) and adjusted p-value text placement/margins to reduce overlap.
+  - Included `SampleID` in Primary Group choices while defaulting to a non-`SampleID` variable when available.
+- Beta diversity (`modules/mod_beta.R`):
+  - Included `SampleID` in Primary Variable choices while defaulting to a non-`SampleID` variable when available.
+  - Added optional cluster-color overlay on ordination dots with `Cluster` legend categories.
+  - Clarified clustering result text: average silhouette width definition and optimal `k` selection rule (maximize average silhouette width).
+- Association navigation (`app.R`):
+  - Removed the Correlation Plot entry and server wiring after module removal (`mod_scatter`).
 
 ### Removed
 - Removed previous icon file:
   - `www/SimpleMicrobiome_icon3.png`
+- Removed module file:
+  - `modules/mod_scatter.R`
 
 ### Notes
 - Detailed release notes: `docs/releases/2026-04-29.md`

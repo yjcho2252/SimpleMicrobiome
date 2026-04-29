@@ -66,6 +66,32 @@ mod_taxa_comparison_ui <- function(id) {
             selected = NULL
           )
         ),
+        div(
+          style = "display: flex; align-items: center; gap: 6px; margin-bottom: 6px;",
+          tags$input(
+            id = ns("show_trend_line"),
+            type = "checkbox",
+            style = "margin: 0;"
+          ),
+          tags$span(
+            style = "display: inline-flex; align-items: center; gap: 4px;",
+            icon("chart-line"),
+            "Show trend line"
+          )
+        ),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("show_trend_line")),
+          selectInput(
+            ns("trend_line_method"),
+            "Trend Line Method:",
+            choices = c(
+              "Spearman" = "spearman",
+              "Pearson" = "pearson",
+              "Linear regression (lm)" = "lm"
+            ),
+            selected = "spearman"
+          )
+        ),
         hr(),
         h4(icon("sliders"), "Plot Settings"),
         selectInput(
@@ -102,7 +128,7 @@ mod_taxa_comparison_ui <- function(id) {
         selectInput(
           ns("plot_type"),
           "Plot Type:",
-          choices = c("Box plot" = "boxplot", "Bar plot" = "barplot"),
+          choices = c("Box plot" = "boxplot", "Bar plot" = "barplot", "Scatter plot" = "scatter"),
           selected = "boxplot"
         ),
         selectInput(
@@ -354,8 +380,9 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
     
     output$group_selector <- renderUI({
       req(meta_cols())
-      group_choices <- setdiff(meta_cols(), "SampleID")
-      selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
+      group_choices <- meta_cols()
+      non_sampleid_choices <- setdiff(group_choices, "SampleID")
+      selected_col <- if (length(non_sampleid_choices) > 0) non_sampleid_choices[1] else if (length(group_choices) > 0) group_choices[1] else NULL
       selectInput(
         session$ns("group_var"),
         "Primary Group:",
@@ -404,6 +431,15 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         selected = next_selected
       )
     })
+
+    observeEvent(input$show_trend_line, {
+      if (isTRUE(input$show_trend_line) && isTRUE(input$show_p_val)) {
+        updateCheckboxInput(session, "show_p_val", value = FALSE)
+      }
+      if (isTRUE(input$show_trend_line) && !identical(input$plot_type, "scatter")) {
+        updateSelectInput(session, "plot_type", selected = "scatter")
+      }
+    }, ignoreInit = TRUE)
 
     taxa_long_data <- reactive({
       req(isTRUE(is_active_tab()))
@@ -770,7 +806,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       group_levels <- levels(factor(df$Group))
       num_groups <- length(group_levels)
       plot_type <- input$plot_type
-      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot")) {
+      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot", "scatter")) {
         plot_type <- "boxplot"
       }
       plot_title <- paste0(input$tax_level, "-Level Taxa Comparison")
@@ -798,7 +834,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = .data[[y_plot_col]], fill = Group)) +
         ggplot2::scale_y_continuous(
           labels = y_labels_fn,
-          expand = ggplot2::expansion(mult = c(0, 0.08))
+          expand = ggplot2::expansion(mult = c(0, 0.18))
         ) +
         ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(title = plot_title,
@@ -917,12 +953,18 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             size = 1.4
           )
         }
-      } else {
+      } else if (plot_type == "boxplot") {
         p <- p + ggplot2::geom_boxplot(alpha = 0.6, width = 0.65)
         if (has_subject) {
           p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.5)
         } else {
           p <- p + ggplot2::geom_jitter(width = 0.15, alpha = 0.6, size = 1.5)
+        }
+      } else {
+        if (has_subject) {
+          p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.6)
+        } else {
+          p <- p + ggplot2::geom_jitter(width = 0.15, alpha = 0.65, size = 1.6)
         }
       }
 
@@ -940,6 +982,89 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           )
         } else {
           p <- p + ggplot2::facet_wrap(~ Taxa, scales = "free_y")
+        }
+      }
+
+      if (isTRUE(input$show_trend_line)) {
+        trend_df <- df
+        trend_df$GroupOrder <- as.numeric(factor(trend_df$Group, levels = group_levels))
+        trend_df <- trend_df[is.finite(trend_df$GroupOrder) & is.finite(trend_df[[y_plot_col]]), , drop = FALSE]
+        if (nrow(trend_df) >= 3) {
+          trend_method <- input$trend_line_method
+          if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson", "lm")) {
+            trend_method <- "spearman"
+          }
+          smooth_method <- if (identical(trend_method, "spearman")) "loess" else "lm"
+          p <- p + ggplot2::geom_smooth(
+            data = trend_df,
+            mapping = ggplot2::aes(x = GroupOrder, y = .data[[y_plot_col]], group = 1),
+            inherit.aes = FALSE,
+            method = smooth_method,
+            se = TRUE,
+            color = "#d62728",
+            linewidth = 0.8
+          )
+
+          facet_vars <- if (is_secondary) c("PrimaryGroup", "Taxa") else c("Taxa")
+          facet_split <- interaction(trend_df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
+          trend_facet_data <- split(trend_df, facet_split)
+          trend_p_rows <- vector("list", length(trend_facet_data))
+          trend_idx <- 0L
+
+          for (sub_data in trend_facet_data) {
+            if (nrow(sub_data) < 3) next
+            x_vals <- sub_data$GroupOrder
+            y_vals <- sub_data[[y_plot_col]]
+            ok <- is.finite(x_vals) & is.finite(y_vals)
+            if (sum(ok) < 3) next
+
+            p_val <- tryCatch({
+              if (identical(trend_method, "spearman")) {
+                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value)
+              } else if (identical(trend_method, "pearson")) {
+                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value)
+              } else {
+                lm_fit <- stats::lm(y_vals[ok] ~ x_vals[ok])
+                lm_coef <- summary(lm_fit)$coefficients
+                if (nrow(lm_coef) >= 2 && ncol(lm_coef) >= 4) as.numeric(lm_coef[2, 4]) else NA_real_
+              }
+            }, error = function(e) NA_real_)
+            if (!is.finite(p_val)) next
+
+            x_min <- suppressWarnings(min(x_vals[ok], na.rm = TRUE))
+            x_max <- suppressWarnings(max(x_vals[ok], na.rm = TRUE))
+            y_min <- suppressWarnings(min(y_vals[ok], na.rm = TRUE))
+            y_max <- suppressWarnings(max(y_vals[ok], na.rm = TRUE))
+            if (!is.finite(x_min) || !is.finite(x_max)) next
+            if (!is.finite(y_min) || !is.finite(y_max)) next
+            x_span <- max(1e-9, x_max - x_min)
+            y_span <- max(1e-9, y_max - y_min)
+            ann <- data.frame(
+              x = x_min + 0.05 * x_span,
+              y = y_max + 0.12 * y_span,
+              p_label = paste0("p-value = ", formatC(p_val, format = "g", digits = 3)),
+              stringsAsFactors = FALSE
+            )
+            for (fv in facet_vars) {
+              ann[[fv]] <- sub_data[[fv]][1]
+            }
+            trend_idx <- trend_idx + 1L
+            trend_p_rows[[trend_idx]] <- ann
+          }
+
+          trend_p_rows <- trend_p_rows[seq_len(trend_idx)]
+          if (length(trend_p_rows) > 0) {
+            trend_p_df <- do.call(rbind, trend_p_rows)
+            p <- p + ggplot2::geom_text(
+              data = trend_p_df,
+              mapping = ggplot2::aes(x = x, y = y, label = p_label),
+              inherit.aes = FALSE,
+              hjust = 0,
+              vjust = 0,
+              size = max(3.4, base_size * 0.34),
+              color = "#111111"
+            )
+          }
         }
       }
 
@@ -1178,7 +1303,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       group_levels <- levels(factor(df$Group))
       n_groups <- length(group_levels)
       plot_type <- input$plot_type
-      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot")) {
+      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot", "scatter")) {
         plot_type <- "boxplot"
       }
       p_adjust_method <- input$p_adjust_method
@@ -1221,7 +1346,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         c(
           paste0("Primary grouping variable: ", input$group_var),
           paste0("Secondary grouping variable: ", if (is_secondary) secondary_col else "(None)"),
-          paste0("Plot type: ", if (plot_type == "barplot") "Bar plot" else "Box plot"),
+          paste0("Plot type: ", if (plot_type == "barplot") "Bar plot" else if (plot_type == "scatter") "Scatter plot" else "Box plot"),
           paste0("ggpattern: ", pattern_status),
           paste0("Pairing condition axis: ", if (is_secondary) "Secondary group" else "Primary group"),
           paste0("Selected taxa count: ", dplyr::n_distinct(df$Taxa)),
@@ -1354,6 +1479,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       figure_title <- paste0(input$tax_level, "-Level Taxa Comparison")
       plot_type_label <- if (identical(input$plot_type, "barplot")) {
         "bar plots summarize group means with standard error bars"
+      } else if (identical(input$plot_type, "scatter")) {
+        "scatter plots show individual sample points by group"
       } else {
         "box plots summarize group distributions with overlaid sample points"
       }
