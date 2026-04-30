@@ -46,7 +46,12 @@ mod_beta_ui <- function(id) {
         selectInput(
           ns("distance_metric"),
           "Distance metric:",
-          choices = c("Bray-Curtis" = "bray", "Jaccard" = "jaccard", "Aitchison" = "aitchison"),
+          choices = c(
+            "Bray-Curtis" = "bray",
+            "Jaccard" = "jaccard",
+            "Jensen-Shannon" = "jsd",
+            "Aitchison" = "aitchison"
+          ),
           selected = "bray"
         ),
         selectInput(
@@ -390,6 +395,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       req(input$distance_metric)
       if (identical(input$distance_metric, "aitchison")) {
         "euclidean"
+      } else if (identical(input$distance_metric, "jsd")) {
+        "jsd"
       } else if (identical(input$distance_metric, "jaccard")) {
         "jaccard"
       } else {
@@ -456,7 +463,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
 
     distance_label <- reactive({
       if (identical(dist_method(), "euclidean")) {
-        "Aitchison (CLR log(x+1) pseudocount)"
+        "Aitchison"
+      } else if (identical(dist_method(), "jsd")) {
+        "Jensen-Shannon"
       } else if (identical(dist_method(), "jaccard")) {
         "Jaccard"
       } else {

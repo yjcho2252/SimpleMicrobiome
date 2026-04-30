@@ -65,6 +65,9 @@ All notable changes to this project are documented in this file.
 ### Changed
 - File upload limit:
   - Increased Shiny upload request size limit to 100MB in `app.R`.
+- Beta diversity (`modules/mod_beta.R`):
+  - Added `Jensen-Shannon` distance metric option (`jsd`) to the distance selector.
+  - Wired Jensen-Shannon labeling into beta diversity result/report text.
 - Taxa comparison (`modules/mod_taxa_comparison.R`):
   - Fixed scatter + continuous regression mode so the x-axis is rendered as continuous numeric values (not categorical labels).
   - Updated trend UI wording to regression wording:
@@ -75,6 +78,7 @@ All notable changes to this project are documented in this file.
   - Updated taxa-list significance filtering (`Show only taxa with p-value < 0.05`) to recalculate p-values using regression settings when regression mode is enabled.
 - Manual documentation:
   - Updated `docs/manual/taxa-profiles.md` terminology and behavior notes to match regression wording and filtering logic.
+  - Updated `docs/manual/beta-diversity.md` distance-method section with Jensen-Shannon usage guidance.
 
 ### Notes
 - Detailed release notes: `docs/releases/2026-04-30.md`

@@ -20,6 +20,11 @@ The distance choice is the most important modeling decision in this module.
 - **Ignores**: abundance magnitude.
 - **Use when**: detection pattern matters more than abundance scale.
 
+#### Jensen-Shannon
+- **What it captures**: divergence between relative abundance distributions.
+- **Sensitive to**: global distribution-shape differences across taxa.
+- **Use when**: profile-level compositional pattern differences are the main focus.
+
 #### Aitchison (CLR log(x+1) pseudocount)
 - **What it captures**: log-ratio geometry for compositional data.
 - **Requires/assumes**: CLR-type compositional treatment.
