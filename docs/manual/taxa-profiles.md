@@ -130,23 +130,43 @@ This document explains what each left-panel parameter does and how different set
 - **Risk**:
   - Incorrect ID column causes invalid paired statistics.
 
-### 3.5 Taxonomic Level
+### 3.5 Show Regression Line / Group variable type / Regression method
+- **Show Regression Line**:
+  - When enabled, the plot automatically switches to `Scatter plot`.
+  - Pairwise p-value bars are turned off while trend-line mode is active.
+  - Facet-level trend p-values are shown as `p-value = ...`.
+- **Group variable type**:
+  - `Auto`: if group values are numeric for enough samples, uses continuous mode; otherwise categorical encoding.
+  - `Categorical`: group levels are encoded as ordered indices for trend fitting.
+  - `Continuous (numeric)`: group values are converted to numeric directly.
+- **Regression method**:
+  - `Spearman` (default): uses a loess smoothing line for visualization.
+  - `Pearson`: uses linear-model smoothing.
+  - `Linear regression (lm)`: uses linear-model smoothing and regression-based p-value.
+- **When disabled**:
+  - Plot type returns to `Bar plot`.
+  - `Show p-value bars` is re-enabled.
+
+### 3.6 Taxonomic Level
 - Same interpretation principles as Bar plot.
 - Lower ranks increase sparsity and multiple-testing burden.
 
-### 3.6 Taxa to Compare
+### 3.7 Taxa to Compare
 - **What it controls**: Explicit taxon subset for testing/plotting.
 - **Interpretation impact**:
   - Broad selection increases discovery chance but also testing burden.
   - Focused selection improves interpretability.
 
-### 3.7 Show only taxa with p-value < 0.05
+### 3.8 Show only taxa with p-value < 0.05
 - **Options**: Enabled/Disabled.
 - **Interpretation impact**:
   - Enabled: concise significant-only report, but hides near-threshold trends.
   - Disabled: full transparency, easier to assess effect landscape.
+- **Calculation mode**:
+  - When `Show Regression Line` is disabled, filtering uses group-comparison p-values (two-group test or multi-group Kruskal-Wallis).
+  - When `Show Regression Line` is enabled, filtering is recalculated from the selected `Regression method` (`Spearman`, `Pearson`, or `lm`) and `Group variable type`.
 
-### 3.8 Transformation
+### 3.9 Transformation
 - **Options**:
   - `CLR Abundance`
   - `Relative Abundance (%)`
@@ -159,7 +179,7 @@ This document explains what each left-panel parameter does and how different set
   - Primary inference: `CLR`
   - Communication figure: `Relative` or `Log TSS` as supplementary.
 
-### 3.9 Plot Type
+### 3.10 Plot Type
 - **Options**: `Box plot`, `Bar plot`, `Scatter plot`.
 - **Interpretation impact**:
   - `Box plot`: shows distribution/spread/outliers.
@@ -168,23 +188,6 @@ This document explains what each left-panel parameter does and how different set
 - **Recommendation**:
   - Use box plot for statistical interpretation.
   - Use bar plot for summary presentation.
-
-### 3.10 Show trend line / Group variable type / Trend Line Method
-- **Show trend line**:
-  - When enabled, the plot automatically switches to `Scatter plot`.
-  - Pairwise p-value bars are turned off while trend-line mode is active.
-  - Facet-level trend p-values are shown as `p-value = ...`.
-- **Group variable type**:
-  - `Auto`: if group values are numeric for enough samples, uses continuous mode; otherwise categorical encoding.
-  - `Categorical`: group levels are encoded as ordered indices for trend fitting.
-  - `Continuous (numeric)`: group values are converted to numeric directly.
-- **Trend Line Method**:
-  - `Spearman`: uses a loess smoothing line for visualization.
-  - `Pearson`: uses linear-model smoothing.
-  - `Linear regression (lm)`: uses linear-model smoothing and regression-based p-value.
-- **When disabled**:
-  - Plot type returns to `Bar plot`.
-  - `Show p-value bars` is re-enabled.
 
 ### 3.11 Color Palette / Use ggpattern
 - **Color Palette**: group visual distinction.

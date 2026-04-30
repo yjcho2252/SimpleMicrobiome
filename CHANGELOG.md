@@ -60,6 +60,25 @@ All notable changes to this project are documented in this file.
 ### Notes
 - Detailed release notes: `docs/releases/2026-04-29.md`
 
+## [2026-04-30]
+
+### Changed
+- File upload limit:
+  - Increased Shiny upload request size limit to 100MB in `app.R`.
+- Taxa comparison (`modules/mod_taxa_comparison.R`):
+  - Fixed scatter + continuous regression mode so the x-axis is rendered as continuous numeric values (not categorical labels).
+  - Updated trend UI wording to regression wording:
+    - `Show Trend Line` -> `Show Regression Line`
+    - `Trend Line Method` -> `Regression method`
+  - Reordered regression method choices to show `Linear regression (lm)` first while restoring default selection to `Spearman`.
+  - Updated figure legend text to describe active regression mode and method when regression mode is enabled.
+  - Updated taxa-list significance filtering (`Show only taxa with p-value < 0.05`) to recalculate p-values using regression settings when regression mode is enabled.
+- Manual documentation:
+  - Updated `docs/manual/taxa-profiles.md` terminology and behavior notes to match regression wording and filtering logic.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-04-30.md`
+
 ## [2026-04-28]
 
 ### Added

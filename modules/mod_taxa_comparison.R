@@ -76,7 +76,7 @@ mod_taxa_comparison_ui <- function(id) {
           tags$span(
             style = "display: inline-flex; align-items: center; gap: 4px;",
             icon("chart-line"),
-            "Show Trend Line"
+            "Show Regression Line"
           )
         ),
         conditionalPanel(
@@ -94,11 +94,11 @@ mod_taxa_comparison_ui <- function(id) {
             ),
             selectInput(
               ns("trend_line_method"),
-              "Trend Line Method:",
+              "Regression method:",
               choices = c(
+                "Linear regression (lm)" = "lm",
                 "Spearman" = "spearman",
-                "Pearson" = "pearson",
-                "Linear regression (lm)" = "lm"
+                "Pearson" = "pearson"
               ),
               selected = "spearman"
             )
@@ -124,7 +124,7 @@ mod_taxa_comparison_ui <- function(id) {
         ),
         checkboxInput(
           ns("show_p_lt_0_05_only"),
-          "Show only taxa with p-value < 0.05",
+          "Show only p-value < 0.05",
           value = FALSE
         ),
         selectInput(
@@ -566,6 +566,9 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       req(isTRUE(is_active_tab()))
       req(taxa_long_data(), input$group_var)
       df <- taxa_long_data()
+      trend_group_type <- input$trend_group_type
+      trend_method <- input$trend_line_method
+      show_regression_line <- isTRUE(input$show_trend_line)
       subject_col <- resolve_meta_colname(input$subject_id_var, names(df))
       has_subject <- isTRUE(input$enable_longitudinal) &&
         !is.null(subject_col) &&
@@ -577,6 +580,38 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         dplyr::summarise(
           mean_abundance = mean(AbundancePlot, na.rm = TRUE),
           p_value = tryCatch({
+            if (show_regression_line) {
+              sub_df <- dplyr::cur_data_all()
+              if (is.null(trend_group_type) || !trend_group_type %in% c("auto", "categorical", "continuous")) {
+                trend_group_type <- "auto"
+              }
+              if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson", "lm")) {
+                trend_method <- "spearman"
+              }
+              group_levels <- levels(factor(sub_df$Group))
+              if (identical(trend_group_type, "continuous")) {
+                x_vals <- suppressWarnings(as.numeric(as.character(sub_df$Group)))
+              } else if (identical(trend_group_type, "categorical")) {
+                x_vals <- as.numeric(factor(sub_df$Group, levels = group_levels))
+              } else {
+                x_auto <- suppressWarnings(as.numeric(as.character(sub_df$Group)))
+                if (sum(is.finite(x_auto)) >= 3) x_auto else as.numeric(factor(sub_df$Group, levels = group_levels))
+              }
+              y_vals <- sub_df$AbundancePlot
+              ok <- is.finite(x_vals) & is.finite(y_vals)
+              if (sum(ok) < 3) {
+                return(NA_real_)
+              }
+              if (identical(trend_method, "spearman")) {
+                return(suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value))
+              } else if (identical(trend_method, "pearson")) {
+                return(suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value))
+              } else {
+                lm_fit <- stats::lm(y_vals[ok] ~ x_vals[ok])
+                lm_coef <- summary(lm_fit)$coefficients
+                return(if (nrow(lm_coef) >= 2 && ncol(lm_coef) >= 4) as.numeric(lm_coef[2, 4]) else NA_real_)
+              }
+            }
             n_groups <- dplyr::n_distinct(Group)
             if (n_groups == 2) {
               if (!has_subject) {
@@ -851,7 +886,17 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       names(pattern_angle_values) <- group_levels
       y_plot_col <- "AbundancePlot"
       y_labels_fn <- scales::label_number(accuracy = 0.1, trim = TRUE)
-      p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = .data[[y_plot_col]], fill = Group)) +
+      use_continuous_x <- identical(plot_type, "scatter") &&
+        isTRUE(input$show_trend_line) &&
+        identical(input$trend_group_type, "continuous")
+      if (isTRUE(use_continuous_x)) {
+        df$GroupContinuous <- suppressWarnings(as.numeric(as.character(df$Group)))
+      }
+      if (isTRUE(use_continuous_x) && sum(is.finite(df$GroupContinuous)) < 3) {
+        use_continuous_x <- FALSE
+      }
+      x_var <- if (isTRUE(use_continuous_x)) "GroupContinuous" else "Group"
+      p <- ggplot2::ggplot(df, ggplot2::aes(x = .data[[x_var]], y = .data[[y_plot_col]], fill = Group)) +
         ggplot2::scale_y_continuous(
           labels = y_labels_fn,
           expand = ggplot2::expansion(mult = c(0, 0.18))
@@ -984,7 +1029,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         if (has_subject) {
           p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.6)
         } else {
-          p <- p + ggplot2::geom_jitter(width = 0.15, alpha = 0.65, size = 1.6)
+          jitter_width <- if (isTRUE(use_continuous_x)) 0 else 0.15
+          p <- p + ggplot2::geom_jitter(width = jitter_width, alpha = 0.65, size = 1.6)
         }
       }
 
@@ -1011,7 +1057,9 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         if (is.null(trend_group_type) || !trend_group_type %in% c("auto", "categorical", "continuous")) {
           trend_group_type <- "auto"
         }
-        if (identical(trend_group_type, "continuous")) {
+        if (isTRUE(use_continuous_x)) {
+          trend_df$TrendX <- trend_df$GroupContinuous
+        } else if (identical(trend_group_type, "continuous")) {
           trend_df$TrendX <- suppressWarnings(as.numeric(as.character(trend_df$Group)))
         } else if (identical(trend_group_type, "categorical")) {
           trend_df$TrendX <- as.numeric(factor(trend_df$Group, levels = group_levels))
@@ -1537,6 +1585,21 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       } else {
         ""
       }
+      regression_sentence <- if (isTRUE(input$show_trend_line)) {
+        method_label <- switch(
+          input$trend_line_method,
+          "lm" = "linear regression (lm)",
+          "pearson" = "Pearson correlation",
+          "Spearman correlation"
+        )
+        paste0(
+          " Regression line mode is enabled (",
+          method_label,
+          "), and pairwise significance bars are hidden."
+        )
+      } else {
+        ""
+      }
       tags$div(
         tags$div(
           style = "font-weight: 600; margin-bottom: 4px;",
@@ -1551,7 +1614,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             ". The y-axis represents ",
             abundance_label,
             ". Pairwise significance is annotated above each comparison.",
-            longitudinal_sentence
+            longitudinal_sentence,
+            regression_sentence
           )
         )
       )

@@ -27,6 +27,7 @@ app_script_path <- tryCatch({
 })
 app_root_dir <- if (nzchar(app_script_path)) dirname(app_script_path) else normalizePath(getwd(), winslash = "/", mustWork = FALSE)
 options(simplemicrobiome_app_dir = app_root_dir)
+options(shiny.maxRequestSize = 100 * 1024^2) # 100MB upload limit
 addResourcePath("docs", file.path(app_root_dir, "docs"))
 addResourcePath("manual", file.path(app_root_dir, "docs", "manual_html"))
 options(shiny.error = function(...) {
