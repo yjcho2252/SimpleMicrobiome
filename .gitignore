@@ -13,6 +13,7 @@
 /converter_service
 /Dockerfile
 /Dockerfile-260320
+/.gitignore
 
 # Security: ignore common local secret/config artifacts
 .env

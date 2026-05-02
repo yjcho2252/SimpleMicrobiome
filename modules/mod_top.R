@@ -132,7 +132,7 @@ mod_top_ui <- function(id) {
           tagList(
             icon("book-open"),
             strong(" Guide: "),
-            "Open the user manual index ",
+            "Open the user manual",
             tags$a(
               href = "/manual/README.html",
               target = "_blank",
