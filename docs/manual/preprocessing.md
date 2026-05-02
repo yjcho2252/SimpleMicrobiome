@@ -16,6 +16,7 @@ Applies sample/taxa filtering and selection before all downstream analyses.
 ### 2.3 Selection state controls
 - Determines what subset is carried into downstream modules.
 - Changing selection here immediately changes results elsewhere.
+- The selection summary box reports counts as `Total: N samples` and `Selected: M samples`.
 
 ## 3. Recommended Workflow
 1. Apply moderate sample filter first.

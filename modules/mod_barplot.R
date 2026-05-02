@@ -207,8 +207,9 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     
     output$local_group_selector <- renderUI({
       req(meta_cols())
-      group_choices <- setdiff(meta_cols(), "SampleID")
-      selected_col <- if (length(group_choices) > 0) group_choices[1] else meta_cols()[1]
+      group_choices <- meta_cols()
+      non_sampleid_choices <- setdiff(group_choices, "SampleID")
+      selected_col <- if (length(non_sampleid_choices) > 0) non_sampleid_choices[1] else group_choices[1]
       selectInput(session$ns("group_var"), "Primary Group (Facet):",
                   choices = group_choices, selected = selected_col)
     })
@@ -216,9 +217,10 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     output$secondary_group_selector <- renderUI({
       req(meta_cols(), input$group_var)
       resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
-      group_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, resolved_primary))
-      selected_col <- if (length(group_choices) > 0) group_choices[1] else NULL
-      selectInput(session$ns("secondary_var"), "Secondary Group:",
+      group_choices <- setdiff(meta_cols(), c(input$group_var, resolved_primary))
+      non_sampleid_choices <- setdiff(group_choices, "SampleID")
+      selected_col <- if (length(non_sampleid_choices) > 0) non_sampleid_choices[1] else if (length(group_choices) > 0) group_choices[1] else NULL
+      selectInput(session$ns("secondary_var"), "Secondary Group (Optional):",
                   choices = c("None" = "None", group_choices), 
                   selected = "None")
     })

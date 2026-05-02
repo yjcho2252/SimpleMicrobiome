@@ -1623,6 +1623,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       req(input$beta_tabs, input$distance_metric, input$beta_tax_level)
       ord_label <- if (identical(input$beta_tabs, "NMDS")) "NMDS beta diversity ordination plot" else "PCoA beta diversity ordination plot"
       metric_label <- distance_label()
+      metric_phrase <- if (grepl("Aitchison", metric_label, fixed = TRUE)) metric_label else paste0(metric_label, " distance")
       tax_level_label <- tolower(input$beta_tax_level)
       tags$div(
         tags$div(
@@ -1632,7 +1633,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         tags$div(
           paste0(
             "This figure shows beta diversity structure based on ",
-            metric_label,
+            metric_phrase,
             " at ",
             tax_level_label,
             " level. Points represent samples and are colored by group."

@@ -343,8 +343,8 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       total_samples <- nrow(meta_df_for_dt())
       selected_count <- length(selected_indices_for_apply())
       paste0(
-        sprintf("Total: %d\n", total_samples),
-        sprintf("Selected: %d", selected_count)
+        sprintf("Total: %d samples\n", total_samples),
+        sprintf("Selected: %d samples", selected_count)
       )
     })
     

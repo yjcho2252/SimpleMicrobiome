@@ -16,6 +16,9 @@ This document explains what each left-panel parameter does and how different set
 - **If changed**:
   - Group with many levels -> more facets, smaller panel area.
   - Group with 2-3 levels -> clearer side-by-side interpretation.
+- **Current selector behavior**:
+  - `SampleID` is selectable.
+  - If variables other than `SampleID` exist, a non-`SampleID` variable is used as the default.
 - **Recommendation**:
   - Use biologically primary factor (e.g., treatment, disease status).
   - Avoid IDs or high-cardinality columns.
@@ -25,6 +28,9 @@ This document explains what each left-panel parameter does and how different set
 - **If changed**:
   - Adds subgroup structure but can make legend crowded.
   - Useful for nested designs (e.g., Treatment within Timepoint).
+- **Current selector behavior**:
+  - `SampleID` is selectable unless already used as primary grouping.
+  - `None` remains the default selected option.
 - **Recommendation**:
   - Keep levels limited.
   - Use only when subgroup interpretation is needed.
@@ -142,7 +148,6 @@ This document explains what each left-panel parameter does and how different set
 - **Regression method**:
   - `Spearman` (default): uses a loess smoothing line for visualization.
   - `Pearson`: uses linear-model smoothing.
-  - `Linear regression (lm)`: uses linear-model smoothing and regression-based p-value.
 - **When disabled**:
   - Plot type returns to `Bar plot`.
   - `Show p-value bars` is re-enabled.
@@ -164,7 +169,8 @@ This document explains what each left-panel parameter does and how different set
   - Disabled: full transparency, easier to assess effect landscape.
 - **Calculation mode**:
   - When `Show Regression Line` is disabled, filtering uses group-comparison p-values (two-group test or multi-group Kruskal-Wallis).
-  - When `Show Regression Line` is enabled, filtering is recalculated from the selected `Regression method` (`Spearman`, `Pearson`, or `lm`) and `Group variable type`.
+  - When `Show Regression Line` is enabled, filtering is recalculated from the selected `Regression method` (`Spearman` or `Pearson`) and `Group variable type`.
+  - When `Within-Subject Pairing` is enabled and group count is 3 or more, overall group comparison uses `Friedman test` (repeated measures) instead of Kruskal-Wallis.
 
 ### 3.9 Transformation
 - **Options**:

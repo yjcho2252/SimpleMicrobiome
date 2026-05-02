@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-05-02]
+
+### Changed
+- Taxa bar plot (`modules/mod_barplot.R`):
+  - Enabled `SampleID` in primary/secondary group selector choices.
+  - Preserved default preference for non-`SampleID` variables when available.
+- Taxa comparison (`modules/mod_taxa_comparison.R`):
+  - For within-subject pairing with 3+ groups, updated overall test to repeated-measures `Friedman test`.
+  - Updated status text to report repeated-measures overall testing behavior.
+- Beta diversity (`modules/mod_beta.R`):
+  - Updated legend wording to append `distance` for non-Aitchison metric labels (for example, `Jensen-Shannon distance`).
+- Preprocessing (`modules/mod_preprocessing.R`):
+  - Updated sample-selection summary text to `Total: N samples` and `Selected: M samples`.
+- Manual documentation:
+  - Updated `docs/manual/taxa-profiles.md` for current `SampleID` grouping-selector behavior in Taxa Bar plot.
+  - Updated `docs/manual/preprocessing.md` with current sample-count summary wording.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-05-02.md`
+
 ## [2026-04-29]
 
 ### Added
@@ -73,9 +93,10 @@ All notable changes to this project are documented in this file.
   - Updated trend UI wording to regression wording:
     - `Show Trend Line` -> `Show Regression Line`
     - `Trend Line Method` -> `Regression method`
-  - Reordered regression method choices to show `Linear regression (lm)` first while restoring default selection to `Spearman`.
+  - Removed `Linear regression (lm)` from regression method choices; available methods are now `Spearman` and `Pearson` (default `Spearman`).
   - Updated figure legend text to describe active regression mode and method when regression mode is enabled.
   - Updated taxa-list significance filtering (`Show only taxa with p-value < 0.05`) to recalculate p-values using regression settings when regression mode is enabled.
+  - For within-subject pairing with 3+ groups, changed overall test from non-repeated Kruskal-Wallis handling to repeated-measures Friedman test.
 - Manual documentation:
   - Updated `docs/manual/taxa-profiles.md` terminology and behavior notes to match regression wording and filtering logic.
   - Updated `docs/manual/beta-diversity.md` distance-method section with Jensen-Shannon usage guidance.

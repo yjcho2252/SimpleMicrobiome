@@ -96,7 +96,6 @@ mod_taxa_comparison_ui <- function(id) {
               ns("trend_line_method"),
               "Regression method:",
               choices = c(
-                "Linear regression (lm)" = "lm",
                 "Spearman" = "spearman",
                 "Pearson" = "pearson"
               ),
@@ -585,7 +584,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
               if (is.null(trend_group_type) || !trend_group_type %in% c("auto", "categorical", "continuous")) {
                 trend_group_type <- "auto"
               }
-              if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson", "lm")) {
+              if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson")) {
                 trend_method <- "spearman"
               }
               group_levels <- levels(factor(sub_df$Group))
@@ -604,12 +603,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
               }
               if (identical(trend_method, "spearman")) {
                 return(suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value))
-              } else if (identical(trend_method, "pearson")) {
-                return(suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value))
               } else {
-                lm_fit <- stats::lm(y_vals[ok] ~ x_vals[ok])
-                lm_coef <- summary(lm_fit)$coefficients
-                return(if (nrow(lm_coef) >= 2 && ncol(lm_coef) >= 4) as.numeric(lm_coef[2, 4]) else NA_real_)
+                return(suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value))
               }
             }
             n_groups <- dplyr::n_distinct(Group)
@@ -655,7 +650,30 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
                 }
               }
             } else if (n_groups > 2) {
-              stats::kruskal.test(AbundancePlot ~ Group)$p.value
+              if (!has_subject) {
+                stats::kruskal.test(AbundancePlot ~ Group)$p.value
+              } else {
+                sub_df <- dplyr::cur_data_all()
+                valid_subject <- !is.na(sub_df[[subject_col]]) & nzchar(as.character(sub_df[[subject_col]]))
+                sub_df <- sub_df[valid_subject, , drop = FALSE]
+                if (nrow(sub_df) == 0) {
+                  return(NA_real_)
+                }
+                sub_df$Subject <- as.character(sub_df[[subject_col]])
+                sub_df$Group <- factor(sub_df$Group)
+                sub_df <- sub_df %>%
+                  dplyr::group_by(Subject, Group) %>%
+                  dplyr::summarise(AbundancePlot = stats::median(AbundancePlot, na.rm = TRUE), .groups = "drop")
+                expected_groups <- dplyr::n_distinct(sub_df$Group)
+                sub_df <- sub_df %>%
+                  dplyr::group_by(Subject) %>%
+                  dplyr::filter(dplyr::n_distinct(Group) == expected_groups) %>%
+                  dplyr::ungroup()
+                if (dplyr::n_distinct(sub_df$Subject) <= 1 || dplyr::n_distinct(sub_df$Group) <= 2) {
+                  return(NA_real_)
+                }
+                stats::friedman.test(AbundancePlot ~ Group | Subject, data = sub_df)$p.value
+              }
             } else {
               NA_real_
             }
@@ -1074,7 +1092,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         trend_df <- trend_df[is.finite(trend_df$TrendX) & is.finite(trend_df[[y_plot_col]]), , drop = FALSE]
         if (nrow(trend_df) >= 3) {
           trend_method <- input$trend_line_method
-          if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson", "lm")) {
+          if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson")) {
             trend_method <- "spearman"
           }
           smooth_method <- if (identical(trend_method, "spearman")) "loess" else "lm"
@@ -1104,12 +1122,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             p_val <- tryCatch({
               if (identical(trend_method, "spearman")) {
                 suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value)
-              } else if (identical(trend_method, "pearson")) {
-                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value)
               } else {
-                lm_fit <- stats::lm(y_vals[ok] ~ x_vals[ok])
-                lm_coef <- summary(lm_fit)$coefficients
-                if (nrow(lm_coef) >= 2 && ncol(lm_coef) >= 4) as.numeric(lm_coef[2, 4]) else NA_real_
+                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value)
               }
             }, error = function(e) NA_real_)
             if (!is.finite(p_val)) next
@@ -1124,7 +1138,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             y_span <- max(1e-9, y_max - y_min)
             ann <- data.frame(
               x = x_min + 0.05 * x_span,
-              y = y_max + 0.12 * y_span,
+              y = y_max + 0.06 * y_span,
               p_label = paste0("p-value = ", formatC(p_val, format = "g", digits = 3)),
               stringsAsFactors = FALSE
             )
@@ -1422,7 +1436,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       } else if (n_groups == 2) {
         paste0(method_label, " with paired = TRUE (overall)")
       } else {
-        "Not shown in paired mode for >2 groups"
+        "Friedman test (overall, repeated measures)"
       }
 
       paste(
@@ -1588,7 +1602,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       regression_sentence <- if (isTRUE(input$show_trend_line)) {
         method_label <- switch(
           input$trend_line_method,
-          "lm" = "linear regression (lm)",
           "pearson" = "Pearson correlation",
           "Spearman correlation"
         )
