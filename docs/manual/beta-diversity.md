@@ -55,6 +55,9 @@ The distance choice is the most important modeling decision in this module.
 - **Dot Size**: larger points improve visibility but can hide overlap.
 - **Show Dot Outline**: improves separation between overlapping groups.
 - **Show Group Ellipses**: adds centroid/spread cues; helpful for group-level pattern reading.
+- **Show Group Hulls**: draws a convex hull (`chull`) polygon per group in ordination space.
+  - Hulls require at least 3 samples per group.
+  - Hulls are useful for quick group footprint comparison, but are sensitive to outliers.
 - **Show Sample Names**: useful for QC/outlier identification; can clutter dense plots.
 
 ### 2.6 Axis Limits
@@ -146,13 +149,14 @@ Fits metadata/taxa vectors onto ordination to identify directional associations.
 - Treating clustering output as definitive biological subgrouping.
 - Over-interpreting EnvFit arrows without checking significance and consistency.
 - Ignoring method sensitivity (distance choice can change conclusions).
+- Interpreting hull area alone as statistical separation; hulls are descriptive overlays, not hypothesis tests.
 
 ## 6. Minimal Recommended Presets
 
 ### Preset A: Exploratory baseline
 - Distance: `Bray-Curtis`
 - Primary color variable only
-- Ellipses on, sample names off
+- Ellipses on, hulls optional, sample names off
 - No manual axis limits
 
 ### Preset B: Cluster-focused

@@ -63,12 +63,13 @@ mod_beta_ui <- function(id) {
         hr(),
         
         h4(icon("sliders"), "Plot Settings"),
-        numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 500, min = 300, max = 1500, step = 50),
-        numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 400, min = 300, max = 1500, step = 50),
+        numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 600, min = 300, max = 1500, step = 50),
+        numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 500, min = 300, max = 1500, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
+        checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
         checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
         uiOutput(ns("primary_color_controls")),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
@@ -992,6 +993,25 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       list(x = build_limits(input$x_min, input$x_max),
            y = build_limits(input$y_min, input$y_max))
     })
+
+    build_group_hull_df <- function(df, x_col, y_col, group_col) {
+      if (is.null(df) || nrow(df) < 3 || !all(c(x_col, y_col, group_col) %in% colnames(df))) {
+        return(data.frame())
+      }
+      out <- lapply(split(df, as.character(df[[group_col]])), function(gdf) {
+        gdf <- gdf[!is.na(gdf[[x_col]]) & !is.na(gdf[[y_col]]) & !is.na(gdf[[group_col]]), , drop = FALSE]
+        if (nrow(gdf) < 3) {
+          return(NULL)
+        }
+        idx <- grDevices::chull(gdf[[x_col]], gdf[[y_col]])
+        gdf[idx, , drop = FALSE]
+      })
+      out <- out[!vapply(out, is.null, logical(1))]
+      if (length(out) == 0) {
+        return(data.frame())
+      }
+      dplyr::bind_rows(out)
+    }
     
     
     pcoa_ordination_reactive <- reactive({
@@ -1040,7 +1060,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       p <- p + ggplot2::scale_color_manual(values = primary_color_map())
       
       if (input$show_ellipses) {
-        p <- p + ggplot2::stat_ellipse(ggplot2::aes_string(group = primary_group_var()))
+        p <- p + ggplot2::stat_ellipse(ggplot2::aes_string(group = primary_group_var()), level = 0.80)
       }
       
       p <- p + ggplot2::theme_bw(base_size = base_size) +
@@ -1056,6 +1076,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      if (isTRUE(input$show_group_hulls)) {
+        hull_df <- build_group_hull_df(plot_data, "Axis.1", "Axis.2", primary_group_var())
+        if (nrow(hull_df) > 0) {
+          hull_df$HullFill <- unname(primary_color_map()[as.character(hull_df[[primary_group_var()]])])
+          hull_df$HullFill[is.na(hull_df$HullFill)] <- "#BDBDBD"
+          p <- p + ggplot2::geom_polygon(
+            data = hull_df,
+            mapping = ggplot2::aes_string(x = "Axis.1", y = "Axis.2", group = primary_group_var(), fill = "HullFill"),
+            inherit.aes = FALSE,
+            alpha = 0.14,
+            color = NA,
+            show.legend = FALSE
+          ) +
+            ggplot2::scale_fill_identity()
+        }
+      }
       if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
@@ -1314,7 +1350,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       p <- p + ggplot2::scale_color_manual(values = primary_color_map())
       
       if (input$show_ellipses) {
-        p <- p + ggplot2::stat_ellipse(ggplot2::aes_string(group = primary_group_var()))
+        p <- p + ggplot2::stat_ellipse(ggplot2::aes_string(group = primary_group_var()), level = 0.80)
       }
       
       p <- p + ggplot2::theme_bw(base_size = base_size) +
@@ -1328,6 +1364,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      if (isTRUE(input$show_group_hulls)) {
+        hull_df <- build_group_hull_df(plot_data, "NMDS1", "NMDS2", primary_group_var())
+        if (nrow(hull_df) > 0) {
+          hull_df$HullFill <- unname(primary_color_map()[as.character(hull_df[[primary_group_var()]])])
+          hull_df$HullFill[is.na(hull_df$HullFill)] <- "#BDBDBD"
+          p <- p + ggplot2::geom_polygon(
+            data = hull_df,
+            mapping = ggplot2::aes_string(x = "NMDS1", y = "NMDS2", group = primary_group_var(), fill = "HullFill"),
+            inherit.aes = FALSE,
+            alpha = 0.14,
+            color = NA,
+            show.legend = FALSE
+          ) +
+            ggplot2::scale_fill_identity()
+        }
+      }
       if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
@@ -1636,7 +1688,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             metric_phrase,
             " at ",
             tax_level_label,
-            " level. Points represent samples and are colored by group."
+            " level. Points represent samples and are colored by group. ",
+            if (isTRUE(input$show_ellipses)) "Group ellipses show 80% confidence regions. " else "",
+            if (isTRUE(input$show_group_hulls)) "Group hulls show convex envelopes (chull)." else ""
           )
         )
       )

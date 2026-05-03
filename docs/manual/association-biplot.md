@@ -18,20 +18,30 @@ It is used to interpret how variables align with major ordination axes.
 - Sets granularity of taxon-level contributors.
 - Lower rank increases detail and noise; higher rank improves stability.
 
-### 2.4 Variable Arrow / Loading Display Options
+### 2.4 Analysis Method
+- `dbRDA (capscale)` is distance-based constrained ordination and uses the selected distance metric.
+- `CCA` is constrained correspondence analysis and does not use the distance metric input.
+- Choose one method and keep it fixed when comparing plots across groups.
+
+### 2.5 Distance Metric
+- Applies only when `dbRDA (capscale)` is selected.
+- `Bray-Curtis` is commonly used for relative abundance dissimilarity.
+- `Aitchison` is based on log-ratio geometry and can be more robust for compositional structure.
+
+### 2.6 Variable Arrow / Loading Display Options
 - Controls whether and how variable vectors are drawn.
 - Dense vector display can obscure sample pattern.
 - Use filtered vectors for presentation-focused views.
 
-### 2.5 Label Controls
+### 2.7 Label Controls
 - Controls sample/feature label visibility and density.
 - Useful for balancing readability vs detail.
 
-### 2.6 Scaling / Display Options
+### 2.8 Scaling / Display Options
 - Adjusts visual emphasis between sample distances and variable vectors.
 - Keep scaling consistent when comparing multiple biplots.
 
-### 2.7 Plot Width / Height / Base Font Size
+### 2.9 Plot Width / Height / Base Font Size
 - Increase dimensions for dense labels and multi-group overlays.
 
 ## 3. How to Interpret Biplot Elements

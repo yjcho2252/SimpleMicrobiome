@@ -51,8 +51,14 @@ mod_biplot_ui <- function(id) {
           selected = "Genus"
         ),
         selectInput(
+          ns("analysis_method"),
+          "3. Analysis method",
+          choices = c("dbRDA (capscale)" = "dbrda", "CCA" = "cca"),
+          selected = "dbrda"
+        ),
+        selectInput(
           ns("distance_metric"),
-          "3. Distance metric",
+          "4. Distance metric",
           choices = c("Bray-Curtis" = "bray", "Aitchison" = "aitchison"),
           selected = "bray"
         ),
@@ -126,6 +132,17 @@ mod_biplot_ui <- function(id) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              if (msg.label) btn.textContent = msg.label;
+           });
+           $(document).on('change', 'select[id$=\"analysis_method\"]', function() {
+             var method = $(this).val();
+             var panel = $(this).closest('.well, .sidebar, .form-group, body');
+             var distanceSelect = panel.find('select[id$=\"distance_metric\"]');
+             var disable = (method === 'cca');
+             distanceSelect.prop('disabled', disable);
+             distanceSelect.closest('.form-group').find('.control-label').toggleClass('text-muted', disable);
+           });
+           $(document).on('shiny:connected', function() {
+             $('select[id$=\"analysis_method\"]').trigger('change');
            });"
         ))
       ),
@@ -213,9 +230,9 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         },
         add = TRUE
       )
-      req(ps_obj(), input$group_var, input$tax_level, input$distance_metric)
+      req(ps_obj(), input$group_var, input$tax_level, input$analysis_method, input$distance_metric)
       validate(
-        need(requireNamespace("vegan", quietly = TRUE), "Package 'vegan' is required for dbRDA.")
+        need(requireNamespace("vegan", quietly = TRUE), "Package 'vegan' is required for ordination.")
       )
       ps_data <- ps_obj()
       validate(
@@ -252,34 +269,34 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         otu <- otu[order(rowSums(otu, na.rm = TRUE), decreasing = TRUE)[seq_len(max_taxa)], , drop = FALSE]
       }
 
-      if (identical(input$distance_metric, "aitchison")) {
+      if (identical(input$analysis_method, "dbrda") && identical(input$distance_metric, "aitchison")) {
         log_mat <- log(otu + 1)
-        otu_use <- apply(log_mat, 2, function(x) x - mean(x, na.rm = TRUE))
-        if (!is.matrix(otu_use)) otu_use <- matrix(otu_use, nrow = nrow(log_mat))
-        rownames(otu_use) <- rownames(log_mat)
-        colnames(otu_use) <- colnames(log_mat)
+        otu_model <- apply(log_mat, 2, function(x) x - mean(x, na.rm = TRUE))
+        if (!is.matrix(otu_model)) otu_model <- matrix(otu_model, nrow = nrow(log_mat))
+        rownames(otu_model) <- rownames(log_mat)
+        colnames(otu_model) <- colnames(log_mat)
       } else {
         totals <- colSums(otu, na.rm = TRUE)
         totals[totals <= 0 | is.na(totals)] <- 1
-        otu_use <- sweep(otu, 2, totals, "/")
+        otu_model <- sweep(otu, 2, totals, "/")
       }
 
-      taxa_var <- apply(otu_use, 1, stats::var, na.rm = TRUE)
-      otu_use <- otu_use[is.finite(taxa_var) & taxa_var > 0, , drop = FALSE]
-      validate(need(nrow(otu_use) >= 3, "Too few taxa remain after variance filtering."))
+      taxa_var <- apply(otu_model, 1, stats::var, na.rm = TRUE)
+      otu_model <- otu_model[is.finite(taxa_var) & taxa_var > 0, , drop = FALSE]
+      validate(need(nrow(otu_model) >= 3, "Too few taxa remain after variance filtering."))
 
       sd <- phyloseq::sample_data(ps_data, errorIfNULL = FALSE)
       validate(need(!is.null(sd), "Metadata is required for biplot."))
       meta_df <- as.data.frame(sd, stringsAsFactors = FALSE)
       validate(need(input$group_var %in% colnames(meta_df), "Selected group variable is not available in metadata."))
 
-      sample_ids <- colnames(otu_use)
+      sample_ids <- colnames(otu_model)
       meta_df <- meta_df[sample_ids, , drop = FALSE]
       group_raw <- meta_df[[input$group_var]]
       group_chr <- as.character(group_raw)
       keep_samples <- !is.na(group_raw) & nzchar(group_chr)
       validate(need(sum(keep_samples) >= 4, "At least 4 samples with valid group values are required."))
-      otu_use <- otu_use[, keep_samples, drop = FALSE]
+      otu_model <- otu_model[, keep_samples, drop = FALSE]
       meta_df <- meta_df[keep_samples, , drop = FALSE]
       group_raw <- meta_df[[input$group_var]]
       group_model <- if (is.numeric(group_raw) || is.integer(group_raw)) {
@@ -291,41 +308,53 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       }
       model_df <- data.frame(group_model = group_model, stringsAsFactors = FALSE)
       rownames(model_df) <- rownames(meta_df)
-      comm_df <- as.data.frame(t(otu_use), stringsAsFactors = FALSE)
+      comm_df <- as.data.frame(t(otu_model), stringsAsFactors = FALSE)
       validate(
         need(nrow(model_df) == nrow(comm_df), "Model data and community matrix row counts do not match."),
         need(all(rownames(model_df) == rownames(comm_df)), "Sample IDs between model data and community matrix do not match.")
       )
 
-      dist_method <- if (identical(input$distance_metric, "aitchison")) "euclidean" else "bray"
-      dist_obj <- tryCatch(
-        vegan::vegdist(comm_df, method = dist_method),
-        error = function(e) {
-          validate(need(FALSE, paste0("Distance calculation failed: ", conditionMessage(e))))
-        }
-      )
-      model <- tryCatch(
-        vegan::capscale(stats::as.formula("dist_obj ~ group_model"), data = model_df, comm = comm_df),
-        error = function(e) {
-          validate(need(FALSE, paste0("dbRDA model fitting failed: ", conditionMessage(e))))
-        }
-      )
-
-      adonis_tbl <- tryCatch(
-        vegan::adonis2(dist_obj ~ group_model, data = model_df, permutations = 999),
-        error = function(e) NULL
-      )
+      model_type <- input$analysis_method
       permanova_p <- NA_real_
       permanova_r2 <- NA_real_
-      if (!is.null(adonis_tbl)) {
-        adf <- as.data.frame(adonis_tbl)
-        if ("group_model" %in% rownames(adf)) {
-          if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf["group_model", "Pr(>F)"])
-          if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf["group_model", "R2"])
-        } else if (nrow(adf) >= 1) {
-          if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf[1, "Pr(>F)"])
-          if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf[1, "R2"])
+      metric_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis"
+      if (identical(model_type, "dbrda")) {
+        dist_method <- if (identical(input$distance_metric, "aitchison")) "euclidean" else "bray"
+        dist_obj <- tryCatch(
+          vegan::vegdist(comm_df, method = dist_method),
+          error = function(e) {
+            validate(need(FALSE, paste0("Distance calculation failed: ", conditionMessage(e))))
+          }
+        )
+        model <- tryCatch(
+          vegan::capscale(stats::as.formula("dist_obj ~ group_model"), data = model_df, comm = comm_df),
+          error = function(e) {
+            validate(need(FALSE, paste0("dbRDA model fitting failed: ", conditionMessage(e))))
+          }
+        )
+
+        adonis_tbl <- tryCatch(
+          vegan::adonis2(dist_obj ~ group_model, data = model_df, permutations = 999),
+          error = function(e) NULL
+        )
+        if (!is.null(adonis_tbl)) {
+          adf <- as.data.frame(adonis_tbl)
+          if ("group_model" %in% rownames(adf)) {
+            if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf["group_model", "Pr(>F)"])
+            if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf["group_model", "R2"])
+          } else if (nrow(adf) >= 1) {
+            if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf[1, "Pr(>F)"])
+            if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf[1, "R2"])
+          }
         }
+      } else {
+        model <- tryCatch(
+          vegan::cca(stats::as.formula("comm_df ~ group_model"), data = model_df),
+          error = function(e) {
+            validate(need(FALSE, paste0("CCA model fitting failed: ", conditionMessage(e))))
+          }
+        )
+        metric_label <- "Not used (CCA)"
       }
 
       anova_all <- tryCatch(vegan::anova.cca(model, permutations = 999), error = function(e) NULL)
@@ -337,7 +366,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
       site_df <- as.data.frame(site_scores, stringsAsFactors = FALSE)
       validate(
-        need(ncol(site_df) >= 2, "dbRDA did not return 2D site scores.")
+        need(ncol(site_df) >= 2, "Ordination did not return 2D site scores.")
       )
       colnames(site_df)[1:2] <- c("Axis1", "Axis2")
       site_df$SampleID <- rownames(site_df)
@@ -401,14 +430,16 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         species_all_df = species_all_df,
         bp_df = bp_df,
         group_arrow_df = group_arrow_df,
-        metric_label = if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis",
+        model_label = if (identical(model_type, "cca")) "CCA" else "dbRDA",
+        model_type = model_type,
+        metric_label = metric_label,
         axis1_var = axis1_var,
         axis2_var = axis2_var,
         model_p = as.numeric(p_all),
         permanova_p = permanova_p,
         permanova_r2 = permanova_r2,
         n_samples = nrow(site_df),
-        n_taxa = nrow(otu_use)
+        n_taxa = nrow(otu_model)
       )
     }, ignoreNULL = FALSE)
 
@@ -445,9 +476,13 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       p <- ggplot2::ggplot(site_df, ggplot2::aes(x = Axis1, y = Axis2, color = Group)) +
         ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(
-          title = paste0(input$tax_level, "-Level Association Biplot (dbRDA, ", payload$metric_label, ")"),
-          x = paste0("CAP1", if (is.finite(payload$axis1_var)) paste0(" (", payload$axis1_var, "%)") else ""),
-          y = paste0("CAP2", if (is.finite(payload$axis2_var)) paste0(" (", payload$axis2_var, "%)") else ""),
+          title = if (identical(payload$model_type, "cca")) {
+            paste0(input$tax_level, "-Level Association Biplot (CCA)")
+          } else {
+            paste0(input$tax_level, "-Level Association Biplot (dbRDA, ", payload$metric_label, ")")
+          },
+          x = paste0(if (identical(payload$model_type, "cca")) "CCA1" else "CAP1", if (is.finite(payload$axis1_var)) paste0(" (", payload$axis1_var, "%)") else ""),
+          y = paste0(if (identical(payload$model_type, "cca")) "CCA2" else "CAP2", if (is.finite(payload$axis2_var)) paste0(" (", payload$axis2_var, "%)") else ""),
           color = input$group_var
         ) +
         ggplot2::theme(
@@ -614,14 +649,15 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       }
       paste(
         c(
+          paste0("Model: ", payload$model_label),
           paste0("Distance metric: ", payload$metric_label),
           paste0("Group variable: ", input$group_var),
           paste0("Samples used: ", payload$n_samples),
           paste0("Taxa used: ", payload$n_taxa),
           paste0("Taxa vectors shown: ", taxa_vectors_shown),
-          paste0("dbRDA model p-value (perm): ", pval_txt),
-          paste0("PERMANOVA p-value (adonis2): ", permanova_p_txt),
-          paste0("PERMANOVA R2 (adonis2): ", permanova_r2_txt)
+          paste0(payload$model_label, " model p-value (perm): ", pval_txt),
+          if (identical(payload$model_type, "dbrda")) paste0("PERMANOVA p-value (adonis2): ", permanova_p_txt) else NULL,
+          if (identical(payload$model_type, "dbrda")) paste0("PERMANOVA R2 (adonis2): ", permanova_r2_txt) else NULL
         ),
         collapse = "\n"
       )
@@ -674,21 +710,35 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     output$biplot_figure_legend <- renderUI({
-      req(input$group_var, input$tax_level, input$distance_metric)
+      req(input$group_var, input$tax_level, input$analysis_method, input$distance_metric)
       distance_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis"
-      body_text <- paste0(
-        "The dbRDA association biplot projects sample relationships on CAP1 and CAP2 using ",
-        distance_label,
-        " distance at ",
-        tolower(input$tax_level),
-        " level. Points are samples colored by ",
-        input$group_var,
-        ". ",
-        if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
-        if (isTRUE(input$show_group_vectors)) "Group vectors show fitted group-direction effects. " else "",
-        if (isTRUE(input$show_group_centroid)) "Cross markers indicate group centroids. " else "",
-        if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
-      )
+      body_text <- if (identical(input$analysis_method, "cca")) {
+        paste0(
+          "The CCA association biplot projects sample relationships on CCA1 and CCA2 at ",
+          tolower(input$tax_level),
+          " level. Distance metric is not used in CCA. Points are samples colored by ",
+          input$group_var,
+          ". ",
+          if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
+          if (isTRUE(input$show_group_vectors)) "Group vectors show fitted group-direction effects. " else "",
+          if (isTRUE(input$show_group_centroid)) "Cross markers indicate group centroids. " else "",
+          if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
+        )
+      } else {
+        paste0(
+          "The dbRDA association biplot projects sample relationships on CAP1 and CAP2 using ",
+          distance_label,
+          " distance at ",
+          tolower(input$tax_level),
+          " level. Points are samples colored by ",
+          input$group_var,
+          ". ",
+          if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
+          if (isTRUE(input$show_group_vectors)) "Group vectors show fitted group-direction effects. " else "",
+          if (isTRUE(input$show_group_centroid)) "Cross markers indicate group centroids. " else "",
+          if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
+        )
+      }
       tags$div(
         tags$div(style = "font-weight: 600; margin-bottom: 4px;", "Association biplot"),
         tags$div(body_text)

@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-05-03]
+
+### Changed
+- Association biplot (`modules/mod_biplot.R`):
+  - Added `Analysis method` selector with `dbRDA (capscale)` and `CCA` options.
+  - Added method-specific ordination flow:
+    - `dbRDA`: distance-based `capscale` with PERMANOVA outputs.
+    - `CCA`: `cca`-based constrained ordination without distance-metric application.
+  - Updated title/axis/status and legend messaging to reflect selected method (`CAP1/2` vs `CCA1/2`).
+  - Added UI behavior to disable distance metric when `CCA` is selected.
+- Beta diversity (`modules/mod_beta.R`):
+  - Added `Show Group Hulls` option and convex hull overlays (`chull`) for PCoA/NMDS groups.
+  - Fixed hull fill mapping to use primary-group custom colors consistently.
+  - Changed group ellipse level to `80%` (`level = 0.80`) for PCoA/NMDS.
+  - Updated figure legend text to mention 80% ellipses and hull overlays when enabled.
+- Manual documentation:
+  - Updated `docs/manual/association-biplot.md` for analysis-method and distance-metric behavior.
+  - Updated `docs/manual/beta-diversity.md` for hull usage and interpretation notes.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-05-03.md`
+
 ## [2026-05-02]
 
 ### Changed
