@@ -19,6 +19,9 @@ library(ggraph)
 library(ggrepel)
 library(shapr)
 library(ggpattern)
+library(httr2)
+library(readr)
+library(dplyr)
 
 app_script_path <- tryCatch({
   normalizePath(sys.frame(1)$ofile, winslash = "/", mustWork = FALSE)

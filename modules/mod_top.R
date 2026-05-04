@@ -168,6 +168,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260502: CCA function in Association Biplot added."),
             tags$li("260429: User guides added."),
             tags$li("260423: UI improvements and bug fixes."),
             tags$li("260421: Bar plot in Taxa Profiles and Alpha Diversity added."),

@@ -1,3 +1,4 @@
+## UI
 mod_heatmap_ui <- function(id) {
   ns <- NS(id)
   tagList(
@@ -182,6 +183,7 @@ mod_heatmap_ui <- function(id) {
   )
 }
 
+## Server
 mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
     analysis_target <- reactive("taxa_group")

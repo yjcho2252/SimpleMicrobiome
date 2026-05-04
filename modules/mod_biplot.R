@@ -1,3 +1,4 @@
+## UI
 mod_biplot_ui <- function(id) {
   ns <- NS(id)
   tagList(
@@ -158,6 +159,7 @@ mod_biplot_ui <- function(id) {
   )
 }
 
+## Server
 mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
     sanitize_taxa_names <- function(ps_data, rank_name) {

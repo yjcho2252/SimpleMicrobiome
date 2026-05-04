@@ -1,8 +1,3 @@
-library(shiny)
-library(phyloseq)
-library(dplyr)
-library(DT)
-
 ## UI
 mod_preprocessing_ui <- function(id) {
   ns <- NS(id)

@@ -28,7 +28,7 @@ SimpleMicrobiome is developed and maintained by the Microbial Genomics Laborator
   - Sample/taxa filtering before downstream analyses
 - **Taxa Profiles**
   - Taxa Bar plot
-  - Taxa Comparison (including optional longitudinal/paired overlay and paired test mode when enabled)
+  - Taxa Comparison
 - **Diversity**
   - Alpha Diversity
   - Beta Diversity
@@ -41,7 +41,7 @@ SimpleMicrobiome is developed and maintained by the Microbial Genomics Laborator
   - SpiecEasi
 - **Association**
   - Correlation Heatmap
-  - Association Biplot (dbRDA/CAP-based)
+  - Association Biplot (dbRDA/CCA)
 - **Citation**
   - Method/package references
 

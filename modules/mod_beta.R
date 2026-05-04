@@ -1738,6 +1738,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
 
       paste(
         c(
+          "Method: PAM (Partitioning Around Medoids)",
           mode_line,
           paste0("Selected k: ", res$k),
           paste0("Average silhouette width: ", format(round(res$silhouette, 4), nsmall = 4)),

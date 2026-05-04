@@ -86,7 +86,7 @@ mod_alpha_ui <- function(id) {
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width:", value = 600, min = 300, step = 50),
-        numericInput(ns("plot_height"), "Plot Height:", value = 400, min = 300, step = 50),
+        numericInput(ns("plot_height"), "Plot Height:", value = 500, min = 300, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
         
         hr(),

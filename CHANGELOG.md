@@ -24,6 +24,33 @@ All notable changes to this project are documented in this file.
 ### Notes
 - Detailed release notes: `docs/releases/2026-05-03.md`
 
+## [2026-05-04]
+
+### Added
+- Added new icon asset:
+  - `www/icon_bw2.png`
+
+### Changed
+- App bootstrap (`app.R`):
+  - Added shared package imports (`httr2`, `readr`, `dplyr`) for centralized dependency loading.
+- Module dependency cleanup:
+  - Removed redundant top-level `library(...)` declarations in:
+    - `modules/mod_ancom.R`
+    - `modules/mod_preprocessing.R`
+    - `modules/mod_taxa_comparison.R`
+    - `modules/mod_convert.R`
+- UI and wording:
+  - `modules/mod_alpha.R`: changed default plot height from `400` to `500`.
+  - `modules/mod_fileload.R`: renamed `Metadata File` label to `Metadata Table`.
+  - `modules/mod_beta.R`: added clustering status text `Method: PAM (Partitioning Around Medoids)`.
+  - `README.md`: updated feature wording for Taxa Comparison and Association Biplot (`dbRDA/CCA`).
+  - `modules/mod_top.R`: added update history line for `260502` CCA addition.
+- Code organization:
+  - Added `## UI` / `## Server` section comments in `modules/mod_biplot.R`, `modules/mod_heatmap.R`, and `modules/mod_convert.R`.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-05-04.md`
+
 ## [2026-05-02]
 
 ### Changed

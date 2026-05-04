@@ -1,8 +1,3 @@
-library(shiny)
-library(ggplot2)
-library(dplyr)
-library(phyloseq)
-
 ## UI
 mod_taxa_comparison_ui <- function(id) {
   ns <- NS(id)

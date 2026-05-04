@@ -73,7 +73,7 @@ mod_fileload_ui <- function(id) {
     ),
     div(
       class = "file-input-row",
-      tags$p("3. Metadata File", class = "file-input-label"),
+      tags$p("3. Metadata Table", class = "file-input-label"),
       div(
         class = "file-input-control",
         fileInput(ns("meta_file"), NULL, accept = c(".csv", ".tsv", ".txt"))

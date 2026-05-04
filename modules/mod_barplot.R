@@ -112,6 +112,7 @@ mod_barplot_ui <- function(id) {
     )
   )
 }
+
 ## Server
 mod_barplot_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {

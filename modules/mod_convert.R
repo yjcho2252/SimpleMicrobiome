@@ -1,8 +1,4 @@
-library(shiny)
-library(DT)
-library(readr)
-library(httr2)
-
+## UI
 ui <- fluidPage(
   tags$style(HTML("
     .well h4 { font-size: 16px; }
@@ -48,6 +44,7 @@ ui <- fluidPage(
   )
 )
 
+## Server
 server <- function(input, output, session) {
   tax_data <- reactiveVal(NULL)
   feat_data <- reactiveVal(NULL)
