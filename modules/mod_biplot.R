@@ -48,7 +48,7 @@ mod_biplot_ui <- function(id) {
         selectInput(
           ns("tax_level"),
           "2. Taxonomic level",
-          choices = c("ASV", "Genus", "Species"),
+          choices = c("ASV", "Genus", "Species", "Strain"),
           selected = "Genus"
         ),
         selectInput(

@@ -70,7 +70,7 @@ mod_heatmap_ui <- function(id) {
         selectInput(
           ns("tax_level"),
           "3. Taxonomic level",
-          choices = c("ASV", "Genus", "Species"),
+          choices = c("ASV", "Genus", "Species", "Strain"),
           selected = "Genus"
         ),
         selectInput(

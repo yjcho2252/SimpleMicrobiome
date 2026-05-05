@@ -70,7 +70,7 @@ mod_ancom_ui <- function(id) {
         selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
 
         selectInput(ns("tax_level"), "4. Taxonomic level",
-                    choices = c("ASV", "Genus", "Species"), selected = "Genus"),
+                    choices = c("ASV", "Genus", "Species", "Strain"), selected = "Genus"),
 
         selectInput(ns("volcano_y_axis"), "5. Statistical metric",
                     choices = c("q-value (FDR)" = "q_val",
@@ -769,7 +769,8 @@ mod_ancom_server <- function(id, ps_obj) {
             Order = "o__Unassigned",
             Family = "f__Unassigned",
             Genus = "g__Unassigned",
-            Species = "s__Unassigned"
+            Species = "s__Unassigned",
+            Strain = "t__Unassigned"
           )
           for (rk in taxonomy_ranks) {
             if (!rk %in% colnames(res)) {
@@ -1073,7 +1074,8 @@ mod_ancom_server <- function(id, ps_obj) {
           Order = c("o__", "order__"),
           Family = c("f__", "family__"),
           Genus = c("g__", "genus__"),
-          Species = c("s__", "species__")
+          Species = c("s__", "species__"),
+          Strain = c("t__", "strain__")
         )
         prefixes <- prefix_map[[rank_name]]
         if (is.null(prefixes) || length(prefixes) == 0) {
@@ -1110,7 +1112,7 @@ mod_ancom_server <- function(id, ps_obj) {
         NA_character_
       }
 
-      rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+      rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")
 
       out <- if (identical(tax_level, "ASV")) {
         if ("feature_id" %in% colnames(df)) as.character(df$feature_id) else rep(NA_character_, nrow(df))

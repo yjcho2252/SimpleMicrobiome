@@ -47,7 +47,7 @@ It also provides group-wise statistical comparisons with optional multiple-testi
 - **Shannon**
   - Definition: diversity metric combining richness and evenness.
   - Increases when community has both many taxa and balanced proportions.
-  - Use as a balanced “overall diversity” index.
+  - Use as a balanced overall diversity index.
 - **Simpson (1-D)**
   - Definition: dominance/evenness-sensitive diversity (higher = more even, less dominated).
   - More influenced by abundant taxa than very rare taxa.
@@ -118,7 +118,13 @@ It also provides group-wise statistical comparisons with optional multiple-testi
   - Many selected indices -> increase height.
   - Presentation figure -> increase base font.
 
-## 3. How Parameter Choices Change Interpretation
+## 3. Rarefaction Depth Rule
+- Alpha diversity is computed after rarefaction.
+- The app uses:
+  - `rarefaction depth = min(min(sample sums), 100000)`
+- If raw minimum sample depth is above `100000`, the app caps to `100000` and shows this in the status text.
+
+## 4. How Parameter Choices Change Interpretation
 
 ### Scenario A: Richness-focused question
 - Use `Observed` + `Chao1`.
@@ -134,13 +140,13 @@ It also provides group-wise statistical comparisons with optional multiple-testi
 - Turn on p-value bars, keep corrected method (`BH` or `Holm`).
 - Increase width/height and base font for readability.
 
-## 4. Common Pitfalls
+## 5. Common Pitfalls
 - Comparing p-values without checking group sample sizes.
 - Treating different indices as interchangeable evidence.
 - Reporting uncorrected pairwise significance when many comparisons exist.
 - Over-interpreting bar plots without distribution context.
 
-## 5. Minimal Recommended Preset
+## 6. Minimal Recommended Preset
 - Indices: `Chao1`, `Shannon`
 - Plot type: `Box plot`
 - Statistical method: `Wilcoxon`

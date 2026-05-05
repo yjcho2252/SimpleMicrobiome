@@ -1,7 +1,7 @@
-## UI
+﻿## UI
 mod_barplot_ui <- function(id) {
   ns <- NS(id)
-  tax_ranks <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
+  tax_ranks <- c("Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")
   
   palette_choices <- c(
     "Paired" = "Paired",
@@ -270,7 +270,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         Order = "o__",
         Family = "f__",
         Genus = "g__",
-        Species = "s__"
+        Species = "s__",
+        Strain = "t__"
       )
       get_rank_unassigned_label <- function(rank_name) {
         prefix <- rank_prefix_map[[rank_name]]
@@ -375,10 +376,11 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         Order = "o__",
         Family = "f__",
         Genus = "g__",
-        Species = "s__"
+        Species = "s__",
+        Strain = "t__"
       )
       tax_df$Full_Taxa_Name <- apply(tax_df, 1, function(taxa) {
-        valid_ranks <- taxa[tax_ranks]
+        valid_ranks <- taxa[tax_ranks[tax_ranks %in% names(taxa)]]
         full_name_parts <- c()
         for (i in 1:length(valid_ranks)) {
           part <- valid_ranks[i]
@@ -532,10 +534,11 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         Order = "o__",
         Family = "f__",
         Genus = "g__",
-        Species = "s__"
+        Species = "s__",
+        Strain = "t__"
       )
       tax_df$Full_Taxa_Name <- apply(tax_df, 1, function(taxa) {
-        valid_ranks <- taxa[tax_ranks]
+        valid_ranks <- taxa[tax_ranks[tax_ranks %in% names(taxa)]]
         full_name_parts <- c()
         for (i in 1:length(valid_ranks)) {
           part <- valid_ranks[i]

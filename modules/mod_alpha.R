@@ -1,4 +1,4 @@
-## UI
+﻿## UI
 mod_alpha_ui <- function(id) {
   ns <- NS(id)
   tagList(
@@ -119,6 +119,7 @@ mod_alpha_ui <- function(id) {
 ## Server
 mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) { 
   moduleServer(id, function(input, output, session) {
+
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
         return(requested)
@@ -162,6 +163,12 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
     })
     
     rarefaction_size <- reactive({
+      req(isTRUE(is_active_tab()))
+      req(ps_obj())
+      min(min(phyloseq::sample_sums(ps_obj())), 100000)
+    })
+
+    rarefaction_size_raw <- reactive({
       req(isTRUE(is_active_tab()))
       req(ps_obj())
       min(phyloseq::sample_sums(ps_obj()))
@@ -535,8 +542,18 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
     })
     
     output$rarefy_size_text <- renderText({
-      req(rarefaction_size())
-      paste("Rarefaction depth:", scales::comma(rarefaction_size()))
+      req(rarefaction_size(), rarefaction_size_raw())
+      if (rarefaction_size_raw() >= 100000) {
+        paste0(
+          "Rarefaction depth: ",
+          scales::comma(rarefaction_size()),
+          " (capped at 100,000 from raw minimum ",
+          scales::comma(rarefaction_size_raw()),
+          ")"
+        )
+      } else {
+        paste("Rarefaction depth:", scales::comma(rarefaction_size()))
+      }
     })
     
     output$download_alpha_plot <- downloadHandler(

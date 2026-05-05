@@ -73,7 +73,7 @@ mod_spieceasi_ui <- function(id) {
           choices = c("Single network", "Compare two groups"),
           selected = "Single network"
         ),
-        selectInput(ns("tax_level"), "4. Taxonomic level", choices = c("ASV", "Genus", "Species"), selected = "Genus"),
+        selectInput(ns("tax_level"), "4. Taxonomic level", choices = c("ASV", "Genus", "Species", "Strain"), selected = "Genus"),
         numericInput(ns("prevalence_filter_pct"), "5. Prevalence filter (%)", value = 10, min = 0, max = 100, step = 1),
         selectInput(ns("node_size_by"), "6. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
         selectInput(ns("node_color_by"), "7. Node color", choices = c("None"), selected = "None"),

@@ -12,6 +12,7 @@ Loads all base inputs required by downstream modules.
 ### 2.2 Taxonomy table upload
 - Maps feature IDs to taxonomic ranks.
 - Determines whether modules can display/test at Genus/Species/etc.
+- Current modules support taxonomy selection up to `Strain` where available.
 
 ### 2.3 Metadata upload
 - Defines grouping/covariate columns used throughout app.

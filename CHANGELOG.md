@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-05-05]
+
+### Changed
+- Alpha diversity (`modules/mod_alpha.R`):
+  - Rarefaction depth now uses `min(min(sample_sums), 100000)`.
+  - Added explicit status text when rarefaction depth is capped at `100000`.
+- Taxonomy-rank selector updates (Strain support):
+  - Added `Strain` in:
+    - `modules/mod_ancom.R`
+    - `modules/mod_biplot.R`
+    - `modules/mod_heatmap.R`
+    - `modules/mod_maaslin2.R`
+    - `modules/mod_randomforest.R`
+    - `modules/mod_sparcc.R`
+    - `modules/mod_spieceasi.R`
+- Rank parsing/labeling updates for Strain-aware handling:
+  - `modules/mod_ancom.R`
+  - `modules/mod_maaslin2.R`
+  - `modules/mod_randomforest.R`
+- Bar plot (`modules/mod_barplot.R`):
+  - Added `Strain` support in level selection/prefix mapping.
+- Citation (`modules/mod_citation.R`):
+  - Added `randomForest` R package citation entry.
+
+### Added
+- New MetaPhlAn conversion utility:
+  - `scripts/generate_SM_format.py`
+
+### Notes
+- Detailed release notes: `docs/releases/2026-05-05.md`
+
 ## [2026-05-03]
 
 ### Changed

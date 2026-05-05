@@ -66,7 +66,7 @@ mod_randomforest_ui <- function(id) {
         selectInput(
           ns("tax_level"),
           "5. Taxonomic level",
-          choices = c("ASV", "Genus", "Species"),
+          choices = c("ASV", "Genus", "Species", "Strain"),
           selected = "Genus"
         ),
         selectInput(
@@ -282,7 +282,8 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           Order = c("o__", "order__"),
           Family = c("f__", "family__"),
           Genus = c("g__", "genus__"),
-          Species = c("s__", "species__")
+          Species = c("s__", "species__"),
+          Strain = c("t__", "strain__")
         )
         prefixes <- prefix_map[[rank_name]]
         if (is.null(prefixes) || length(prefixes) == 0) {
@@ -318,7 +319,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         NA_character_
       }
 
-      rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+      rank_order <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")
       out <- if (identical(tax_level, "ASV")) {
         if ("FeatureID" %in% colnames(df)) as.character(df$FeatureID) else rep(NA_character_, nrow(df))
       } else {

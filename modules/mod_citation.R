@@ -54,6 +54,7 @@ mod_citation_server <- function(id) {
       ),
       "Random Forest" = c(
         "Breiman, L. (2001). Random forests. Machine Learning, 45(1), 5-32. https://doi.org/10.1023/A:1010933404324",
+        "Liaw, A., & Wiener, M. (2002). randomForest: Breiman and Cutler's random forests for classification and regression (R package). https://CRAN.R-project.org/package=randomForest",
         "Moe, Y. M., Jullum, M., & Loland, A. (2021). Explaining predictive models with dependent features using Shapley values and conditional inference. Artificial Intelligence, 298, 103502. https://doi.org/10.1016/j.artint.2021.103502",
         "Moe, Y. M., Jullum, M., & Loland, A. (2024). shapr: Explaining machine learning models with dependence-aware Shapley values (R package). https://CRAN.R-project.org/package=shapr",
         "Gu, Z., Eils, R., & Schlesner, M. (2016). Complex heatmaps reveal patterns and correlations in multidimensional genomic data. Bioinformatics, 32(18), 2847-2849. https://doi.org/10.1093/bioinformatics/btw313"
