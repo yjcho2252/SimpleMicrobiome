@@ -30,6 +30,23 @@ All notable changes to this project are documented in this file.
 - New MetaPhlAn conversion utility:
   - `scripts/generate_SM_format.py`
 
+### Fixed
+- Prevented duplicate run execution by adding running-state guard and 10-second cooldown to run-triggered modules:
+  - `modules/mod_ancom.R`
+  - `modules/mod_maaslin2.R`
+  - `modules/mod_randomforest.R`
+  - `modules/mod_sparcc.R`
+  - `modules/mod_spieceasi.R`
+  - `modules/mod_biplot.R`
+  - `modules/mod_heatmap.R`
+  - `modules/mod_beta.R` (`Run Clustering`, `Run EnvFit`)
+- Synchronized `Reference level` choices to selected `Comparison groups (levels)` to prevent missing/invalid reference selection:
+  - `modules/mod_ancom.R`
+  - `modules/mod_maaslin2.R`
+- Added metadata fallback for single-column input (`SampleID` only): auto-create `Group = "All"` with warning.
+  - `modules/mod_fileload.R`
+- Resolved parser initialization risk by removing UTF-8 BOM from module files.
+
 ### Notes
 - Detailed release notes: `docs/releases/2026-05-05.md`
 

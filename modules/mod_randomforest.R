@@ -573,6 +573,25 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       updateSelectInput(session, "shap_target_class", choices = choices, selected = shap_selected)
     }, ignoreInit = FALSE)
 
+    rf_run_nonce <- reactiveVal(0L)
+    rf_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+
+    observeEvent(rf_run_nonce(), {
+      now_ts <- Sys.time()
+      next_allowed <- rf_next_allowed_at()
+      if (isTRUE(rf_running())) {
+        showNotification("Random Forest is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(paste0("Please wait ", wait_sec, " second(s) before running again."), type = "message", duration = 2)
+        return(invisible(NULL))
+      }
+      rf_next_allowed_at(now_ts + 10)
+      rf_run_nonce(rf_run_nonce() + 1L)
+    }, ignoreInit = TRUE)
+
     observeEvent(input$run_rf, {
       req(ps_obj_filtered_raw(), input$outcome_var)
 

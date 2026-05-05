@@ -1,4 +1,4 @@
-﻿## UI
+## UI
 mod_barplot_ui <- function(id) {
   ns <- NS(id)
   tax_ranks <- c("Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")

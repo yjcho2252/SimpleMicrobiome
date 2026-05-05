@@ -383,14 +383,26 @@ mod_ancom_server <- function(id, ps_obj) {
 
       selected_levels <- isolate(input$group_levels)
       if (is.null(selected_levels)) selected_levels <- character(0)
+      current_reference <- isolate(input$reference_level)
       selected_levels <- intersect(selected_levels, level_choices)
+      if (!is.null(current_reference) && nzchar(current_reference) && current_reference %in% level_choices && !current_reference %in% selected_levels) {
+        selected_levels <- c(current_reference, selected_levels)
+      }
       if (length(selected_levels) == 0) selected_levels <- head(level_choices, 2)
       if (length(selected_levels) > 5) {
-        selected_levels <- selected_levels[1:5]
-        showNotification("You can select up to 5 group levels. Keeping the first 5 selected levels.", type = "warning")
+        keep_levels <- head(level_choices, 5)
+        if (!is.null(current_reference) && nzchar(current_reference) && current_reference %in% selected_levels && !current_reference %in% keep_levels) {
+          keep_levels <- c(current_reference, head(setdiff(level_choices, current_reference), 4))
+        }
+        selected_levels <- intersect(selected_levels, keep_levels)
+        showNotification("You can select up to 5 group levels. Keeping up to 5 levels while preserving reference level when possible.", type = "warning")
       }
       if (length(selected_levels) < 2 && length(level_choices) >= 2) {
-        selected_levels <- head(level_choices, 2)
+        if (!is.null(current_reference) && nzchar(current_reference) && current_reference %in% level_choices) {
+          selected_levels <- unique(c(current_reference, head(setdiff(level_choices, current_reference), 1)))
+        } else {
+          selected_levels <- head(level_choices, 2)
+        }
       }
       updateSelectizeInput(session, "group_levels", choices = level_choices, selected = selected_levels, server = TRUE)
 
@@ -439,6 +451,17 @@ mod_ancom_server <- function(id, ps_obj) {
         server = TRUE
       )
     }, ignoreNULL = FALSE)
+
+    observeEvent(input$group_levels, {
+      selected_levels <- input$group_levels
+      if (is.null(selected_levels)) selected_levels <- character(0)
+      selected_levels <- selected_levels[nzchar(selected_levels)]
+      reference_level <- input$reference_level
+      if (is.null(reference_level) || !reference_level %in% selected_levels) {
+        reference_level <- if (length(selected_levels) > 0) selected_levels[1] else NULL
+      }
+      updateSelectInput(session, "reference_level", choices = selected_levels, selected = reference_level)
+    }, ignoreInit = TRUE)
     
     observeEvent(list(input$secondary_var, input$fix_covariates), {
       base_group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
@@ -634,8 +657,33 @@ mod_ancom_server <- function(id, ps_obj) {
     })
 
     ancom_running <- reactiveVal(FALSE)
+    ancom_run_nonce <- reactiveVal(0L)
+    ancom_next_allowed_at <- reactiveVal(as.POSIXct(NA))
 
-    ancom_res <- eventReactive(input$run_ancom_btn, {
+    observeEvent(input$run_ancom_btn, {
+      now_ts <- Sys.time()
+      next_allowed <- ancom_next_allowed_at()
+
+      if (isTRUE(ancom_running())) {
+        showNotification("ANCOM-BC2 is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(
+          paste0("Please wait ", wait_sec, " second(s) before running again."),
+          type = "message",
+          duration = 2
+        )
+        return(invisible(NULL))
+      }
+
+      ancom_next_allowed_at(now_ts + 10)
+      ancom_run_nonce(ancom_run_nonce() + 1L)
+    }, ignoreInit = TRUE)
+
+    ancom_res <- eventReactive(ancom_run_nonce(), {
       req(ps_filtered(), input$secondary_var, input$reference_level)
       current_group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
       ancom_running(TRUE)

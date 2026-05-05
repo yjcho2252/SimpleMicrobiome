@@ -1,4 +1,4 @@
-﻿## UI
+## UI
 mod_alpha_ui <- function(id) {
   ns <- NS(id)
   tagList(

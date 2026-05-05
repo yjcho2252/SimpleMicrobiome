@@ -216,7 +216,27 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
     biplot_running <- reactiveVal(FALSE)
 
-    biplot_payload <- eventReactive(input$run_biplot, {
+    biplot_running <- reactiveVal(FALSE)
+    biplot_run_nonce <- reactiveVal(0L)
+    biplot_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+
+    observeEvent(input$run_biplot, {
+      now_ts <- Sys.time()
+      next_allowed <- biplot_next_allowed_at()
+      if (isTRUE(biplot_running())) {
+        showNotification("Biplot is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(paste0("Please wait ", wait_sec, " second(s) before running again."), type = "message", duration = 2)
+        return(invisible(NULL))
+      }
+      biplot_next_allowed_at(now_ts + 10)
+      biplot_run_nonce(biplot_run_nonce() + 1L)
+    }, ignoreInit = TRUE)
+
+    biplot_payload <- eventReactive(biplot_run_nonce(), {
       biplot_running(TRUE)
       session$sendCustomMessage(
         "toggle-biplot-run-btn",

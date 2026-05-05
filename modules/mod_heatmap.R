@@ -410,7 +410,27 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
 
     heatmap_running <- reactiveVal(FALSE)
 
-    corr_payload <- eventReactive(input$run_heatmap, {
+    heatmap_running <- reactiveVal(FALSE)
+    heatmap_run_nonce <- reactiveVal(0L)
+    heatmap_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+
+    observeEvent(input$run_heatmap, {
+      now_ts <- Sys.time()
+      next_allowed <- heatmap_next_allowed_at()
+      if (isTRUE(heatmap_running())) {
+        showNotification("Heatmap is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(paste0("Please wait ", wait_sec, " second(s) before running again."), type = "message", duration = 2)
+        return(invisible(NULL))
+      }
+      heatmap_next_allowed_at(now_ts + 10)
+      heatmap_run_nonce(heatmap_run_nonce() + 1L)
+    }, ignoreInit = TRUE)
+
+    corr_payload <- eventReactive(heatmap_run_nonce(), {
       heatmap_running(TRUE)
       session$sendCustomMessage(
         "toggle-heatmap-run-btn",

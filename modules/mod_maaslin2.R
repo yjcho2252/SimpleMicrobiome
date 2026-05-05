@@ -444,6 +444,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       if (is.null(selected_levels)) {
         selected_levels <- character(0)
       }
+      current_reference <- isolate(input$reference_level)
       primary_values <- as.character(meta_df[[primary_var]])
       if (is.null(secondary_var)) {
         level_choices <- sort(unique(primary_values))
@@ -460,9 +461,16 @@ mod_maaslin2_server <- function(id, ps_obj) {
         level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       }
       selected_levels <- intersect(selected_levels, level_choices)
+      if (!is.null(current_reference) && nzchar(current_reference) && current_reference %in% level_choices && !current_reference %in% selected_levels) {
+        selected_levels <- c(current_reference, selected_levels)
+      }
       if (length(selected_levels) == 0) selected_levels <- head(level_choices, 2)
       if (length(selected_levels) < 2 && length(level_choices) >= 2) {
-        selected_levels <- head(level_choices, 2)
+        if (!is.null(current_reference) && nzchar(current_reference) && current_reference %in% level_choices) {
+          selected_levels <- unique(c(current_reference, head(setdiff(level_choices, current_reference), 1)))
+        } else {
+          selected_levels <- head(level_choices, 2)
+        }
       }
 
       updateSelectizeInput(session, "group_levels",
@@ -516,6 +524,17 @@ mod_maaslin2_server <- function(id, ps_obj) {
         server = TRUE
       )
     }, ignoreNULL = FALSE)
+
+    observeEvent(input$group_levels, {
+      selected_levels <- input$group_levels
+      if (is.null(selected_levels)) selected_levels <- character(0)
+      selected_levels <- selected_levels[nzchar(selected_levels)]
+      reference_level <- input$reference_level
+      if (is.null(reference_level) || !reference_level %in% selected_levels) {
+        reference_level <- if (length(selected_levels) > 0) selected_levels[1] else NULL
+      }
+      updateSelectInput(session, "reference_level", choices = selected_levels, selected = reference_level)
+    }, ignoreInit = TRUE)
     
     observeEvent(list(input$secondary_var, input$fix_covariates, input$use_subgroup), {
       interaction_base_var <- if (is.null(secondary_var_resolved())) group_var_resolved() else secondary_var_resolved()
@@ -700,8 +719,33 @@ mod_maaslin2_server <- function(id, ps_obj) {
     })
 
     maaslin2_running <- reactiveVal(FALSE)
+    maaslin2_run_nonce <- reactiveVal(0L)
+    maaslin2_next_allowed_at <- reactiveVal(as.POSIXct(NA))
 
-    maaslin2_res <- eventReactive(input$run_maaslin2_btn, {
+    observeEvent(input$run_maaslin2_btn, {
+      now_ts <- Sys.time()
+      next_allowed <- maaslin2_next_allowed_at()
+
+      if (isTRUE(maaslin2_running())) {
+        showNotification("MaAsLin2 is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(
+          paste0("Please wait ", wait_sec, " second(s) before running again."),
+          type = "message",
+          duration = 2
+        )
+        return(invisible(NULL))
+      }
+
+      maaslin2_next_allowed_at(now_ts + 10)
+      maaslin2_run_nonce(maaslin2_run_nonce() + 1L)
+    }, ignoreInit = TRUE)
+
+    maaslin2_res <- eventReactive(maaslin2_run_nonce(), {
       req(ps_filtered(), input$reference_level)
       maaslin2_running(TRUE)
 

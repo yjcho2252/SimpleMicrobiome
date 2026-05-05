@@ -539,8 +539,25 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       result = NULL,
       note = "Clustering has not been run yet."
     ))
+    cluster_running <- reactiveVal(FALSE)
+    cluster_next_allowed_at <- reactiveVal(as.POSIXct(NA))
 
     observeEvent(input$run_clustering, {
+      now_ts <- Sys.time()
+      next_allowed <- cluster_next_allowed_at()
+      if (isTRUE(cluster_running())) {
+        showNotification("Clustering is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(paste0("Please wait ", wait_sec, " second(s) before running again."), type = "message", duration = 2)
+        return(invisible(NULL))
+      }
+      cluster_next_allowed_at(now_ts + 10)
+      cluster_running(TRUE)
+      on.exit(cluster_running(FALSE), add = TRUE)
+
       if (!requireNamespace("cluster", quietly = TRUE)) {
         cluster_result_val(list(
           result = NULL,
@@ -655,8 +672,25 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       nmds = data.frame(),
       note = "EnvFit has not been run yet."
     ))
+    envfit_running <- reactiveVal(FALSE)
+    envfit_next_allowed_at <- reactiveVal(as.POSIXct(NA))
 
     observeEvent(input$run_envfit, {
+      now_ts <- Sys.time()
+      next_allowed <- envfit_next_allowed_at()
+      if (isTRUE(envfit_running())) {
+        showNotification("EnvFit is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(paste0("Please wait ", wait_sec, " second(s) before running again."), type = "message", duration = 2)
+        return(invisible(NULL))
+      }
+      envfit_next_allowed_at(now_ts + 10)
+      envfit_running(TRUE)
+      on.exit(envfit_running(FALSE), add = TRUE)
+
       if (!requireNamespace("vegan", quietly = TRUE)) {
         envfit_result_val(list(
           pcoa = data.frame(),

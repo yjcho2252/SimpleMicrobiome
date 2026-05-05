@@ -279,6 +279,14 @@ mod_fileload_server <- function(id) {
 
       ps <- tryCatch({
         colnames(meta_df)[1] <- "SampleID"
+        if (ncol(meta_df) == 1) {
+          meta_df$Group <- "All"
+          showNotification(
+            "Metadata contains only SampleID. A default 'Group' column with value 'All' was added.",
+            type = "warning",
+            duration = 8
+          )
+        }
         rownames(meta_df) <- meta_df$SampleID
 
         otu <- otu_table(as.matrix(otu_df), taxa_are_rows = TRUE)

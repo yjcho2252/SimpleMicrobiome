@@ -426,7 +426,26 @@ mod_sparcc_server <- function(id, ps_obj) {
 
     network_running <- reactiveVal(FALSE)
 
-    network_result <- eventReactive(input$run_network_btn, {
+    network_run_nonce <- reactiveVal(0L)
+    network_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+
+    observeEvent(input$run_network_btn, {
+      now_ts <- Sys.time()
+      next_allowed <- network_next_allowed_at()
+      if (isTRUE(network_running())) {
+        showNotification("SparCC is already running. Please wait for completion.", type = "message", duration = 3)
+        return(invisible(NULL))
+      }
+      if (!is.na(next_allowed) && now_ts < next_allowed) {
+        wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
+        showNotification(paste0("Please wait ", wait_sec, " second(s) before running again."), type = "message", duration = 2)
+        return(invisible(NULL))
+      }
+      network_next_allowed_at(now_ts + 10)
+      network_run_nonce(network_run_nonce() + 1L)
+    }, ignoreInit = TRUE)
+
+    network_result <- eventReactive(network_run_nonce(), {
       req(build_network_inputs())
       validate(
         need(requireNamespace("NetCoMi", quietly = TRUE), "NetCoMi package is not installed. Please install 'NetCoMi'."),
