@@ -119,6 +119,11 @@ mod_ancom_ui <- function(id) {
               plugins = list("remove_button")
             )
           ),
+          checkboxInput(
+            ns("enable_trend_test"),
+            "10. Enable ordered trend test",
+            value = FALSE
+          ),
           verbatimTextOutput(ns("formula_preview"))
         ),
         hr(),
@@ -549,6 +554,7 @@ mod_ancom_server <- function(id, ps_obj) {
         "Selected Sample Counts",
         if (isTRUE(info$using_secondary)) paste0("Primary filter: ", info$primary_var, " = ", info$primary_level) else "Primary-only comparison mode",
         if (isTRUE(info$using_secondary)) paste0("Secondary variable: ", info$group_var) else paste0("Grouping variable: ", info$group_var),
+        paste0("Ordered trend test: ", if (isTRUE(input$enable_trend_test)) "Enabled" else "Disabled"),
         paste0("Included levels: ", paste(info$selected_levels, collapse = ", ")),
         paste0("Total selected samples: ", length(info$selected_ids))
       )
@@ -734,6 +740,7 @@ mod_ancom_server <- function(id, ps_obj) {
           tax_level_arg <- if (input$tax_level == "ASV") NULL else input$tax_level
           selected_levels <- group_selection_info()$selected_levels
           use_multi_group_tests <- length(selected_levels) >= 3
+          use_trend_test <- isTRUE(input$enable_trend_test) && (length(selected_levels) >= 3)
 
           covariates <- input$fix_covariates
           if (is.null(covariates) || length(covariates) == 0) {
@@ -784,7 +791,28 @@ mod_ancom_server <- function(id, ps_obj) {
             NULL
           }
 
-          out <- ANCOMBC::ancombc2(
+          trend_control_arg <- NULL
+          if (isTRUE(use_trend_test)) {
+            # Build monotonic increasing trend constraints following ANCOM-BC2 vignette.
+            n_levels <- length(selected_levels)
+            n_contrasts <- n_levels - 1L
+            contrast_mat <- matrix(0, nrow = n_contrasts, ncol = n_contrasts)
+            contrast_mat[1, 1] <- 1
+            if (n_contrasts >= 2) {
+              for (i in 2:n_contrasts) {
+                contrast_mat[i, i - 1] <- -1
+                contrast_mat[i, i] <- 1
+              }
+            }
+            trend_control_arg <- list(
+              contrast = list(contrast_mat),
+              node = list(as.integer(n_contrasts)),
+              solver = "ECOS",
+              B = 100L
+            )
+          }
+
+          ancom_args <- list(
             data = ps_current,
             tax_level = tax_level_arg,
             fix_formula = fix_formula_str,
@@ -794,10 +822,14 @@ mod_ancom_server <- function(id, ps_obj) {
             neg_lb = TRUE,
             global = use_multi_group_tests,
             pairwise = use_multi_group_tests,
-            trend = use_multi_group_tests,
+            trend = use_trend_test,
             alpha = 0.05,
             n_cl = 4
           )
+          if (!is.null(trend_control_arg)) {
+            ancom_args$trend_control <- trend_control_arg
+          }
+          out <- do.call(ANCOMBC::ancombc2, ancom_args)
 
           res <- out$res
           res$feature_id <- as.character(res$taxon)
@@ -837,7 +869,10 @@ mod_ancom_server <- function(id, ps_obj) {
           res$feature_id <- current_labels
 
           rownames(res) <- make.unique(as.character(res$feature_id))
-          res
+          list(
+            res = res,
+            trend = out$res_trend
+          )
         })
       }, error = function(e) {
         showNotification(paste("ANCOM-BC2 Execution Failed:", e$message), type = "error", duration = NULL)
@@ -921,7 +956,8 @@ mod_ancom_server <- function(id, ps_obj) {
 
     ancom_processed <- reactive({
       req(ancom_res(), input$secondary_var, input$reference_level)
-      res <- ancom_res()
+      ancom_obj <- ancom_res()
+      res <- ancom_obj$res
       current_group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
 
       selected_levels <- group_selection_info()$selected_levels
@@ -998,6 +1034,22 @@ mod_ancom_server <- function(id, ps_obj) {
 
       taxonomy_cols <- intersect(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), colnames(res))
       taxonomy_df <- if (length(taxonomy_cols) > 0) res[, taxonomy_cols, drop = FALSE] else NULL
+      trend_cols <- character(0)
+      trend_df <- NULL
+      if (isTRUE(input$enable_trend_test)) {
+        trend_source <- ancom_obj$trend
+        if (!is.null(trend_source) && is.data.frame(trend_source) && nrow(trend_source) > 0) {
+          trend_cols <- setdiff(colnames(trend_source), c("taxon"))
+          if (length(trend_cols) > 0) {
+            trend_df <- trend_source[, trend_cols, drop = FALSE]
+            colnames(trend_df) <- paste0("trend_", colnames(trend_df))
+            if ("taxon" %in% colnames(trend_source)) {
+              rownames(trend_df) <- as.character(trend_source$taxon)
+            }
+            trend_df <- trend_df[match(as.character(res$taxon), rownames(trend_df)), , drop = FALSE]
+          }
+        }
+      }
 
       contrast_results <- lapply(contrast_levels, function(level_name) {
         suffix_candidates <- build_suffix_candidates(level_name)
@@ -1036,6 +1088,9 @@ mod_ancom_server <- function(id, ps_obj) {
 
         if (!is.null(taxonomy_df)) {
           base_df <- cbind(taxonomy_df, base_df)
+        }
+        if (!is.null(trend_df)) {
+          base_df <- cbind(base_df, trend_df)
         }
 
         base_df

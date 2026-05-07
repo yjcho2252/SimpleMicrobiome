@@ -81,11 +81,10 @@ mod_taxa_comparison_ui <- function(id) {
               ns("trend_group_type"),
               "Group variable type:",
               choices = c(
-                "Auto" = "auto",
                 "Categorical" = "categorical",
                 "Continuous (numeric)" = "continuous"
               ),
-              selected = "auto"
+              selected = "categorical"
             ),
             selectInput(
               ns("trend_line_method"),
@@ -118,7 +117,7 @@ mod_taxa_comparison_ui <- function(id) {
         ),
         checkboxInput(
           ns("show_p_lt_0_05_only"),
-          "Show only p-value < 0.05",
+          "Show only q-value < 0.05",
           value = FALSE
         ),
         selectInput(
@@ -569,15 +568,15 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         nzchar(subject_col) &&
         subject_col %in% names(df)
 
-      df %>%
+      out_stats <- df %>%
         dplyr::group_by(Taxa) %>%
         dplyr::summarise(
           mean_abundance = mean(AbundancePlot, na.rm = TRUE),
           p_value = tryCatch({
             if (show_regression_line) {
               sub_df <- dplyr::cur_data_all()
-              if (is.null(trend_group_type) || !trend_group_type %in% c("auto", "categorical", "continuous")) {
-                trend_group_type <- "auto"
+              if (is.null(trend_group_type) || !trend_group_type %in% c("categorical", "continuous")) {
+                trend_group_type <- "categorical"
               }
               if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson")) {
                 trend_method <- "spearman"
@@ -588,8 +587,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
               } else if (identical(trend_group_type, "categorical")) {
                 x_vals <- as.numeric(factor(sub_df$Group, levels = group_levels))
               } else {
-                x_auto <- suppressWarnings(as.numeric(as.character(sub_df$Group)))
-                if (sum(is.finite(x_auto)) >= 3) x_auto else as.numeric(factor(sub_df$Group, levels = group_levels))
+                as.numeric(factor(sub_df$Group, levels = group_levels))
               }
               y_vals <- sub_df$AbundancePlot
               ok <- is.finite(x_vals) & is.finite(y_vals)
@@ -675,6 +673,20 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           }, error = function(e) NA_real_),
           .groups = "drop"
         )
+      p_adjust_method <- input$p_adjust_method
+      if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
+        p_adjust_method <- "none"
+      }
+      out_stats$q_value <- NA_real_
+      ok <- is.finite(out_stats$p_value)
+      if (any(ok)) {
+        if (identical(p_adjust_method, "none")) {
+          out_stats$q_value[ok] <- out_stats$p_value[ok]
+        } else {
+          out_stats$q_value[ok] <- stats::p.adjust(out_stats$p_value[ok], method = p_adjust_method)
+        }
+      }
+      out_stats
     })
     
     tax_level_ps_raw <- reactive({
@@ -736,14 +748,79 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       list(raw = raw_df, rel = rel_df)
     })
     
-    observeEvent(list(taxa_stats(), input$tax_level, input$show_p_lt_0_05_only), {
+    observeEvent(list(
+      taxa_stats(),
+      input$tax_level,
+      input$show_p_lt_0_05_only,
+      input$show_trend_line,
+      input$trend_group_type,
+      input$trend_line_method
+    ), {
       req(isTRUE(is_active_tab()))
       taxa_summary <- taxa_stats()
 
       if (isTRUE(input$show_p_lt_0_05_only)) {
-        taxa_summary <- taxa_summary %>%
-          dplyr::filter(!is.na(p_value) & p_value < 0.05) %>%
-          dplyr::arrange(p_value, dplyr::desc(mean_abundance))
+        if (isTRUE(input$show_trend_line)) {
+          plot_df <- taxa_long_data()
+          trend_group_type <- input$trend_group_type
+          trend_method <- input$trend_line_method
+          p_adjust_method <- input$p_adjust_method
+          if (is.null(trend_group_type) || !trend_group_type %in% c("categorical", "continuous")) trend_group_type <- "categorical"
+          if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson")) trend_method <- "spearman"
+          if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) p_adjust_method <- "none"
+          group_levels <- levels(factor(plot_df$Group))
+          if (identical(trend_group_type, "continuous")) {
+            plot_df$TrendX <- suppressWarnings(as.numeric(as.character(plot_df$Group)))
+          } else if (identical(trend_group_type, "categorical")) {
+            plot_df$TrendX <- as.numeric(factor(plot_df$Group, levels = group_levels))
+          } else {
+            plot_df$TrendX <- as.numeric(factor(plot_df$Group, levels = group_levels))
+          }
+          plot_df <- plot_df[is.finite(plot_df$TrendX) & is.finite(plot_df$AbundancePlot), , drop = FALSE]
+          facet_vars <- if ("PrimaryGroup" %in% colnames(plot_df)) c("PrimaryGroup", "Taxa") else c("Taxa")
+          facet_split <- interaction(plot_df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
+          facet_data <- split(plot_df, facet_split)
+          facet_keys <- names(facet_data)
+          facet_p <- rep(NA_real_, length(facet_data))
+          for (i in seq_along(facet_data)) {
+            sub_data <- facet_data[[i]]
+            if (nrow(sub_data) < 3) next
+            x_vals <- sub_data$TrendX
+            y_vals <- sub_data$AbundancePlot
+            ok <- is.finite(x_vals) & is.finite(y_vals)
+            if (sum(ok) < 3) next
+            facet_p[i] <- tryCatch({
+              if (identical(trend_method, "spearman")) {
+                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value)
+              } else {
+                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value)
+              }
+            }, error = function(e) NA_real_)
+          }
+          facet_q <- rep(NA_real_, length(facet_p))
+          okp <- is.finite(facet_p)
+          if (any(okp)) {
+            if (identical(p_adjust_method, "none")) facet_q[okp] <- facet_p[okp] else facet_q[okp] <- stats::p.adjust(facet_p[okp], method = p_adjust_method)
+          }
+          facet_tbl <- data.frame(facet_key = facet_keys, q_value = facet_q, stringsAsFactors = FALSE)
+          facet_tbl$Taxa <- vapply(strsplit(as.character(facet_tbl$facet_key), "\\."), function(x) tail(x, 1), character(1))
+          taxa_from_plot <- facet_tbl %>%
+            dplyr::group_by(Taxa) %>%
+            dplyr::summarise(q_value = suppressWarnings(min(q_value, na.rm = TRUE)), .groups = "drop") %>%
+            dplyr::mutate(q_value = ifelse(is.finite(q_value), q_value, NA_real_))
+          taxa_summary <- taxa_summary %>%
+            dplyr::left_join(taxa_from_plot, by = "Taxa", suffix = c("", "_plot")) %>%
+            dplyr::mutate(q_filter = dplyr::coalesce(q_value_plot, q_value)) %>%
+            dplyr::filter(!is.na(q_filter) & q_filter < 0.05) %>%
+            dplyr::arrange(q_filter, dplyr::desc(mean_abundance))
+          if ("q_value_plot" %in% colnames(taxa_summary)) {
+            taxa_summary <- dplyr::select(taxa_summary, -q_value_plot, -q_filter)
+          }
+        } else {
+          taxa_summary <- taxa_summary %>%
+            dplyr::filter(!is.na(q_value) & q_value < 0.05) %>%
+            dplyr::arrange(q_value, dplyr::desc(mean_abundance))
+        }
       } else {
         taxa_summary <- taxa_summary %>%
           dplyr::arrange(dplyr::desc(mean_abundance))
@@ -1067,8 +1144,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       if (isTRUE(input$show_trend_line)) {
         trend_df <- df
         trend_group_type <- input$trend_group_type
-        if (is.null(trend_group_type) || !trend_group_type %in% c("auto", "categorical", "continuous")) {
-          trend_group_type <- "auto"
+        if (is.null(trend_group_type) || !trend_group_type %in% c("categorical", "continuous")) {
+          trend_group_type <- "categorical"
         }
         if (isTRUE(use_continuous_x)) {
           trend_df$TrendX <- trend_df$GroupContinuous
@@ -1077,12 +1154,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         } else if (identical(trend_group_type, "categorical")) {
           trend_df$TrendX <- as.numeric(factor(trend_df$Group, levels = group_levels))
         } else {
-          x_auto <- suppressWarnings(as.numeric(as.character(trend_df$Group)))
-          if (sum(is.finite(x_auto)) >= 3) {
-            trend_df$TrendX <- x_auto
-          } else {
-            trend_df$TrendX <- as.numeric(factor(trend_df$Group, levels = group_levels))
-          }
+          trend_df$TrendX <- as.numeric(factor(trend_df$Group, levels = group_levels))
         }
         trend_df <- trend_df[is.finite(trend_df$TrendX) & is.finite(trend_df[[y_plot_col]]), , drop = FALSE]
         if (nrow(trend_df) >= 3) {
@@ -1105,9 +1177,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           facet_split <- interaction(trend_df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
           trend_facet_data <- split(trend_df, facet_split)
           trend_p_rows <- vector("list", length(trend_facet_data))
+          trend_p_vals <- rep(NA_real_, length(trend_facet_data))
+          trend_facet_keys <- character(length(trend_facet_data))
           trend_idx <- 0L
 
+          facet_i <- 0L
           for (sub_data in trend_facet_data) {
+            facet_i <- facet_i + 1L
+            trend_facet_keys[facet_i] <- names(trend_facet_data)[facet_i]
             if (nrow(sub_data) < 3) next
             x_vals <- sub_data$TrendX
             y_vals <- sub_data[[y_plot_col]]
@@ -1122,6 +1199,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
               }
             }, error = function(e) NA_real_)
             if (!is.finite(p_val)) next
+            trend_p_vals[facet_i] <- p_val
 
             x_min <- suppressWarnings(min(x_vals[ok], na.rm = TRUE))
             x_max <- suppressWarnings(max(x_vals[ok], na.rm = TRUE))
@@ -1134,7 +1212,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             ann <- data.frame(
               x = x_min + 0.05 * x_span,
               y = y_max + 0.06 * y_span,
-              p_label = paste0("p-value = ", formatC(p_val, format = "g", digits = 3)),
+              p_label = "",
               stringsAsFactors = FALSE
             )
             for (fv in facet_vars) {
@@ -1147,6 +1225,23 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           trend_p_rows <- trend_p_rows[seq_len(trend_idx)]
           if (length(trend_p_rows) > 0) {
             trend_p_df <- do.call(rbind, trend_p_rows)
+            pvals_ok <- is.finite(trend_p_vals)
+            trend_q_vals <- rep(NA_real_, length(trend_p_vals))
+            p_adjust_method <- input$p_adjust_method
+            if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
+              p_adjust_method <- "none"
+            }
+            if (any(pvals_ok)) {
+              if (identical(p_adjust_method, "none")) {
+                trend_q_vals[pvals_ok] <- trend_p_vals[pvals_ok]
+              } else {
+                trend_q_vals[pvals_ok] <- stats::p.adjust(trend_p_vals[pvals_ok], method = p_adjust_method)
+              }
+            }
+            q_map <- stats::setNames(trend_q_vals, trend_facet_keys)
+            label_keys <- as.character(interaction(trend_p_df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE))
+            trend_q_for_label <- unname(q_map[label_keys])
+            trend_p_df$p_label <- paste0("q-value = ", formatC(trend_q_for_label, format = "g", digits = 3))
             p <- p + ggplot2::geom_text(
               data = trend_p_df,
               mapping = ggplot2::aes(x = x, y = y, label = p_label),

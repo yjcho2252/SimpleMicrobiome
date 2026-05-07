@@ -312,7 +312,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         level_vec <- level_vec[!is.na(level_vec) & nzchar(level_vec)]
         if (length(level_vec) > 0) {
           level_counts <- table(level_vec)
-          level_choices <- sort(names(level_counts[level_counts < 10]))
+          if (length(level_counts) < 10) {
+            level_choices <- sort(names(level_counts))
+          }
         }
       }
       level_choices <- c("All", level_choices)
@@ -349,7 +351,11 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       level_vec <- level_vec[!is.na(level_vec) & nzchar(level_vec)]
       if (length(level_vec) > 0) {
         level_counts <- table(level_vec)
-        level_choices <- sort(names(level_counts[level_counts < 10]))
+        if (length(level_counts) < 10) {
+          level_choices <- sort(names(level_counts))
+        } else {
+          level_choices <- character(0)
+        }
       } else {
         level_choices <- character(0)
       }
@@ -1094,7 +1100,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           paste0("Association type: ", payload$assoc_type),
           paste0("1) Primary group variable: ", primary_group_label),
           paste0("2) Primary level filter: ", primary_level_label),
-          "Primary-level dropdown shows only levels with fewer than 10 factors.",
+          "Primary-level dropdown is shown only when the number of distinct levels is fewer than 10.",
           paste0("3) Secondary group variable: ", secondary_group_label),
           paste0("Current analysis scope: ", analysis_scope_label),
           paste0("Analyzed group levels/axis: ", analyzed_group_levels),

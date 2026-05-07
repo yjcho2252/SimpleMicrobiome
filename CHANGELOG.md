@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-05-07]
+
+### Changed
+- Heatmap (`modules/mod_heatmap.R`):
+  - Updated subgroup `Primary level to include` logic to use distinct level count.
+  - Primary-level choices are now shown only when the number of distinct levels is fewer than `10`.
+  - Updated status text to match the new distinct-level-count rule.
+- ANCOM (`modules/mod_ancom.R`):
+  - Added optional `Enable ordered trend test` toggle.
+  - Enabled ANCOM-BC2 trend testing only when explicitly enabled and when 3+ levels are selected.
+  - Added trend-control argument wiring and propagated trend outputs into processed results (`trend_*` columns when available).
+- SpiecEasi (`modules/mod_SpiecEasi.R`):
+  - Added run guard and 10-second cooldown to prevent repeated execution requests.
+- Taxa Comparison (`modules/mod_taxa_comparison.R`):
+  - Simplified trend group type to explicit `Categorical`/`Continuous` selection.
+  - Changed significance-only filtering to use q-value thresholding (`q < 0.05`).
+  - Applied multiple-testing adjustment to trend-related significance outputs and labels.
+- Top page (`modules/mod_top.R`):
+  - Replaced detailed historical update list with concise versioned highlights.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-05-07.md`
+
 ## [2026-05-05]
 
 ### Changed
