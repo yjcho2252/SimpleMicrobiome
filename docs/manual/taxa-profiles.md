@@ -140,9 +140,8 @@ This document explains what each left-panel parameter does and how different set
 - **Show Regression Line**:
   - When enabled, the plot automatically switches to `Scatter plot`.
   - Pairwise p-value bars are turned off while trend-line mode is active.
-  - Facet-level trend p-values are shown as `p-value = ...`.
+  - Facet-level trend q-values are shown as `q-value = ...`.
 - **Group variable type**:
-  - `Auto`: if group values are numeric for enough samples, uses continuous mode; otherwise categorical encoding.
   - `Categorical`: group levels are encoded as ordered indices for trend fitting.
   - `Continuous (numeric)`: group values are converted to numeric directly.
 - **Regression method**:
@@ -162,14 +161,14 @@ This document explains what each left-panel parameter does and how different set
   - Broad selection increases discovery chance but also testing burden.
   - Focused selection improves interpretability.
 
-### 3.8 Show only taxa with p-value < 0.05
+### 3.8 Show only q-value < 0.05
 - **Options**: Enabled/Disabled.
 - **Interpretation impact**:
   - Enabled: concise significant-only report, but hides near-threshold trends.
   - Disabled: full transparency, easier to assess effect landscape.
 - **Calculation mode**:
-  - When `Show Regression Line` is disabled, filtering uses group-comparison p-values (two-group test or multi-group Kruskal-Wallis).
-  - When `Show Regression Line` is enabled, filtering is recalculated from the selected `Regression method` (`Spearman` or `Pearson`) and `Group variable type`.
+  - Filtering always uses taxa-level multiple-testing-adjusted q-values (`q < 0.05`) from group-comparison statistics.
+  - `Show Regression Line` does not change the taxa filtering rule.
   - When `Within-Subject Pairing` is enabled and group count is 3 or more, overall group comparison uses `Friedman test` (repeated measures) instead of Kruskal-Wallis.
 
 ### 3.9 Transformation

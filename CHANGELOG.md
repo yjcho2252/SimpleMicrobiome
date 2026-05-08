@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-05-08]
+
+### Changed
+- Taxa Comparison (`modules/mod_taxa_comparison.R`):
+  - Decoupled `Show Regression Line` behavior from `Show only q-value < 0.05` taxa filtering.
+  - Removed trend-specific filtering branch so significance-only filtering now consistently uses taxa-level `q < 0.05` from `taxa_stats()`.
+- Manual documentation:
+  - Updated `docs/manual/taxa-profiles.md` to reflect independent regression-line behavior and q-value wording (`q-value` labels, no `Auto` group-type description).
+
+### Notes
+- Detailed release notes: `docs/releases/2026-05-08.md`
+
 ## [2026-05-07]
 
 ### Changed

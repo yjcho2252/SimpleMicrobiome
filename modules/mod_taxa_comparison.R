@@ -760,67 +760,9 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       taxa_summary <- taxa_stats()
 
       if (isTRUE(input$show_p_lt_0_05_only)) {
-        if (isTRUE(input$show_trend_line)) {
-          plot_df <- taxa_long_data()
-          trend_group_type <- input$trend_group_type
-          trend_method <- input$trend_line_method
-          p_adjust_method <- input$p_adjust_method
-          if (is.null(trend_group_type) || !trend_group_type %in% c("categorical", "continuous")) trend_group_type <- "categorical"
-          if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson")) trend_method <- "spearman"
-          if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) p_adjust_method <- "none"
-          group_levels <- levels(factor(plot_df$Group))
-          if (identical(trend_group_type, "continuous")) {
-            plot_df$TrendX <- suppressWarnings(as.numeric(as.character(plot_df$Group)))
-          } else if (identical(trend_group_type, "categorical")) {
-            plot_df$TrendX <- as.numeric(factor(plot_df$Group, levels = group_levels))
-          } else {
-            plot_df$TrendX <- as.numeric(factor(plot_df$Group, levels = group_levels))
-          }
-          plot_df <- plot_df[is.finite(plot_df$TrendX) & is.finite(plot_df$AbundancePlot), , drop = FALSE]
-          facet_vars <- if ("PrimaryGroup" %in% colnames(plot_df)) c("PrimaryGroup", "Taxa") else c("Taxa")
-          facet_split <- interaction(plot_df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
-          facet_data <- split(plot_df, facet_split)
-          facet_keys <- names(facet_data)
-          facet_p <- rep(NA_real_, length(facet_data))
-          for (i in seq_along(facet_data)) {
-            sub_data <- facet_data[[i]]
-            if (nrow(sub_data) < 3) next
-            x_vals <- sub_data$TrendX
-            y_vals <- sub_data$AbundancePlot
-            ok <- is.finite(x_vals) & is.finite(y_vals)
-            if (sum(ok) < 3) next
-            facet_p[i] <- tryCatch({
-              if (identical(trend_method, "spearman")) {
-                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value)
-              } else {
-                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value)
-              }
-            }, error = function(e) NA_real_)
-          }
-          facet_q <- rep(NA_real_, length(facet_p))
-          okp <- is.finite(facet_p)
-          if (any(okp)) {
-            if (identical(p_adjust_method, "none")) facet_q[okp] <- facet_p[okp] else facet_q[okp] <- stats::p.adjust(facet_p[okp], method = p_adjust_method)
-          }
-          facet_tbl <- data.frame(facet_key = facet_keys, q_value = facet_q, stringsAsFactors = FALSE)
-          facet_tbl$Taxa <- vapply(strsplit(as.character(facet_tbl$facet_key), "\\."), function(x) tail(x, 1), character(1))
-          taxa_from_plot <- facet_tbl %>%
-            dplyr::group_by(Taxa) %>%
-            dplyr::summarise(q_value = suppressWarnings(min(q_value, na.rm = TRUE)), .groups = "drop") %>%
-            dplyr::mutate(q_value = ifelse(is.finite(q_value), q_value, NA_real_))
-          taxa_summary <- taxa_summary %>%
-            dplyr::left_join(taxa_from_plot, by = "Taxa", suffix = c("", "_plot")) %>%
-            dplyr::mutate(q_filter = dplyr::coalesce(q_value_plot, q_value)) %>%
-            dplyr::filter(!is.na(q_filter) & q_filter < 0.05) %>%
-            dplyr::arrange(q_filter, dplyr::desc(mean_abundance))
-          if ("q_value_plot" %in% colnames(taxa_summary)) {
-            taxa_summary <- dplyr::select(taxa_summary, -q_value_plot, -q_filter)
-          }
-        } else {
-          taxa_summary <- taxa_summary %>%
-            dplyr::filter(!is.na(q_value) & q_value < 0.05) %>%
-            dplyr::arrange(q_value, dplyr::desc(mean_abundance))
-        }
+        taxa_summary <- taxa_summary %>%
+          dplyr::filter(!is.na(q_value) & q_value < 0.05) %>%
+          dplyr::arrange(q_value, dplyr::desc(mean_abundance))
       } else {
         taxa_summary <- taxa_summary %>%
           dplyr::arrange(dplyr::desc(mean_abundance))
