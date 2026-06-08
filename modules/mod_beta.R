@@ -861,11 +861,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
 
         if (nrow(vec_fac) > 0) {
           vec_fac$level <- rownames(vec_fac)
-          vec_fac$variable <- sub("^([^:]+):.*$", "\\1", vec_fac$level)
-          missing_var <- !(vec_fac$variable %in% names(fit$factors$pvals))
-          if (any(missing_var)) {
-            vec_fac$variable[missing_var] <- sub("^(.*?)\\..*$", "\\1", vec_fac$level[missing_var])
+          factor_vars <- names(fit$factors$pvals)
+          resolve_factor_var <- function(level_name) {
+            colon_var <- sub("^([^:]+):.*$", "\\1", level_name)
+            if (colon_var %in% factor_vars) return(colon_var)
+
+            dot_var <- sub("^(.*?)\\..*$", "\\1", level_name)
+            if (dot_var %in% factor_vars) return(dot_var)
+
+            prefix_matches <- factor_vars[startsWith(level_name, factor_vars)]
+            if (length(prefix_matches) > 0) {
+              return(prefix_matches[which.max(nchar(prefix_matches))])
+            }
+
+            NA_character_
           }
+          vec_fac$variable <- vapply(vec_fac$level, resolve_factor_var, character(1))
           vec_fac$r2 <- as.numeric(fit$factors$r[vec_fac$variable])
           vec_fac$p_value <- as.numeric(fit$factors$pvals[vec_fac$variable])
           names(vec_fac)[1:2] <- c("v1", "v2")
@@ -912,12 +923,25 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         vec$variable_label <- gsub("^Taxa::", "", as.character(vec$variable))
         if ("level" %in% colnames(vec)) {
           vec$level_label <- as.character(vec$level)
-          vec$level_label <- sub("^[^:]+:\\s*", "", vec$level_label)
-          vec$level_label <- sub("^[^.]+\\.", "", vec$level_label)
+
+          factor_idx <- vec$type == "factor" & !is.na(vec$variable)
+          vec$level_label[factor_idx] <- mapply(
+            function(level_name, variable_name) {
+              level_name <- as.character(level_name)
+              variable_name <- as.character(variable_name)
+              variable_pattern <- gsub("([][{}()+*^$|\\\\?.])", "\\\\\\1", variable_name)
+              clean_level <- sub(paste0("^", variable_pattern, "[:._ ]*"), "", level_name)
+              if (!nzchar(clean_level)) level_name else clean_level
+            },
+            as.character(vec$level[factor_idx]),
+            as.character(vec$variable[factor_idx]),
+            USE.NAMES = FALSE
+          )
         }
+
         vec$label <- ifelse(
           vec$type == "factor" & "level_label" %in% colnames(vec),
-          paste0(vec$level_label, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")"),
+          paste0(vec$variable_label, " (", vec$level_label, ")"),
           paste0(vec$variable_label, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")")
         )
         vec
@@ -1343,8 +1367,10 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       filename = function() { paste0("PCoA_", gsub("-", "", distance_label()), "_", Sys.Date(), ".png") },
       content = function(file) {
         dpi_val <- 300
-        width_in <- input$plot_width_px / dpi_val
-        height_in <- input$plot_height_px / dpi_val
+        #width_in <- input$plot_width_px / dpi_val
+        #height_in <- input$plot_height_px / dpi_val
+        width_in <- input$plot_width_px / 72
+        height_in <- input$plot_height_px / 72
         ggplot2::ggsave(file, plot = pcoa_plot_reactive(), device = "png",
                         width = width_in, height = height_in, units = "in", dpi = dpi_val)
       }
@@ -1631,8 +1657,10 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       filename = function() { paste0("NMDS_", gsub("-", "", distance_label()), "_", Sys.Date(), ".png") },
       content = function(file) {
         dpi_val <- 300
-        width_in <- input$plot_width_px / dpi_val
-        height_in <- input$plot_height_px / dpi_val
+        #width_in <- input$plot_width_px / dpi_val
+        #height_in <- input$plot_height_px / dpi_val
+        width_in <- input$plot_width_px / 72
+        height_in <- input$plot_height_px / 72
         ggplot2::ggsave(file, plot = nmds_plot_reactive(), device = "png",
                         width = width_in, height = height_in, units = "in", dpi = dpi_val)
       }

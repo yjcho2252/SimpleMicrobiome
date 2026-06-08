@@ -1285,13 +1285,13 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       content = function(file) {
         req(corr_payload())
         dims <- plot_dims_px()
-        export_scale <- 2
+        dpi_val <- 300
         grDevices::png(
           filename = file,
-          width = as.integer(dims$width_px * export_scale),
-          height = as.integer(dims$height_px * export_scale),
-          units = "px",
-          res = as.integer(110 * export_scale),
+          width = dims$width_px / 110,
+          height = dims$height_px / 110,
+          units = "in",
+          res = dpi_val,
           bg = "white"
         )
         on.exit(grDevices::dev.off(), add = TRUE)

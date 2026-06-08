@@ -1471,7 +1471,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
              y = expression("log"[2]*"FC"),
              fill = "Direction") +
         theme_bw(base_size = input$base_size) +
-        theme(plot.margin = ggplot2::margin(6, 90, 6, 90))
+        theme(
+          plot.title = element_text(size = input$base_size + 3, face = "bold"),
+          plot.margin = ggplot2::margin(6, 90, 6, 90)
+        )
 
       if ("contrast" %in% colnames(res_top)) {
         p <- p + facet_wrap(~ contrast, scales = "free_y", drop = FALSE)

@@ -1940,7 +1940,14 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         h <- as.integer(input$plot_height)
         w <- ifelse(is.na(w) || w < 100, 1160L, w)
         h <- ifelse(is.na(h) || h < 100, 500L, h)
-        grDevices::png(filename = file, width = w, height = h, res = 72)
+        dpi_val <- 300
+        grDevices::png(
+          filename = file,
+          width = w / 72,
+          height = h / 72,
+          units = "in",
+          res = dpi_val
+        )
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 25L)
         taxa_font <- max(6, as.integer(input$base_size) - 3)
         p <- build_shap_plot(
@@ -2127,7 +2134,14 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         h <- as.integer(input$plot_height)
         w <- ifelse(is.na(w) || w < 100, 1160L, w)
         h <- ifelse(is.na(h) || h < 100, 500L, h)
-        grDevices::png(filename = file, width = w, height = h, res = 72)
+        dpi_val <- 300
+        grDevices::png(
+          filename = file,
+          width = w / 72,
+          height = h / 72,
+          units = "in",
+          res = dpi_val
+        )
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
         taxa_font <- max(6, as.integer(input$base_size) - 3)
         p <- build_importance_plot(

@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-06-08]
+
+### Changed
+- PNG export behavior:
+  - Standardized several module downloads to 300 DPI while preserving user-selected plot dimensions more consistently.
+  - Updated export handling in beta diversity, association biplot, heatmap, Random Forest, and SPIEC-EASI modules.
+- SPIEC-EASI (`modules/mod_SpiecEasi.R`):
+  - Applied the current minimum edge-weight filter to differential edge comparison outputs.
+  - Improved table panel spacing for edge, differential-edge, and hub tables.
+  - Added additional run/download guards and adjusted comparison table pagination.
+- Beta diversity (`modules/mod_beta.R`):
+  - Improved EnvFit factor-variable resolution and factor-level label cleanup.
+  - Updated factor vector labels to show variable and level information more clearly.
+- ANCOM-BC2 and MaAsLin2 (`modules/mod_ancom.R`, `modules/mod_maaslin2.R`):
+  - Increased ranked bar-plot title emphasis relative to the selected base font size.
+- Workflow overview (`www/workflow-overview.svg`):
+  - Updated the Taxa Profiles icon to better represent grouped composition profiles.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-06-08.md`
+
 ## [2026-05-08]
 
 ### Changed

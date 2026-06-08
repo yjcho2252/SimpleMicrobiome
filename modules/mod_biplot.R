@@ -769,11 +769,19 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
     output$download_biplot_png <- downloadHandler(
       filename = function() paste0("association_biplot_", Sys.Date(), ".png"),
+      contentType = "image/png",
       content = function(file) {
+        req(!is.null(input$run_biplot) && input$run_biplot > 0)
+        req(biplot_payload())
         dpi_val <- 300
-        width_in <- input$plot_width / dpi_val
-        height_in <- input$plot_height / dpi_val
-        ggplot2::ggsave(file, plot = biplot_plot(), device = "png", width = width_in, height = height_in, units = "in", dpi = dpi_val)
+        plot_width <- suppressWarnings(as.numeric(input$plot_width))
+        plot_height <- suppressWarnings(as.numeric(input$plot_height))
+        if (!is.finite(plot_width) || is.na(plot_width) || plot_width <= 0) plot_width <- 700
+        if (!is.finite(plot_height) || is.na(plot_height) || plot_height <= 0) plot_height <- 500
+        width_in <- plot_width / 72
+        height_in <- plot_height / 72
+        p <- biplot_plot()
+        ggplot2::ggsave(file, plot = p, device = "png", width = width_in, height = height_in, units = "in", dpi = dpi_val)
       }
     )
 

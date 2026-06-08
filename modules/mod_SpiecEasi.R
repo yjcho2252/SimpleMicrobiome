@@ -36,6 +36,19 @@ mod_spieceasi_ui <- function(id) {
         padding: 5px 8px;
         white-space: nowrap;
       }
+      .spieceasi-dt-panel {
+        margin-top: 10px;
+        margin-bottom: 36px;
+        overflow: visible;
+      }
+      .spieceasi-dt-panel::after {
+        content: '';
+        display: block;
+        clear: both;
+      }
+      .spieceasi-dt-panel .dataTables_wrapper {
+        padding-bottom: 20px;
+      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -134,7 +147,10 @@ mod_spieceasi_ui <- function(id) {
           tabPanel(
             "Table",
             downloadButton(ns("download_edge_table_all"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-            DTOutput(ns("edge_table_all"))
+            tags$div(
+              class = "spieceasi-dt-panel",
+              DTOutput(ns("edge_table_all"))
+            )
           ),
           tabPanel("Summary", verbatimTextOutput(ns("network_summary"))),
           tabPanel(
@@ -145,9 +161,21 @@ mod_spieceasi_ui <- function(id) {
               plotOutput(ns("comparison_network_plot"), height = "auto")
             )
           ),
-          tabPanel("Differential Edges", DTOutput(ns("comparison_edge_table"))),
+          tabPanel(
+            "Differential Edges",
+            tags$div(
+              class = "spieceasi-dt-panel",
+              DTOutput(ns("comparison_edge_table"))
+            )
+          ),
           tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary"))),
-          tabPanel("Hub Table", DTOutput(ns("hub_table")))
+          tabPanel(
+            "Hub Table",
+            tags$div(
+              class = "spieceasi-dt-panel",
+              DTOutput(ns("hub_table"))
+            )
+          )
           )
         ),
         uiOutput(ns("spieceasi_legend_box")),
@@ -442,6 +470,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     }, ignoreInit = TRUE)
 
     network_result <- eventReactive(network_run_nonce(), {
+      req(!is.null(input$run_network_btn) && input$run_network_btn > 0)
       req(build_network_inputs())
       validate(
         need(requireNamespace("NetCoMi", quietly = TRUE), "NetCoMi package is not installed. Please install 'NetCoMi'."),
@@ -689,6 +718,12 @@ mod_spieceasi_server <- function(id, ps_obj) {
       igraph::subgraph.edges(g, eids = igraph::E(g)[keep_edges], delete.vertices = FALSE)
     }
 
+    current_min_edge_weight <- function() {
+      min_edge_weight <- suppressWarnings(as.numeric(input$min_edge_weight))
+      if (is.na(min_edge_weight) || min_edge_weight < 0) min_edge_weight <- 0.1
+      min_edge_weight
+    }
+
     get_current_eligible_groups <- function(built, group_var_value, group_levels_value) {
       if (is.null(built)) return(character(0))
       if (is.null(group_var_value) || group_var_value == "All" || !group_var_value %in% colnames(built$sample_df)) {
@@ -917,8 +952,9 @@ mod_spieceasi_server <- function(id, ps_obj) {
       if (!identical(input$analysis_mode, "Compare two groups")) return(NULL)
       if (length(res$networks) != 2) return(NULL)
       groups <- names(res$networks)
-      g1 <- res$networks[[groups[1]]]$graph
-      g2 <- res$networks[[groups[2]]]$graph
+      min_edge_weight <- current_min_edge_weight()
+      g1 <- filter_graph_by_weight(res$networks[[groups[1]]]$graph, min_edge_weight)
+      g2 <- filter_graph_by_weight(res$networks[[groups[2]]]$graph, min_edge_weight)
       edge1 <- igraph::as_data_frame(g1, what = "edges")
       edge2 <- igraph::as_data_frame(g2, what = "edges")
       key1 <- if (nrow(edge1) > 0) paste(pmin(edge1$from, edge1$to), pmax(edge1$from, edge1$to), sep = "||") else character(0)
@@ -949,8 +985,11 @@ mod_spieceasi_server <- function(id, ps_obj) {
       groups <- names(res$networks)
       g1_name <- groups[1]
       g2_name <- groups[2]
-      e1 <- igraph::as_data_frame(res$networks[[g1_name]]$graph, what = "edges")
-      e2 <- igraph::as_data_frame(res$networks[[g2_name]]$graph, what = "edges")
+      min_edge_weight <- current_min_edge_weight()
+      g1 <- filter_graph_by_weight(res$networks[[g1_name]]$graph, min_edge_weight)
+      g2 <- filter_graph_by_weight(res$networks[[g2_name]]$graph, min_edge_weight)
+      e1 <- igraph::as_data_frame(g1, what = "edges")
+      e2 <- igraph::as_data_frame(g2, what = "edges")
       if (nrow(e1) > 0) {
         e1$key <- paste(pmin(e1$from, e1$to), pmax(e1$from, e1$to), sep = "||")
         e1 <- e1[, c("key", "from", "to", "weight"), drop = FALSE]
@@ -1162,7 +1201,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
       palette <- c("Shared" = "#7F8C8D")
       if (length(only_status) >= 1) palette[only_status[1]] <- "#1F78B4"
       if (length(only_status) >= 2) palette[only_status[2]] <- "#E31A1C"
-      draw_comparison_network_plot(edge_tbl, palette)
+      p <- draw_comparison_network_plot(edge_tbl, palette)
+      print(p)
     },
     height = function() {
       if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
@@ -1195,9 +1235,17 @@ mod_spieceasi_server <- function(id, ps_obj) {
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
         if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
 
-        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        dpi_val <- 300
+        grDevices::png(
+          file,
+          width = plot_width / 72,
+          height = plot_height / 72,
+          units = "in",
+          res = dpi_val
+        )
         on.exit(grDevices::dev.off(), add = TRUE)
-        draw_comparison_network_plot(edge_tbl, palette)
+        p <- draw_comparison_network_plot(edge_tbl, palette)
+        print(p)
       }
     )
 
@@ -1421,7 +1469,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     })
     output$edge_table_all <- renderDT({ datatable(edge_table_all(), options = list(scrollX = TRUE)) })
     output$comparison_edge_table <- renderDT({
-      datatable(comparison_edge_table(), options = list(scrollX = TRUE, pageLength = 15))
+      datatable(comparison_edge_table(), options = list(scrollX = TRUE, pageLength = 10))
     })
 
     output$download_network_plot_all <- downloadHandler(
@@ -1433,7 +1481,14 @@ mod_spieceasi_server <- function(id, ps_obj) {
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
         if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
 
-        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        dpi_val <- 300
+        grDevices::png(
+          file,
+          width = plot_width / 72,
+          height = plot_height / 72,
+          units = "in",
+          res = dpi_val
+        )
         on.exit(grDevices::dev.off(), add = TRUE)
         draw_network_plot(network_result(), connected_only = FALSE)
       }
@@ -1448,7 +1503,14 @@ mod_spieceasi_server <- function(id, ps_obj) {
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
         if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
 
-        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        dpi_val <- 300
+        grDevices::png(
+          file,
+          width = plot_width / 72,
+          height = plot_height / 72,
+          units = "in",
+          res = dpi_val
+        )
         on.exit(grDevices::dev.off(), add = TRUE)
         draw_network_plot(network_result(), connected_only = TRUE)
       }
