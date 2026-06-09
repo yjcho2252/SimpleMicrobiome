@@ -1218,7 +1218,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     })
 
     output$download_comparison_network_plot <- downloadHandler(
-      filename = function() paste0("spieceasi_differential_network_", Sys.Date(), ".png"),
+      filename = function() paste0("spieceasi_differential_network_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       content = function(file) {
         req(network_result())
         validate(need(identical(input$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to download differential network."))
@@ -1473,7 +1473,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     })
 
     output$download_network_plot_all <- downloadHandler(
-      filename = function() paste0("spieceasi_network_all_", Sys.Date(), ".png"),
+      filename = function() paste0("spieceasi_network_all_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       content = function(file) {
         req(network_result())
         plot_width <- as.integer(input$plot_width)
@@ -1495,7 +1495,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     )
 
     output$download_network_plot_connected <- downloadHandler(
-      filename = function() paste0("spieceasi_network_connected_", Sys.Date(), ".png"),
+      filename = function() paste0("spieceasi_network_connected_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       content = function(file) {
         req(network_result())
         plot_width <- as.integer(input$plot_width)

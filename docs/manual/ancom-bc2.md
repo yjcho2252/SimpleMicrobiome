@@ -27,11 +27,37 @@ It is used to identify taxa whose abundance differs between defined groups.
 - Higher rank: more stable, less specific.
 - Lower rank: more specific, more sparse.
 
-### 2.6 Statistical/model options
+### 2.6 Prevalence filter
+- Default: `5%`.
+- Allowed UI range: `0-20%`.
+- What it does:
+  - Keeps taxa whose prevalence is greater than the selected threshold within the currently included sample subset.
+  - Prevalence is computed before model fitting on the relative-abundance table.
+- Practical note:
+  - Lower values keep more rare taxa but increase sparsity.
+  - Higher values simplify the model but may remove biologically relevant low-prevalence taxa.
+
+### 2.7 Zero-variance taxa removal
+- Applied after prevalence filtering.
+- What it does:
+  - Removes taxa with no remaining variation in the selected subset before ANCOM-BC2 fitting.
+- Why it matters:
+  - Prevents degenerate taxa from entering the model.
+  - Can reduce the number of tested features substantially in sparse subsets.
+
+### 2.8 Structural zero handling
+- Enabled in the module by default through ANCOM-BC2 fitting.
+- What it does:
+  - Treats taxa that are completely absent in a group as structural zeros rather than ordinary missing detections.
+- Interpretation note:
+  - This is different from prevalence filtering.
+  - Prevalence filtering removes globally rare taxa first; structural zero handling addresses group-specific all-zero patterns during model fitting.
+
+### 2.9 Statistical/model options
 - Controls module-specific fitting and display behavior.
 - Use consistent settings when comparing runs across groups.
 
-### 2.7 Multiple testing correction
+### 2.10 Multiple testing correction
 - Controls adjusted significance in multi-taxa testing context.
 - Prefer corrected significance for reporting.
 
@@ -68,9 +94,10 @@ It is used to identify taxa whose abundance differs between defined groups.
 
 ## 4. Interpretation Workflow
 1. Filter by adjusted significance threshold.
-2. Check effect direction and magnitude.
-3. Confirm biological plausibility at neighboring taxonomic levels.
-4. Validate robustness with alternative filtering/transform context upstream.
+2. Confirm the taxa passed prevalence filtering and zero-variance removal.
+3. Check effect direction and magnitude.
+4. Confirm biological plausibility at neighboring taxonomic levels.
+5. Validate robustness with alternative filtering/transform context upstream.
 
 ## 5. Common Pitfalls
 - Interpreting unadjusted p-values as final findings.

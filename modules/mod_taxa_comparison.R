@@ -1067,7 +1067,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       }
 
       if (is_secondary) {
-        p <- p + ggplot2::facet_grid(PrimaryGroup ~ Taxa, scales = "free_y")
+        p <- p + ggplot2::facet_grid(PrimaryGroup + SecondaryGroup ~ Taxa, scales = "free_y")
       } else {
         n_taxa <- dplyr::n_distinct(df$Taxa)
         manual_layout <- get_manual_facet_layout(is_secondary = FALSE, n_taxa = n_taxa)
@@ -1502,7 +1502,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
     })
     
     output$download_taxa_plot <- downloadHandler(
-      filename = function() { paste0("taxa_plot_", Sys.Date(), ".png") },
+      filename = function() { paste0("taxa_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") },
       content = function(file) {
         ggplot2::ggsave(file, plot = taxa_plot_reactive(), device = "png",
                         width = input$plot_width/100, height = input$plot_height/100)

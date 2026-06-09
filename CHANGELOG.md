@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-06-09]
+
+### Changed
+- Alpha diversity (`modules/mod_alpha.R`):
+  - Added `Violin plot` and `Jitter plot` options to the plot-type selector.
+  - Moved plot download buttons into the plot area and removed the duplicate top-level download buttons.
+  - Updated plot legend text to state that bar-plot error bars represent standard error (SE).
+  - Kept `Kruskal-Wallis` display as overall p-value text only, without pairwise brackets.
+- Beta diversity (`modules/mod_beta.R`):
+  - Moved PCoA/NMDS download buttons into their respective tabs.
+  - Added optional centroid markers and sample-to-centroid line overlays, with group-matched colors.
+  - Default centroid display is off.
+- Taxa Comparison (`modules/mod_taxa_comparison.R`):
+  - Reverted the secondary-group facet layout to `facet_grid` after testing nested-facet behavior.
+- Taxa Bar plot (`modules/mod_barplot.R`):
+  - Added abundance-threshold taxa filtering alongside top-N taxa selection.
+- File load (`modules/mod_fileload.R`):
+  - Improved invalid-file error handling with file-specific messages that prompt users to re-upload.
+- Manual documentation:
+  - Updated `docs/manual/ancom-bc2.md`, `docs/manual/maaslin2.md`, and `docs/manual/taxa-profiles.md` to match current filtering and plotting behavior.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-06-09.md`
+
 ## [2026-06-08]
 
 ### Changed

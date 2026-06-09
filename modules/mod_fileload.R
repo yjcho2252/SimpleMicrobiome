@@ -135,6 +135,7 @@ mod_fileload_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     
     load_completed <- reactiveVal(FALSE) 
+    load_error <- reactiveVal(NULL)
     example_files <- reactiveVal(NULL)
     ps_initial_val <- reactiveVal(NULL)
 
@@ -252,6 +253,7 @@ mod_fileload_server <- function(id) {
       # Reset all downstream analyses immediately when any file selection changes.
       ps_initial_val(NULL)
       load_completed(FALSE)
+      load_error(NULL)
 
       has_manual_input <- !is.null(input$otu_file) || !is.null(input$tax_file) || !is.null(input$meta_file)
       selected_files <- if (isTRUE(has_manual_input)) NULL else example_files()
@@ -265,15 +267,26 @@ mod_fileload_server <- function(id) {
       }
 
       otu_df <- read_microbiome_file(otu_input)
-      tax_df <- read_microbiome_file(tax_input)
-      meta_df <- read_microbiome_file(meta_input, is_meta = TRUE)
+      if (is.null(otu_df)) {
+        error_message <- "OTU file read error: Check the ASV/OTU abundance matrix format, delimiter, and row names. Please re-upload the OTU file."
+        load_error(error_message)
+        showNotification(error_message, type = "error", duration = 10)
+        return(NULL)
+      }
 
-      if (is.null(otu_df) || is.null(tax_df) || is.null(meta_df)) {
-        showNotification(
-          "File read error: Check file format (csv/tsv), delimiter, and data structure. Please re-upload all files.",
-          type = "error",
-          duration = 10
-        )
+      tax_df <- read_microbiome_file(tax_input)
+      if (is.null(tax_df)) {
+        error_message <- "Taxonomy file read error: Check the taxonomy table format, delimiter, and row names. Please re-upload the taxonomy file."
+        load_error(error_message)
+        showNotification(error_message, type = "error", duration = 10)
+        return(NULL)
+      }
+
+      meta_df <- read_microbiome_file(meta_input, is_meta = TRUE)
+      if (is.null(meta_df)) {
+        error_message <- "Metadata file read error: Check the metadata table format, delimiter, and column structure. Please re-upload the metadata file."
+        load_error(error_message)
+        showNotification(error_message, type = "error", duration = 10)
         return(NULL)
       }
 
@@ -342,12 +355,14 @@ mod_fileload_server <- function(id) {
 
         ps
       }, error = function(e) {
+        error_message <- paste0(
+          "Data construction error while building the phyloseq object: ",
+          conditionMessage(e),
+          "\nPlease correct the file contents and re-upload the files."
+        )
+        load_error(error_message)
         showNotification(
-          paste0(
-            "Data construction error: ",
-            conditionMessage(e),
-            "\nPlease verify file contents and try again."
-          ),
+          error_message,
           type = "error",
           duration = 10
         )
@@ -357,6 +372,7 @@ mod_fileload_server <- function(id) {
       if (!is.null(ps)) {
         ps_initial_val(ps)
         load_completed(TRUE)
+        load_error(NULL)
       }
     }, ignoreInit = TRUE)
 
@@ -375,6 +391,11 @@ mod_fileload_server <- function(id) {
           span("✅ Go to Preprocessing Tab!", style = "color: green; font-weight: bold;"),
           style = "margin-top: 2px; margin-bottom: 0;"
         )
+      } else if (!is.null(load_error())) {
+        h5(
+          span(load_error(), style = "color: red; font-weight: bold;"),
+          style = "margin-top: 2px; margin-bottom: 0; white-space: pre-line;"
+        )
       } else {
         h5(
           span("Waiting for 3 data files...", style = "color: orange;"),
@@ -386,7 +407,8 @@ mod_fileload_server <- function(id) {
     return(list(
       ps_initial = ps_obj_initial,
       meta_vars = meta_vars,
-      load_completed = load_completed
+      load_completed = load_completed,
+      load_error = load_error
     ))
   })
 }

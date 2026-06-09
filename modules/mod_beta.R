@@ -70,6 +70,8 @@ mod_beta_ui <- function(id) {
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
         checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
+        checkboxInput(ns("show_centroid_lines"), "Show Sample-to-Centroid Lines", value = FALSE),
+        checkboxInput(ns("show_centroids"), "Show Centroids", value = FALSE),
         checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
         uiOutput(ns("primary_color_controls")),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
@@ -142,21 +144,6 @@ mod_beta_ui <- function(id) {
             });"
           ))
         ),
-        hr(),
-        h5(icon("download"), "Download"),
-        div(
-          style = "display: flex; gap: 4px; flex-wrap: nowrap;",
-          downloadButton(
-            ns("download_pcoa"),
-            "Download PCoA (PNG)",
-            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-          ),
-          downloadButton(
-            ns("download_nmds"),
-            "Download NMDS (PNG)",
-            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-          )
-        )
       ),
       
       mainPanel(
@@ -168,9 +155,25 @@ mod_beta_ui <- function(id) {
           tabsetPanel(
             id = ns("beta_tabs"),
             tabPanel("PCoA",
+              tags$div(
+                style = "margin-top: 8px;",
+                downloadButton(
+                  ns("download_pcoa"),
+                  "Download PCoA (PNG)",
+                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                )
+              ),
               uiOutput(ns("pcoa_plot_ui"))
             ),
             tabPanel("NMDS",
+              tags$div(
+                style = "margin-top: 8px;",
+                downloadButton(
+                  ns("download_nmds"),
+                  "Download NMDS (PNG)",
+                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                )
+              ),
               uiOutput(ns("nmds_plot_ui")),
               tags$div(
                 style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
@@ -1070,6 +1073,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       dplyr::bind_rows(out)
     }
+
+    build_centroid_df <- function(df, x_col, y_col, group_col) {
+      if (is.null(df) || nrow(df) == 0 || !all(c(x_col, y_col, group_col) %in% colnames(df))) {
+        return(data.frame())
+      }
+      df <- df[is.finite(df[[x_col]]) & is.finite(df[[y_col]]) & !is.na(df[[group_col]]), , drop = FALSE]
+      if (nrow(df) == 0) {
+        return(data.frame())
+      }
+      dplyr::group_by(df, .data[[group_col]]) %>%
+        dplyr::summarise(
+          x = mean(.data[[x_col]], na.rm = TRUE),
+          y = mean(.data[[y_col]], na.rm = TRUE),
+          .groups = "drop"
+        )
+    }
     
     
     pcoa_ordination_reactive <- reactive({
@@ -1134,6 +1153,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      centroid_df <- NULL
+      centroid_line_df <- NULL
+      if (isTRUE(input$show_centroid_lines) || isTRUE(input$show_centroids)) {
+        centroid_df <- build_centroid_df(plot_data, "Axis.1", "Axis.2", primary_group_var())
+        if (nrow(centroid_df) > 0) {
+          centroid_df$CentroidColor <- unname(primary_color_map()[as.character(centroid_df[[primary_group_var()]])])
+          centroid_df$CentroidColor[is.na(centroid_df$CentroidColor)] <- "#333333"
+          if (isTRUE(input$show_centroid_lines)) {
+            centroid_line_df <- dplyr::left_join(
+              plot_data,
+              centroid_df,
+              by = primary_group_var()
+            )
+          }
+        }
+      }
       if (isTRUE(input$show_group_hulls)) {
         hull_df <- build_group_hull_df(plot_data, "Axis.1", "Axis.2", primary_group_var())
         if (nrow(hull_df) > 0) {
@@ -1148,6 +1183,46 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             show.legend = FALSE
           ) +
             ggplot2::scale_fill_identity()
+        }
+      }
+      if (isTRUE(input$show_centroid_lines) && !is.null(centroid_line_df) && nrow(centroid_line_df) > 0) {
+        for (group_name in unique(as.character(centroid_line_df[[primary_group_var()]]))) {
+          group_df <- centroid_line_df[as.character(centroid_line_df[[primary_group_var()]]) == group_name, , drop = FALSE]
+          group_color <- unique(group_df$CentroidColor)
+          group_color <- group_color[is.finite(match(group_color, group_color))]
+          if (length(group_color) == 0 || is.na(group_color[1])) {
+            group_color <- "#333333"
+          } else {
+            group_color <- group_color[1]
+          }
+          p <- p + ggplot2::geom_segment(
+            data = group_df,
+            ggplot2::aes(x = Axis.1, y = Axis.2, xend = x, yend = y),
+            inherit.aes = FALSE,
+            linewidth = 0.3,
+            alpha = 0.45,
+            color = group_color
+          )
+        }
+      }
+      if (isTRUE(input$show_centroids) && !is.null(centroid_df) && nrow(centroid_df) > 0) {
+        for (group_name in unique(as.character(centroid_df[[primary_group_var()]]))) {
+          group_df <- centroid_df[as.character(centroid_df[[primary_group_var()]]) == group_name, , drop = FALSE]
+          group_color <- unique(group_df$CentroidColor)
+          if (length(group_color) == 0 || is.na(group_color[1])) {
+            group_color <- "#333333"
+          } else {
+            group_color <- group_color[1]
+          }
+          p <- p + ggplot2::geom_point(
+            data = group_df,
+            ggplot2::aes(x = x, y = y),
+            inherit.aes = FALSE,
+            shape = 4,
+            stroke = 1.2,
+            size = input$dot_size + 1.2,
+            color = group_color
+          )
         }
       }
       if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
@@ -1364,7 +1439,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     })
     
     output$download_pcoa <- downloadHandler(
-      filename = function() { paste0("PCoA_", gsub("-", "", distance_label()), "_", Sys.Date(), ".png") },
+      filename = function() { paste0("PCoA_", gsub("-", "", distance_label()), "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") },
       content = function(file) {
         dpi_val <- 300
         #width_in <- input$plot_width_px / dpi_val
@@ -1424,6 +1499,22 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      centroid_df <- NULL
+      centroid_line_df <- NULL
+      if (isTRUE(input$show_centroid_lines) || isTRUE(input$show_centroids)) {
+        centroid_df <- build_centroid_df(plot_data, "NMDS1", "NMDS2", primary_group_var())
+        if (nrow(centroid_df) > 0) {
+          centroid_df$CentroidColor <- unname(primary_color_map()[as.character(centroid_df[[primary_group_var()]])])
+          centroid_df$CentroidColor[is.na(centroid_df$CentroidColor)] <- "#333333"
+          if (isTRUE(input$show_centroid_lines)) {
+            centroid_line_df <- dplyr::left_join(
+              plot_data,
+              centroid_df,
+              by = primary_group_var()
+            )
+          }
+        }
+      }
       if (isTRUE(input$show_group_hulls)) {
         hull_df <- build_group_hull_df(plot_data, "NMDS1", "NMDS2", primary_group_var())
         if (nrow(hull_df) > 0) {
@@ -1438,6 +1529,45 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             show.legend = FALSE
           ) +
             ggplot2::scale_fill_identity()
+        }
+      }
+      if (isTRUE(input$show_centroid_lines) && !is.null(centroid_line_df) && nrow(centroid_line_df) > 0) {
+        for (group_name in unique(as.character(centroid_line_df[[primary_group_var()]]))) {
+          group_df <- centroid_line_df[as.character(centroid_line_df[[primary_group_var()]]) == group_name, , drop = FALSE]
+          group_color <- unique(group_df$CentroidColor)
+          if (length(group_color) == 0 || is.na(group_color[1])) {
+            group_color <- "#333333"
+          } else {
+            group_color <- group_color[1]
+          }
+          p <- p + ggplot2::geom_segment(
+            data = group_df,
+            ggplot2::aes(x = NMDS1, y = NMDS2, xend = x, yend = y),
+            inherit.aes = FALSE,
+            linewidth = 0.3,
+            alpha = 0.45,
+            color = group_color
+          )
+        }
+      }
+      if (isTRUE(input$show_centroids) && !is.null(centroid_df) && nrow(centroid_df) > 0) {
+        for (group_name in unique(as.character(centroid_df[[primary_group_var()]]))) {
+          group_df <- centroid_df[as.character(centroid_df[[primary_group_var()]]) == group_name, , drop = FALSE]
+          group_color <- unique(group_df$CentroidColor)
+          if (length(group_color) == 0 || is.na(group_color[1])) {
+            group_color <- "#333333"
+          } else {
+            group_color <- group_color[1]
+          }
+          p <- p + ggplot2::geom_point(
+            data = group_df,
+            ggplot2::aes(x = x, y = y),
+            inherit.aes = FALSE,
+            shape = 4,
+            stroke = 1.2,
+            size = input$dot_size + 1.2,
+            color = group_color
+          )
         }
       }
       if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
@@ -1654,7 +1784,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     })
     
     output$download_nmds <- downloadHandler(
-      filename = function() { paste0("NMDS_", gsub("-", "", distance_label()), "_", Sys.Date(), ".png") },
+      filename = function() { paste0("NMDS_", gsub("-", "", distance_label()), "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") },
       content = function(file) {
         dpi_val <- 300
         #width_in <- input$plot_width_px / dpi_val

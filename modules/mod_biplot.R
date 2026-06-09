@@ -768,7 +768,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     output$download_biplot_png <- downloadHandler(
-      filename = function() paste0("association_biplot_", Sys.Date(), ".png"),
+      filename = function() paste0("association_biplot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       contentType = "image/png",
       content = function(file) {
         req(!is.null(input$run_biplot) && input$run_biplot > 0)

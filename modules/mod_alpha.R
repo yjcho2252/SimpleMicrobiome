@@ -37,7 +37,12 @@ mod_alpha_ui <- function(id) {
         selectInput(
           ns("plot_type"),
           "Plot Type:",
-          choices = c("Box plot" = "boxplot", "Bar plot" = "barplot"),
+          choices = c(
+            "Box plot" = "boxplot",
+            "Violin plot" = "violin",
+            "Jitter plot" = "jitter",
+            "Bar plot" = "barplot"
+          ),
           selected = "boxplot"
         ),
         selectInput(
@@ -69,7 +74,8 @@ mod_alpha_ui <- function(id) {
         
         selectInput(ns("stat_method"), "Statistical Method:",
                     choices = c("Wilcoxon" = "wilcox.test", 
-                                "T-test" = "t.test"),
+                                "T-test" = "t.test",
+                                "Kruskal-Wallis" = "kruskal.test"),
                     selected = "wilcox.test"),
         selectInput(
           ns("p_adjust_method"),
@@ -87,29 +93,40 @@ mod_alpha_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width:", value = 600, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height:", value = 500, min = 300, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        
-        hr(),
-        h5(icon("download"), "Download"),
-        div(
-          style = "display: flex; gap: 4px; flex-wrap: nowrap;",
-          downloadButton(
-            ns("download_alpha_plot"),
-            "Download Plot (PNG)",
-            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-          ),
-          downloadButton(
-            ns("download_alpha_data"),
-            "Download Data (TSV)",
-            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-          )
-        )
+        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1)
       ),
       mainPanel(
         h4("Alpha Diversity"),
-        plotOutput(ns("alpha_plot_out"), height = "auto"), 
+        tags$div(
+          style = "max-width: 100%;",
+          tabsetPanel(
+            id = ns("alpha_tabs"),
+            tabPanel(
+              "Plot",
+              tags$div(
+                style = "margin-top: 8px;",
+                downloadButton(
+                  ns("download_alpha_plot"),
+                  "Download Plot (PNG)",
+                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                )
+              ),
+              plotOutput(ns("alpha_plot_out"), height = "auto")
+            ),
+            tabPanel(
+              "Data",
+              tags$div(
+                style = "margin-top: 8px;",
+                downloadButton(
+                  ns("download_alpha_data"),
+                  "Download Data (TSV)",
+                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                )
+              )
+            )
+          )
+        ),
         uiOutput(ns("alpha_legend_box")),
-        br(),
         textOutput(ns("rarefy_size_text"))
       )
     )
@@ -141,6 +158,12 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       current_tab <- tryCatch(active_tab(), error = function(e) NULL)
       identical(current_tab, "Alpha Diversity")
     })
+
+    observeEvent(input$stat_method, {
+      if (identical(input$stat_method, "kruskal.test")) {
+        updateCheckboxInput(session, "show_sig_as_marks", value = FALSE)
+      }
+    }, ignoreInit = TRUE)
     
     output$local_group_selector <- renderUI({
       req(meta_cols())
@@ -220,7 +243,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       group_levels <- levels(factor(alpha_long[[x_axis_col]]))
       num_groups <- length(group_levels)
       plot_type <- input$plot_type
-      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot")) {
+      if (is.null(plot_type) || !plot_type %in% c("boxplot", "violin", "jitter", "barplot")) {
         plot_type <- "boxplot"
       }
       palette_key <- input$color_palette
@@ -387,10 +410,22 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
           alpha = 0.5,
           size = 1.5
         )
-      } else {
+      } else if (plot_type == "boxplot") {
         p <- p +
           ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7) +
           ggplot2::geom_jitter(width = 0.1, alpha = 0.5, size = 1.5)
+      } else if (plot_type == "violin") {
+        p <- p +
+          ggplot2::geom_violin(color = "black", alpha = 0.65, trim = TRUE) +
+          ggplot2::geom_boxplot(width = 0.12, outlier.shape = NA, alpha = 0.35)
+        if (is_secondary) {
+          p <- p + ggplot2::geom_jitter(width = 0.1, alpha = 0.45, size = 1.2)
+        } else {
+          p <- p + ggplot2::geom_jitter(width = 0.1, alpha = 0.45, size = 1.2)
+        }
+      } else if (plot_type == "jitter") {
+        p <- p +
+          ggplot2::geom_jitter(width = 0.18, alpha = 0.65, size = 1.6)
       }
       
       if (is_secondary) {
@@ -430,68 +465,111 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
 
         for (sub_data in facet_data) {
           if (nrow(sub_data) == 0) next
-          comp_pvals <- vapply(all_comps, function(this_comp) {
-            d1 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[1]]
-            d2 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[2]]
-            if (length(d1) <= 1 || length(d2) <= 1) {
-              return(NA_real_)
-            }
-            tryCatch(
-              if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value,
-              error = function(e) NA_real_
+          if (input$stat_method == "kruskal.test") {
+            group_values <- sub_data$Value[sub_data[[x_axis_col]] %in% group_levels]
+            group_labels <- sub_data[[x_axis_col]][sub_data[[x_axis_col]] %in% group_levels]
+            kw_res <- tryCatch(
+              stats::kruskal.test(group_values ~ as.factor(group_labels)),
+              error = function(e) NULL
             )
-          }, numeric(1))
-
-          adj_pvals <- comp_pvals
-          if (p_adjust_method != "none") {
-            ok <- is.finite(adj_pvals)
-            if (any(ok)) {
-              adj_pvals[ok] <- stats::p.adjust(adj_pvals[ok], method = p_adjust_method)
+            if (!is.null(kw_res) && is.finite(kw_res$p.value)) {
+              y_max <- suppressWarnings(max(sub_data$Value, na.rm = TRUE))
+              if (!is.finite(y_max) || y_max <= 0) y_max <- 1
+              ann_df <- data.frame(
+                group1 = group_levels[1],
+                group2 = group_levels[min(2, length(group_levels))],
+                p.adj = kw_res$p.value,
+                stringsAsFactors = FALSE
+              )
+              ann_df$p.signif <- signif_mark(ann_df$p.adj)
+              ann_df$p.format <- paste0("p-value = ", format_p_value(ann_df$p.adj))
+              ann_df$y.position <- y_max * 1.18
+              for (fv in facet_vars) {
+                ann_df[[fv]] <- sub_data[[fv]][1]
+              }
+              row_idx <- row_idx + 1L
+              annotation_rows[[row_idx]] <- ann_df
             }
+          } else {
+            comp_pvals <- vapply(all_comps, function(this_comp) {
+              d1 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[1]]
+              d2 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[2]]
+              if (length(d1) <= 1 || length(d2) <= 1) {
+                return(NA_real_)
+              }
+              tryCatch(
+                if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value,
+                error = function(e) NA_real_
+              )
+            }, numeric(1))
+
+            adj_pvals <- comp_pvals
+            if (p_adjust_method != "none") {
+              ok <- is.finite(adj_pvals)
+              if (any(ok)) {
+                adj_pvals[ok] <- stats::p.adjust(adj_pvals[ok], method = p_adjust_method)
+              }
+            }
+
+            valid_idx <- which(is.finite(adj_pvals))
+            if (sig_only) valid_idx <- valid_idx[adj_pvals[valid_idx] < 0.05]
+            if (length(valid_idx) == 0) next
+
+            y_max <- suppressWarnings(max(sub_data$Value, na.rm = TRUE))
+            if (!is.finite(y_max) || y_max <= 0) y_max <- 1
+            base_mult <- if (sig_as_marks) 1.12 else 1.20
+            step_mult <- if (sig_as_marks) 0.08 else 0.12
+
+            ann_df <- data.frame(
+              group1 = vapply(all_comps[valid_idx], `[[`, character(1), 1),
+              group2 = vapply(all_comps[valid_idx], `[[`, character(1), 2),
+              p.adj = adj_pvals[valid_idx],
+              stringsAsFactors = FALSE
+            )
+            ann_df$p.signif <- vapply(ann_df$p.adj, signif_mark, character(1))
+            ann_df$p.format <- vapply(ann_df$p.adj, format_p_value, character(1))
+            ann_df$y.position <- y_max * (base_mult + step_mult * (seq_len(nrow(ann_df)) - 1))
+            for (fv in facet_vars) {
+              ann_df[[fv]] <- sub_data[[fv]][1]
+            }
+
+            row_idx <- row_idx + 1L
+            annotation_rows[[row_idx]] <- ann_df
           }
-
-          valid_idx <- which(is.finite(adj_pvals))
-          if (sig_only) valid_idx <- valid_idx[adj_pvals[valid_idx] < 0.05]
-          if (length(valid_idx) == 0) next
-
-          y_max <- suppressWarnings(max(sub_data$Value, na.rm = TRUE))
-          if (!is.finite(y_max) || y_max <= 0) y_max <- 1
-          base_mult <- if (sig_as_marks) 1.12 else 1.20
-          step_mult <- if (sig_as_marks) 0.08 else 0.12
-
-          ann_df <- data.frame(
-            group1 = vapply(all_comps[valid_idx], `[[`, character(1), 1),
-            group2 = vapply(all_comps[valid_idx], `[[`, character(1), 2),
-            p.adj = adj_pvals[valid_idx],
-            stringsAsFactors = FALSE
-          )
-          ann_df$p.signif <- vapply(ann_df$p.adj, signif_mark, character(1))
-          ann_df$p.format <- vapply(ann_df$p.adj, format_p_value, character(1))
-          ann_df$y.position <- y_max * (base_mult + step_mult * (seq_len(nrow(ann_df)) - 1))
-          for (fv in facet_vars) {
-            ann_df[[fv]] <- sub_data[[fv]][1]
-          }
-
-          row_idx <- row_idx + 1L
-          annotation_rows[[row_idx]] <- ann_df
         }
 
         annotation_rows <- annotation_rows[seq_len(row_idx)]
         if (length(annotation_rows) > 0) {
           annotation_df <- do.call(rbind, annotation_rows)
-          p <- p + ggpubr::stat_pvalue_manual(
-            annotation_df,
-            label = if (sig_as_marks) "p.signif" else "p.format",
-            xmin = "group1",
-            xmax = "group2",
-            y.position = "y.position",
-            tip.length = 0.01,
-            size = max(2, base_size / 3.2),
-            bracket.size = 0.3,
-            vjust = if (sig_as_marks) 0.25 else -0.15,
-            hide.ns = FALSE,
-            inherit.aes = FALSE
-          )
+          if (input$stat_method == "kruskal.test") {
+            p <- p + ggplot2::geom_text(
+              data = annotation_df,
+              ggplot2::aes(
+                x = 1,
+                y = y.position,
+                label = p.format
+              ),
+              inherit.aes = FALSE,
+              size = max(2, base_size / 3.2),
+              hjust = 0,
+              vjust = 0,
+              fontface = "plain"
+            )
+          } else {
+            p <- p + ggpubr::stat_pvalue_manual(
+              annotation_df,
+              label = if (sig_as_marks) "p.signif" else "p.format",
+              xmin = "group1",
+              xmax = "group2",
+              y.position = "y.position",
+              tip.length = 0.01,
+              size = max(2, base_size / 3.2),
+              bracket.size = 0.3,
+              vjust = if (sig_as_marks) 0.25 else -0.15,
+              hide.ns = FALSE,
+              inherit.aes = FALSE
+            )
+          }
         }
       }
       return(
@@ -558,7 +636,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
     
     output$download_alpha_plot <- downloadHandler(
       filename = function() { 
-        paste0("alpha_plot_", Sys.Date(), ".png") 
+        paste0("alpha_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") 
       },
       content = function(file) {
         ggplot2::ggsave(file, plot = alpha_plot_reactive(), device = "png", 
@@ -617,7 +695,13 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       } else {
         0
       }
-      stat_method_label <- if (identical(input$stat_method, "t.test")) "t-test" else "Wilcoxon rank-sum test"
+      stat_method_label <- switch(
+        input$stat_method,
+        "t.test" = "t-test",
+        "wilcox.test" = "Wilcoxon rank-sum test",
+        "kruskal.test" = "Kruskal-Wallis test",
+        "Wilcoxon rank-sum test"
+      )
       p_adjust_label <- switch(
         input$p_adjust_method,
         "holm" = "Holm",
@@ -626,7 +710,9 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         "none" = "no multiple-testing correction",
         "BH"
       )
-      sig_sentence <- if (n_groups >= 3) {
+      sig_sentence <- if (identical(input$stat_method, "kruskal.test")) {
+        " Overall group significance is annotated using the Kruskal-Wallis test."
+      } else if (n_groups >= 3) {
         paste0(
           " Pairwise significance is annotated above each comparison using ",
           stat_method_label,
@@ -645,7 +731,11 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       }
       index_label <- paste(selected_indices, collapse = ", ")
       plot_type_label <- if (identical(input$plot_type, "barplot")) {
-        "bar plots summarize group means with standard error bars"
+        "bar plots summarize group means with standard error bars (SE)"
+      } else if (identical(input$plot_type, "violin")) {
+        "violin plots show distribution shape with overlaid sample points"
+      } else if (identical(input$plot_type, "jitter")) {
+        "jitter plots show individual sample values with slight horizontal displacement"
       } else {
         "box plots summarize group distributions with overlaid sample points"
       }

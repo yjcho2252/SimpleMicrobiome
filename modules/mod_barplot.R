@@ -68,8 +68,22 @@ mod_barplot_ui <- function(id) {
         selectInput(ns("tax_level"), "Taxonomic Level:",
                     choices = tax_ranks,
                     selected = "Genus"),        
-        numericInput(ns("top_n_taxa"), "Taxa Numbers to Display:",
-                     value = 15, min = 1, max = 50, step = 1),        
+        selectInput(ns("taxa_display_mode"), "Taxa Display Mode:",
+                    choices = c(
+                      "Top N Taxa" = "top_n",
+                      "Abundance Threshold" = "abundance_threshold"
+                    ),
+                    selected = "top_n"),
+        conditionalPanel(
+          condition = paste0("input['", ns("taxa_display_mode"), "'] == 'top_n'"),
+          numericInput(ns("top_n_taxa"), "Taxa Numbers to Display:",
+                       value = 15, min = 1, max = 50, step = 1)
+        ),
+        conditionalPanel(
+          condition = paste0("input['", ns("taxa_display_mode"), "'] == 'abundance_threshold'"),
+          numericInput(ns("min_taxa_abundance_pct"), "Display taxa with mean abundance >= (%):",
+                       value = 1, min = 0, max = 100, step = 0.1)
+        ),
         selectInput(ns("name_display_mode"), "Taxa Rank to Display:",
                     choices = c("Full Hierarchy" = "full",
                                 "Current Rank" = "current"),
@@ -350,15 +364,44 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       out
     }
 
+    resolve_taxa_selection <- function(ps_glom, tax_labels, display_mode, top_n_taxa, min_taxa_abundance_pct) {
+      taxa_ids <- names(sort(phyloseq::taxa_sums(ps_glom), decreasing = TRUE))
+      if (is.null(taxa_ids) || length(taxa_ids) == 0) {
+        return(character(0))
+      }
+
+      display_mode <- if (is.null(display_mode)) "top_n" else display_mode
+      if (identical(display_mode, "abundance_threshold")) {
+        threshold <- suppressWarnings(as.numeric(min_taxa_abundance_pct))
+        if (!is.finite(threshold) || threshold < 0) {
+          threshold <- 0
+        }
+        threshold <- threshold / 100
+        mean_abundance <- phyloseq::taxa_sums(ps_glom) / max(1, phyloseq::nsamples(ps_glom))
+        selected_ids <- names(mean_abundance)[mean_abundance >= threshold]
+        if (length(selected_ids) == 0) {
+          selected_ids <- taxa_ids[1]
+        }
+        return(selected_ids)
+      }
+
+      top_n <- suppressWarnings(as.integer(top_n_taxa))
+      if (!is.finite(top_n) || top_n < 1) {
+        top_n <- 1L
+      }
+      taxa_ids[seq_len(min(top_n, length(taxa_ids)))]
+    }
+
     barplot_matrix_reactive <- reactive({
       req(ps_obj(), group_var(), input$tax_level, input$name_display_mode,
-          input$plot_mode, input$top_n_taxa)
+          input$plot_mode, input$taxa_display_mode)
 
       current_rank <- input$tax_level
       primary_var <- group_var()
       secondary_var_val <- secondary_var()
-      topN <- input$top_n_taxa
       plot_mode <- input$plot_mode
+      taxa_display_mode <- input$taxa_display_mode
+      min_taxa_abundance_pct <- input$min_taxa_abundance_pct
 
       ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) {
         total <- sum(x, na.rm = TRUE)
@@ -398,9 +441,6 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       })
       phyloseq::tax_table(ps_glom) <- phyloseq::tax_table(as.matrix(tax_df))
 
-      sorted_taxa <- names(sort(phyloseq::taxa_sums(ps_glom), decreasing = TRUE))
-      top_otu_ids <- sorted_taxa[1:min(topN, length(sorted_taxa))]
-
       df_sample <- phyloseq::psmelt(ps_glom)
       meta_df_base <- as.data.frame(phyloseq::sample_data(ps_rel), stringsAsFactors = FALSE)
       meta_cols <- colnames(meta_df_base)
@@ -436,7 +476,15 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         )
       }
 
-      df_sample$Taxa_Group <- ifelse(df_sample$OTU %in% top_otu_ids,
+      selected_otu_ids <- resolve_taxa_selection(
+        ps_glom = ps_glom,
+        tax_labels = df_sample,
+        display_mode = taxa_display_mode,
+        top_n_taxa = input$top_n_taxa,
+        min_taxa_abundance_pct = min_taxa_abundance_pct
+      )
+
+      df_sample$Taxa_Group <- ifelse(df_sample$OTU %in% selected_otu_ids,
                                      as.character(df_sample$Taxa_Name_Display),
                                      "Others")
 
@@ -507,16 +555,17 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     
     barplot_reactive <- reactive({
       req(ps_obj(), group_var(), input$tax_level, input$name_display_mode, 
-          input$plot_mode, input$top_n_taxa, input$color_palette, input$base_size)
+          input$plot_mode, input$taxa_display_mode, input$color_palette, input$base_size)
       
       current_rank <- input$tax_level
       primary_var <- group_var()
       secondary_var_val <- secondary_var()
       
       facet_var <- primary_var 
-      topN <- input$top_n_taxa
       plot_mode <- input$plot_mode
       base_size <- input$base_size
+      taxa_display_mode <- input$taxa_display_mode
+      min_taxa_abundance_pct <- input$min_taxa_abundance_pct
       
       ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) {
         total <- sum(x, na.rm = TRUE)
@@ -555,9 +604,6 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         return(paste(full_name_parts, collapse = ";"))
       })
       phyloseq::tax_table(ps_glom) <- phyloseq::tax_table(as.matrix(tax_df))
-      
-      sorted_taxa <- names(sort(phyloseq::taxa_sums(ps_glom), decreasing = TRUE))
-      top_otu_ids <- sorted_taxa[1:min(topN, length(sorted_taxa))]
       
       df_sample <- phyloseq::psmelt(ps_glom)
       meta_df_base <- as.data.frame(phyloseq::sample_data(ps_rel), stringsAsFactors = FALSE)
@@ -604,7 +650,15 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         fill_label <- current_rank
       }
       
-      df_sample$Taxa_Group <- ifelse(df_sample$OTU %in% top_otu_ids,
+      selected_otu_ids <- resolve_taxa_selection(
+        ps_glom = ps_glom,
+        tax_labels = df_sample,
+        display_mode = taxa_display_mode,
+        top_n_taxa = input$top_n_taxa,
+        min_taxa_abundance_pct = min_taxa_abundance_pct
+      )
+
+      df_sample$Taxa_Group <- ifelse(df_sample$OTU %in% selected_otu_ids,
                                      as.character(df_sample$Taxa_Name_Display),
                                      "Others")
       
@@ -983,7 +1037,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     })
 
     output$barplot_figure_legend <- renderUI({
-      req(input$tax_level, input$top_n_taxa, input$plot_mode, input$name_display_mode)
+      req(input$tax_level, input$plot_mode, input$name_display_mode, input$taxa_display_mode)
       secondary_group <- tryCatch(secondary_var(), error = function(e) NULL)
       secondary_label <- if (!is.null(secondary_group) && nzchar(secondary_group)) {
         secondary_group
@@ -1026,8 +1080,11 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
             " at ",
             tax_level_label,
             " level. Colors denote taxa, and taxa outside the top ",
-            input$top_n_taxa,
-            " most abundant taxa in the full displayed dataset are aggregated as others",
+            if (identical(input$taxa_display_mode, "top_n")) {
+              paste0(input$top_n_taxa, " most abundant taxa in the full displayed dataset are aggregated as others")
+            } else {
+              paste0("taxa with mean abundance below ", input$min_taxa_abundance_pct, "% in the full displayed dataset are aggregated as others")
+            },
             if (!identical(secondary_label, "None")) paste0(" and sub-grouped by ", secondary_label) else "",
             ". ",
             sort_sentence,

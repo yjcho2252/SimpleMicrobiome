@@ -74,16 +74,26 @@ This document explains what each left-panel parameter does and how different set
   - Start at `Genus` for balance.
   - Move to higher level if plot is too fragmented.
 
-### 2.7 Taxa Numbers to Display (Top N)
-- **What it controls**: Number of most abundant taxa shown explicitly.
+### 2.7 Taxa Display Mode
+- **Options**:
+  - `Top N Taxa`
+  - `Abundance Threshold`
+- **What it controls**: Which taxa are shown explicitly instead of being aggregated into `Others`.
 - **Interpretation impact**:
-  - Low N: clean chart but may hide meaningful minor taxa.
-  - High N: more complete but harder to read.
+  - `Top N Taxa`: fixed-width overview that is easy to compare across plots.
+  - `Abundance Threshold`: adaptive view that keeps all taxa above a chosen mean-abundance cutoff.
 - **Practical range**:
-  - Exploratory view: 10-20
-  - Supplementary detail: 20-30
+  - `Top N Taxa`: 10-20 for exploration, 20-30 for denser summaries.
+  - `Abundance Threshold`: 0.5-2.0% for most summary plots, depending on sparsity.
 
-### 2.8 Taxa Rank to Display
+### 2.8 Taxa Numbers to Display / Abundance Threshold
+- **What it controls**:
+  - `Top N Taxa` mode uses the selected count.
+  - `Abundance Threshold` mode uses the selected mean-abundance percentage.
+- **Interpretation note**:
+  - Mean abundance is computed on the relative-abundance scale after sample normalization.
+
+### 2.9 Taxa Rank to Display
 - **Options**:
   - `Full Hierarchy`
   - `Current Rank`
@@ -91,7 +101,7 @@ This document explains what each left-panel parameter does and how different set
   - `Full Hierarchy`: less ambiguity, longer labels.
   - `Current Rank`: compact legend, possible duplicate names across lineages.
 
-### 2.9 Color Palette
+### 2.10 Color Palette
 - **What it controls**: Taxa color mapping.
 - **Interpretation impact**:
   - High-contrast palette improves multi-taxa discrimination.
@@ -99,7 +109,7 @@ This document explains what each left-panel parameter does and how different set
 - **Recommendation**:
   - Keep one palette fixed across related figures for consistency.
 
-### 2.10 Plot Width / Height / Base Font Size
+### 2.11 Plot Width / Height / Base Font Size
 - **What it controls**: Figure readability.
 - **Guideline**:
   - Many taxa or facets -> increase width/height.

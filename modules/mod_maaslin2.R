@@ -619,7 +619,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
         if (isTRUE(info$using_secondary)) paste0("Primary filter: ", info$primary_var, " = ", info$primary_level) else "Primary-only comparison mode",
         if (isTRUE(info$using_secondary)) paste0("Secondary variable: ", info$group_var) else paste0("Grouping variable: ", info$group_var),
         paste0("Included levels: ", paste(info$selected_levels, collapse = ", ")),
-        paste0("Total selected samples: ", length(info$selected_ids))
+        paste0("Total selected samples: ", length(info$selected_ids)),
+        paste0("Prevalence filter: > ", input$prevalence_filter_pct, "%"),
+        "Zero-variance taxa: removed before MaAsLin2 fitting"
       )
 
       if (length(info$counts_by_level) > 0) {
@@ -1645,7 +1647,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
           tolower(input$tax_level),
           " level against reference group ",
           input$reference_level,
-          ". Red indicates taxa increased in the comparison group and blue indicates taxa decreased."
+          ". Red indicates taxa increased in the comparison group and blue indicates taxa decreased. ",
+          "Before fitting, taxa are filtered by prevalence > ",
+          input$prevalence_filter_pct,
+          "% and zero-variance taxa are removed."
         )
       } else if (identical(active_tab, "Table")) {
         paste0(
@@ -1653,7 +1658,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
           tolower(input$tax_level),
           " level. Reference group is ",
           input$reference_level,
-          "."
+          ". Prevalence filtering (> ",
+          input$prevalence_filter_pct,
+          "%) and zero-variance removal are applied before fitting."
         )
       } else {
         paste0(
@@ -1663,7 +1670,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
           input$reference_level,
           ", and the y-axis is -log10(",
           y_metric_label,
-          "). Dashed lines indicate |log2FC| = 0.5 and p/q = 0.05 thresholds."
+          "). Dashed lines indicate |log2FC| = 0.5 and p/q = 0.05 thresholds. ",
+          "Taxa are filtered by prevalence > ",
+          input$prevalence_filter_pct,
+          "% and zero-variance taxa are removed before fitting."
         )
       }
       tags$div(

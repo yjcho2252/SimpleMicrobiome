@@ -168,6 +168,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260608: v0.4.0 - PNG export bug fixes."),
             tags$li("260506: v0.3.0 - DA/Network/Association modules updated with new features and bug fixes."),
             tags$li("260310: v0.2.0 - Preprocessing functionality improved."),
             tags$li("251210: v0.1.0 - First version released.")

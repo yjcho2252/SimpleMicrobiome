@@ -22,15 +22,32 @@ It is suitable when adjustment covariates are required.
 - Chooses feature aggregation rank.
 - Lower rank gives higher specificity but more sparsity.
 
-### 2.5 Transform/normalization options
+### 2.5 Prevalence filter
+- Default: `5%`.
+- Allowed UI range: `0-20%`.
+- What it does:
+  - Keeps taxa whose prevalence is greater than the selected threshold within the currently included sample subset.
+  - Prevalence is computed on the relative-abundance table before MaAsLin2 fitting.
+- Practical note:
+  - Lower values retain more rare taxa but increase sparsity.
+  - Higher values simplify the model but may remove low-frequency signals.
+
+### 2.6 Zero-variance taxa removal
+- Applied after prevalence filtering.
+- What it does:
+  - Removes taxa that have no variation in the selected subset before model fitting.
+- Why it matters:
+  - Prevents uninformative taxa from entering the regression model.
+
+### 2.7 Transform/normalization options
 - Changes input scale before fitting.
 - Coefficients and significance can vary by transform.
 
-### 2.6 Covariate selection
+### 2.8 Covariate selection
 - Adds adjustment variables for confounding control.
 - Over-adjustment can reduce interpretability and power.
 
-### 2.7 Significance/output filters
+### 2.9 Significance/output filters
 - Controls display/reporting thresholds.
 - Prefer adjusted significance for final reporting.
 
@@ -68,9 +85,10 @@ It is suitable when adjustment covariates are required.
 
 ## 4. Interpretation Workflow
 1. Prioritize q-value significant associations.
-2. Read coefficient direction and relative magnitude.
-3. Check whether direction is consistent across related taxa levels.
-4. Confirm robustness under a second transform setting.
+2. Confirm the taxa passed prevalence filtering and zero-variance removal.
+3. Read coefficient direction and relative magnitude.
+4. Check whether direction is consistent across related taxa levels.
+5. Confirm robustness under a second transform setting.
 
 ## 5. Common Pitfalls
 - Treating coefficients as unadjusted bivariate effects.
