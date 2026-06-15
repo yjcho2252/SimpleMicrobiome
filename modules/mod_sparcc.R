@@ -42,6 +42,24 @@ mod_sparcc_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
+      .sparcc-run-btn .sparcc-run-icon {
+        display: none;
+        margin-right: 6px;
+      }
+      .sparcc-run-btn .sparcc-run-icon i {
+        display: inline-block;
+      }
+      .sparcc-run-btn.is-running .sparcc-run-icon {
+        display: inline-block;
+        animation: sparcc-run-spin 0.9s linear infinite;
+      }
+      .sparcc-run-btn.is-running .sparcc-run-label {
+        opacity: 0.85;
+      }
+      @keyframes sparcc-run-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
     ")),
     sidebarLayout(
       sidebarPanel(
@@ -90,7 +108,15 @@ mod_sparcc_ui <- function(id) {
         numericInput(ns("plot_height"), "Plot height (px)", value = 550, min = 300, max = 2400, step = 50),
         tags$div(
           style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;",
-          actionButton(ns("run_network_btn"), "Run SparCC", class = "btn-danger", style = "font-size: 12px;"),
+          tags$button(
+            id = ns("run_network_btn"),
+            type = "button",
+            class = "action-button btn btn-danger sparcc-run-btn",
+            `data-val` = 0,
+            style = "font-size: 12px;",
+            tags$span(class = "sparcc-run-icon", icon("spinner", class = "fa-spin")),
+            tags$span(class = "sparcc-run-label", "Run SparCC")
+          ),
           tags$span("May take a long time.", style = "font-size: 11px; color: #b94a48;")
         ),
         tags$script(HTML(
@@ -98,8 +124,10 @@ mod_sparcc_ui <- function(id) {
              var btn = document.getElementById(msg.id);
              if (!btn) return;
              btn.disabled = !!msg.disabled;
-             if (msg.label) btn.textContent = msg.label;
-           });
+             btn.classList.toggle('is-running', !!msg.running);
+             var label = btn.querySelector('.sparcc-run-label');
+             if (label && msg.label) label.textContent = msg.label;
+            });
            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
              var el = document.getElementById(msg.id);
              if (!el) return;
@@ -453,10 +481,10 @@ mod_sparcc_server <- function(id, ps_obj) {
       )
       network_running(TRUE)
 
-      session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, label = "Running..."))
+      session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, running = TRUE, label = "Running..."))
       on.exit({
         network_running(FALSE)
-        session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, label = "Run SparCC"))
+        session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, running = FALSE, label = "Run SparCC"))
       }, add = TRUE)
 
       set.seed(as.integer(input$seed))

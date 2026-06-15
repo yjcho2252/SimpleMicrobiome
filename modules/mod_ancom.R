@@ -32,6 +32,24 @@ mod_ancom_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
+      .ancom-run-btn .ancom-run-icon {
+        display: none;
+        margin-right: 6px;
+      }
+      .ancom-run-btn .ancom-run-icon i {
+        display: inline-block;
+      }
+      .ancom-run-btn.is-running .ancom-run-icon {
+        display: inline-block;
+        animation: ancom-run-spin 0.9s linear infinite;
+      }
+      .ancom-run-btn.is-running .ancom-run-label {
+        opacity: 0.85;
+      }
+      @keyframes ancom-run-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
     ")),
     tags$style(HTML(paste0(
       "#", ns("ancom_table"), " th, #", ns("ancom_table"), " td {",
@@ -131,15 +149,25 @@ mod_ancom_ui <- function(id) {
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2000, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 400, min = 300, max = 2000, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        actionButton(ns("run_ancom_btn"), "Run ANCOM-BC2", class = "btn-danger", style = "font-size: 12px;"),
+        tags$button(
+          id = ns("run_ancom_btn"),
+          type = "button",
+          class = "action-button btn btn-danger ancom-run-btn",
+          `data-val` = 0,
+          style = "font-size: 12px;",
+          tags$span(class = "ancom-run-icon", icon("spinner", class = "fa-spin")),
+          tags$span(class = "ancom-run-label", "Run ANCOM-BC2")
+        ),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-ancom-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);
              if (!btn) return;
              btn.disabled = !!msg.disabled;
-             if (msg.label) btn.textContent = msg.label;
+             btn.classList.toggle('is-running', !!msg.running);
+             var label = btn.querySelector('.ancom-run-label');
+             if (label && msg.label) label.textContent = msg.label;
            });
-           Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
+            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
              var el = document.getElementById(msg.id);
              if (!el) return;
              el.style.width = msg.width;
@@ -700,6 +728,7 @@ mod_ancom_server <- function(id, ps_obj) {
       session$sendCustomMessage("toggle-ancom-run-btn", list(
         id = session$ns("run_ancom_btn"),
         disabled = TRUE,
+        running = TRUE,
         label = "Running..."
       ))
       on.exit({
@@ -707,6 +736,7 @@ mod_ancom_server <- function(id, ps_obj) {
         session$sendCustomMessage("toggle-ancom-run-btn", list(
           id = session$ns("run_ancom_btn"),
           disabled = FALSE,
+          running = FALSE,
           label = "Run ANCOM-BC2"
         ))
       }, add = TRUE)

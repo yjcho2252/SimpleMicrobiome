@@ -33,6 +33,10 @@ mod_alpha_ui <- function(id) {
                            ),
                            selected = c("Chao1", "Shannon")),
         hr(),
+        h4(icon("link"), "Pairing"),
+        checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
+        uiOutput(ns("subject_id_selector")),
+        hr(),
         h4(icon("sliders"), "Plot Settings"),
         selectInput(
           ns("plot_type"),
@@ -164,6 +168,82 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         updateCheckboxInput(session, "show_sig_as_marks", value = FALSE)
       }
     }, ignoreInit = TRUE)
+
+    paired_stat_method <- reactive({
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return(input$stat_method)
+      }
+      if (identical(input$stat_method, "kruskal.test")) {
+        return("friedman.test")
+      }
+      input$stat_method
+    })
+
+    paired_ready <- reactive({
+      req(alpha_long_reactive(), input$group_var)
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return(FALSE)
+      }
+      alpha_long <- alpha_long_reactive()
+      primary_col <- resolve_meta_colname(input$group_var, colnames(alpha_long))
+      secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(alpha_long))
+      is_secondary <- !is.null(secondary_col) && secondary_col != "none"
+      x_axis_col <- if (is_secondary) secondary_col else primary_col
+      if (!("SubjectID" %in% colnames(alpha_long))) {
+        return(FALSE)
+      }
+      if (is.null(x_axis_col) || !nzchar(x_axis_col) || !(x_axis_col %in% colnames(alpha_long))) {
+        return(FALSE)
+      }
+      check_df <- alpha_long %>%
+        dplyr::filter(!is.na(SubjectID) & nzchar(as.character(SubjectID))) %>%
+        dplyr::mutate(.paired_subject = as.character(SubjectID)) %>%
+        dplyr::group_by(.paired_subject) %>%
+        dplyr::summarise(
+          n_groups = dplyr::n_distinct(.data[[x_axis_col]]),
+          n_points = dplyr::n(),
+          .groups = "drop"
+        )
+      any(check_df$n_groups >= 2 & check_df$n_points >= 2, na.rm = TRUE)
+    })
+
+    paired_ready_reason <- reactive({
+      req(alpha_long_reactive(), input$group_var)
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return("Within-subject pairing is off.")
+      }
+      alpha_long <- alpha_long_reactive()
+      primary_col <- resolve_meta_colname(input$group_var, colnames(alpha_long))
+      secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(alpha_long))
+      is_secondary <- !is.null(secondary_col) && secondary_col != "none"
+      x_axis_col <- if (is_secondary) secondary_col else primary_col
+      if (!("SubjectID" %in% colnames(alpha_long))) {
+        return("SubjectID was not found in the alpha data.")
+      }
+      if (is.null(x_axis_col) || !nzchar(x_axis_col) || !(x_axis_col %in% colnames(alpha_long))) {
+        return("The selected x-axis column was not found in the alpha data.")
+      }
+      check_df <- alpha_long %>%
+        dplyr::filter(!is.na(SubjectID) & nzchar(as.character(SubjectID))) %>%
+        dplyr::mutate(.paired_subject = as.character(SubjectID)) %>%
+        dplyr::group_by(.paired_subject) %>%
+        dplyr::summarise(
+          n_groups = dplyr::n_distinct(.data[[x_axis_col]]),
+          n_points = dplyr::n(),
+          .groups = "drop"
+        )
+      if (nrow(check_df) == 0) {
+        return("No rows remain after filtering to non-empty subject IDs.")
+      }
+      if (!any(check_df$n_groups >= 2 & check_df$n_points >= 2, na.rm = TRUE)) {
+        return(paste0(
+          "No subject has repeated measurements across at least 2 ",
+          x_axis_col,
+          " levels."
+        ))
+      }
+      "Paired data are available."
+    })
     
     output$local_group_selector <- renderUI({
       req(meta_cols())
@@ -183,6 +263,20 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       group_choices <- setdiff(meta_cols(), c("SampleID", primary_input, resolved_primary))
       selectInput(session$ns("secondary_group_var"), "Secondary Group (Optional):",
                   choices = c("(None)" = "none", group_choices), selected = "none")
+    })
+
+    output$subject_id_selector <- renderUI({
+      req(meta_cols())
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return(NULL)
+      }
+      subject_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, input$secondary_group_var))
+      selectInput(
+        session$ns("subject_id_var"),
+        "Subject ID Variable:",
+        choices = subject_choices,
+        selected = if (length(subject_choices) > 0) subject_choices[1] else NULL
+      )
     })
     
     rarefaction_size <- reactive({
@@ -206,18 +300,24 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       meta_data <- as(phyloseq::sample_data(physeq_rarefied), "data.frame")
       primary_col <- resolve_meta_colname(input$group_var, colnames(meta_data))
       secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(meta_data))
+      subject_col <- resolve_meta_colname(input$subject_id_var, colnames(meta_data))
       is_secondary <- !is.null(secondary_col) && secondary_col != "none"
+      has_subject <- isTRUE(input$enable_within_subject_pairing) &&
+        !is.null(subject_col) &&
+        nzchar(subject_col) &&
+        subject_col %in% colnames(meta_data)
       validate(need(primary_col %in% colnames(meta_data), paste0("Primary grouping variable '", input$group_var, "' was not found in metadata.")))
       if (is_secondary) {
         validate(need(secondary_col %in% colnames(meta_data), paste0("Secondary grouping variable '", input$secondary_group_var, "' was not found in metadata.")))
       }
-      valid_cols <- if (is_secondary) c(primary_col, secondary_col) else primary_col
+      valid_cols <- c(primary_col, if (is_secondary) secondary_col else NULL, if (has_subject) subject_col else NULL)
       valid_samples <- complete.cases(meta_data[, valid_cols, drop = FALSE])
       physeq_filtered <- phyloseq::prune_samples(valid_samples, physeq_rarefied)
       meta_filtered <- meta_data[valid_samples, , drop = FALSE]
       alpha_df <- phyloseq::estimate_richness(physeq_filtered, measures = input$alpha_methods)
       alpha_df[[primary_col]] <- factor(meta_filtered[[primary_col]])
       if (is_secondary) alpha_df[[secondary_col]] <- factor(meta_filtered[[secondary_col]])
+      if (has_subject) alpha_df$SubjectID <- as.character(meta_filtered[[subject_col]])
       alpha_df$SampleID <- rownames(alpha_df)
       out_long <- tidyr::pivot_longer(
         alpha_df,
@@ -239,6 +339,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       primary_col <- resolve_meta_colname(input$group_var, colnames(alpha_long))
       secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(alpha_long))
       is_secondary <- !is.null(secondary_col) && secondary_col != "none"
+      has_subject <- isTRUE(input$enable_within_subject_pairing) && "SubjectID" %in% colnames(alpha_long)
       x_axis_col <- if (is_secondary) secondary_col else primary_col
       group_levels <- levels(factor(alpha_long[[x_axis_col]]))
       num_groups <- length(group_levels)
@@ -427,6 +528,44 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         p <- p +
           ggplot2::geom_jitter(width = 0.18, alpha = 0.65, size = 1.6)
       }
+
+      if (isTRUE(paired_ready())) {
+        line_df <- alpha_long %>%
+          dplyr::filter(!is.na(SubjectID) & nzchar(as.character(SubjectID)))
+
+        if (nrow(line_df) > 0) {
+          if (is_secondary) {
+            line_df <- line_df %>%
+              dplyr::group_by(Alpha_Index, !!rlang::sym(primary_col), SubjectID) %>%
+              dplyr::filter(dplyr::n_distinct(.data[[x_axis_col]]) >= 2) %>%
+              dplyr::arrange(.data[[x_axis_col]], .by_group = TRUE) %>%
+              dplyr::ungroup() %>%
+              dplyr::mutate(LineGroup = interaction(Alpha_Index, .data[[primary_col]], SubjectID, drop = TRUE))
+          } else {
+            line_df <- line_df %>%
+              dplyr::group_by(Alpha_Index, SubjectID) %>%
+              dplyr::filter(dplyr::n_distinct(.data[[x_axis_col]]) >= 2) %>%
+              dplyr::arrange(.data[[x_axis_col]], .by_group = TRUE) %>%
+              dplyr::ungroup() %>%
+              dplyr::mutate(LineGroup = interaction(Alpha_Index, SubjectID, drop = TRUE))
+          }
+
+          if (nrow(line_df) > 0) {
+            p <- p + ggplot2::geom_line(
+              data = line_df,
+              mapping = ggplot2::aes(
+                x = .data[[x_axis_col]],
+                y = Value,
+                group = LineGroup
+              ),
+              inherit.aes = FALSE,
+              color = "#2F4F4F",
+              linewidth = 0.35,
+              alpha = 0.5
+            )
+          }
+        }
+      }
       
       if (is_secondary) {
         p <- p + ggplot2::facet_grid(stats::as.formula(paste("Alpha_Index ~", primary_col)), scales = "free_y")
@@ -465,11 +604,21 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
 
         for (sub_data in facet_data) {
           if (nrow(sub_data) == 0) next
-          if (input$stat_method == "kruskal.test") {
-            group_values <- sub_data$Value[sub_data[[x_axis_col]] %in% group_levels]
-            group_labels <- sub_data[[x_axis_col]][sub_data[[x_axis_col]] %in% group_levels]
+          if (identical(paired_stat_method(), "friedman.test") && isTRUE(paired_ready())) {
+            paired_subjects <- sub_data[!is.na(sub_data$SubjectID) & nzchar(sub_data$SubjectID), , drop = FALSE]
+            if (nrow(paired_subjects) == 0) next
+            paired_subjects$SubjectID <- as.character(paired_subjects$SubjectID)
+            paired_subjects$Group <- factor(paired_subjects[[x_axis_col]], levels = group_levels)
+            paired_subjects <- paired_subjects %>%
+              dplyr::group_by(SubjectID, Group) %>%
+              dplyr::summarise(Value = stats::median(Value, na.rm = TRUE), .groups = "drop")
+            expected_groups <- dplyr::n_distinct(paired_subjects$Group)
+            paired_subjects <- paired_subjects %>%
+              dplyr::group_by(SubjectID) %>%
+              dplyr::filter(dplyr::n_distinct(Group) == expected_groups) %>%
+              dplyr::ungroup()
             kw_res <- tryCatch(
-              stats::kruskal.test(group_values ~ as.factor(group_labels)),
+              stats::friedman.test(Value ~ Group | SubjectID, data = paired_subjects),
               error = function(e) NULL
             )
             if (!is.null(kw_res) && is.finite(kw_res$p.value)) {
@@ -492,13 +641,44 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
             }
           } else {
             comp_pvals <- vapply(all_comps, function(this_comp) {
-              d1 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[1]]
-              d2 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[2]]
-              if (length(d1) <= 1 || length(d2) <= 1) {
+              if (!isTRUE(paired_ready())) {
+                d1 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[1]]
+                d2 <- sub_data$Value[sub_data[[x_axis_col]] == this_comp[2]]
+                if (length(d1) <= 1 || length(d2) <= 1) {
+                  return(NA_real_)
+                }
+                return(tryCatch(
+                  if (identical(paired_stat_method(), "wilcox.test")) stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value,
+                  error = function(e) NA_real_
+                ))
+              }
+
+              valid_subject <- !is.na(sub_data$SubjectID) & nzchar(as.character(sub_data$SubjectID))
+              paired_data <- sub_data[valid_subject, , drop = FALSE]
+              if (nrow(paired_data) == 0) {
+                return(NA_real_)
+              }
+
+              g1 <- paired_data[paired_data[[x_axis_col]] == this_comp[1], c("SubjectID", "Value"), drop = FALSE]
+              g2 <- paired_data[paired_data[[x_axis_col]] == this_comp[2], c("SubjectID", "Value"), drop = FALSE]
+              if (nrow(g1) == 0 || nrow(g2) == 0) {
+                return(NA_real_)
+              }
+              colnames(g1) <- c("SubjectID", "v1")
+              colnames(g2) <- c("SubjectID", "v2")
+              g1 <- g1 %>%
+                dplyr::group_by(SubjectID) %>%
+                dplyr::summarise(v1 = stats::median(v1, na.rm = TRUE), .groups = "drop")
+              g2 <- g2 %>%
+                dplyr::group_by(SubjectID) %>%
+                dplyr::summarise(v2 = stats::median(v2, na.rm = TRUE), .groups = "drop")
+              paired_df <- dplyr::inner_join(g1, g2, by = "SubjectID")
+              paired_df <- paired_df[is.finite(paired_df$v1) & is.finite(paired_df$v2), , drop = FALSE]
+              if (nrow(paired_df) <= 1) {
                 return(NA_real_)
               }
               tryCatch(
-                if (input$stat_method == "wilcox.test") stats::wilcox.test(d1, d2)$p.value else stats::t.test(d1, d2)$p.value,
+                if (identical(paired_stat_method(), "wilcox.test")) stats::wilcox.test(paired_df$v1, paired_df$v2, paired = TRUE)$p.value else stats::t.test(paired_df$v1, paired_df$v2, paired = TRUE)$p.value,
                 error = function(e) NA_real_
               )
             }, numeric(1))
@@ -696,11 +876,12 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         0
       }
       stat_method_label <- switch(
-        input$stat_method,
-        "t.test" = "t-test",
-        "wilcox.test" = "Wilcoxon rank-sum test",
+        paired_stat_method(),
+        "t.test" = if (isTRUE(input$enable_within_subject_pairing)) "paired t-test" else "t-test",
+        "wilcox.test" = if (isTRUE(input$enable_within_subject_pairing)) "paired Wilcoxon signed-rank test" else "Wilcoxon rank-sum test",
+        "friedman.test" = "Friedman test",
         "kruskal.test" = "Kruskal-Wallis test",
-        "Wilcoxon rank-sum test"
+        if (isTRUE(input$enable_within_subject_pairing)) "paired Wilcoxon signed-rank test" else "Wilcoxon rank-sum test"
       )
       p_adjust_label <- switch(
         input$p_adjust_method,
@@ -710,7 +891,16 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
         "none" = "no multiple-testing correction",
         "BH"
       )
-      sig_sentence <- if (identical(input$stat_method, "kruskal.test")) {
+      pairing_sentence <- if (isTRUE(input$enable_within_subject_pairing) && isTRUE(paired_ready()) && !is.null(input$subject_id_var) && nzchar(input$subject_id_var)) {
+        paste0(" Within-subject pairing is applied using ", input$subject_id_var, " as the subject identifier.")
+      } else if (isTRUE(input$enable_within_subject_pairing)) {
+        paste0(" Within-subject pairing is enabled, but pairing is not ready: ", paired_ready_reason())
+      } else {
+        ""
+      }
+      sig_sentence <- if (identical(paired_stat_method(), "friedman.test")) {
+        " Overall group significance is annotated using the Friedman test for repeated measures."
+      } else if (identical(input$stat_method, "kruskal.test")) {
         " Overall group significance is annotated using the Kruskal-Wallis test."
       } else if (n_groups >= 3) {
         paste0(
@@ -718,13 +908,15 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
           stat_method_label,
           " with ",
           p_adjust_label,
-          "."
+          ".",
+          pairing_sentence
         )
       } else if (n_groups == 2) {
         paste0(
           " Pairwise significance is annotated using ",
           stat_method_label,
-          " (single comparison)."
+          " (single comparison).",
+          pairing_sentence
         )
       } else {
         ""

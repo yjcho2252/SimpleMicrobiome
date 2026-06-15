@@ -944,9 +944,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5, size = max(6, base_size - 1)),
           legend.position = "none",
           strip.background = ggplot2::element_rect(fill = "grey85", color = "grey20"),
-          plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8)
-        ) +
-        ggplot2::coord_cartesian(clip = "off")
+          plot.margin = ggplot2::margin(t = 8, r = 8, b = 8, l = 8)
+        )
 
       if (plot_type == "barplot") {
         facet_group_cols <- c("Taxa")
@@ -1188,7 +1187,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
               data = trend_p_df,
               mapping = ggplot2::aes(x = x, y = y, label = p_label),
               inherit.aes = FALSE,
-              hjust = 0,
+              hjust = 0.5,
               vjust = 0,
               size = max(3.4, base_size * 0.34),
               color = "#111111"
@@ -1219,12 +1218,17 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         }
 
         if (nrow(line_df) > 0) {
+          line_group_aes <- if (is_secondary) {
+            quote(interaction(PrimaryGroup, Taxa, LongitudinalSubject))
+          } else {
+            quote(interaction(Taxa, LongitudinalSubject))
+          }
           p <- p + ggplot2::geom_line(
             data = line_df,
             mapping = ggplot2::aes(
               x = Group,
               y = .data[[y_plot_col]],
-              group = interaction(PrimaryGroup, Taxa, LongitudinalSubject)
+              group = !!line_group_aes
             ),
             inherit.aes = FALSE,
             color = "#2F4F4F",

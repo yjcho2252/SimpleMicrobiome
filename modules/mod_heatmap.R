@@ -32,6 +32,24 @@ mod_heatmap_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
+      .heatmap-run-btn .heatmap-run-icon {
+        display: none;
+        margin-right: 6px;
+      }
+      .heatmap-run-btn .heatmap-run-icon i {
+        display: inline-block;
+      }
+      .heatmap-run-btn.is-running .heatmap-run-icon {
+        display: inline-block;
+        animation: heatmap-run-spin 0.9s linear infinite;
+      }
+      .heatmap-run-btn.is-running .heatmap-run-label {
+        opacity: 0.85;
+      }
+      @keyframes heatmap-run-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
     ")),
     sidebarLayout(
       sidebarPanel(
@@ -134,7 +152,15 @@ mod_heatmap_ui <- function(id) {
         numericInput(ns("cell_width"), "Cell width (px)", value = 30, min = 6, max = 80, step = 1),
         numericInput(ns("cell_height"), "Cell height (px)", value = 10, min = 6, max = 80, step = 1),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        actionButton(ns("run_heatmap"), "Run Heatmap", class = "btn-danger", style = "font-size: 12px;"),
+        tags$button(
+          id = ns("run_heatmap"),
+          type = "button",
+          class = "action-button btn btn-danger heatmap-run-btn",
+          `data-val` = 0,
+          style = "font-size: 12px;",
+          tags$span(class = "heatmap-run-icon", icon("spinner", class = "fa-spin")),
+          tags$span(class = "heatmap-run-label", "Run Heatmap")
+        ),
         hr(),
         h5(icon("download"), "Download"),
         tags$div(
@@ -155,8 +181,10 @@ mod_heatmap_ui <- function(id) {
              var btn = document.getElementById(msg.id);
              if (!btn) return;
              btn.disabled = !!msg.disabled;
-             if (msg.label) btn.textContent = msg.label;
-           });
+             btn.classList.toggle('is-running', !!msg.running);
+             var label = btn.querySelector('.heatmap-run-label');
+             if (label && msg.label) label.textContent = msg.label;
+            });
            Shiny.addCustomMessageHandler('toggle-input-disabled', function(msg) {
              var el = document.getElementById(msg.id);
              if (!el) return;
@@ -440,14 +468,14 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       heatmap_running(TRUE)
       session$sendCustomMessage(
         "toggle-heatmap-run-btn",
-        list(id = session$ns("run_heatmap"), disabled = TRUE, label = "Running...")
+        list(id = session$ns("run_heatmap"), disabled = TRUE, running = TRUE, label = "Running...")
       )
       on.exit(
         {
           heatmap_running(FALSE)
           session$sendCustomMessage(
             "toggle-heatmap-run-btn",
-            list(id = session$ns("run_heatmap"), disabled = FALSE, label = "Run Heatmap")
+            list(id = session$ns("run_heatmap"), disabled = FALSE, running = FALSE, label = "Run Heatmap")
           )
         },
         add = TRUE

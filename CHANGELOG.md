@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-06-15]
+
+### Changed
+- Alpha Diversity (`modules/mod_alpha.R`):
+  - Added `Within-Subject Pairing` controls with subject-aware pairing lines.
+  - Paired comparisons now use paired `t-test` / paired `Wilcoxon signed-rank test` when repeated measurements are available, and repeated-measures `Friedman test` for 3+ groups.
+  - Updated on-screen status text to clarify when paired data are available and when pairing is not ready.
+- Taxa Comparison (`modules/mod_taxa_comparison.R`):
+  - Refined pairing-line rendering and paired-mode handling around x-axis grouping and repeated-measures checks.
+  - Adjusted regression q-value label placement and pairing-related status text.
+- File load (`modules/mod_fileload.R`):
+  - Added a spinner-based waiting state that appears only while the file set is actively being parsed.
+- Manual documentation:
+  - Updated `docs/manual/alpha-diversity.md`, `docs/manual/taxa-profiles.md`, and `docs/manual/data-loading.md` to match the current pairing and loading behavior.
+
 ## [2026-06-09]
 
 ### Changed

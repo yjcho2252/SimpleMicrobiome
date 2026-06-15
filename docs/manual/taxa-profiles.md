@@ -138,6 +138,7 @@ This document explains what each left-panel parameter does and how different set
   - Disabled: independent-group comparison.
 - **Critical note**:
   - Enable only when repeated measures truly match by subject ID.
+  - Pairing becomes active only when the selected subject ID has repeated measurements across the x-axis groups used in the comparison.
 
 ### 3.4 Subject Identifier
 - **Used when pairing is enabled**.
@@ -145,6 +146,7 @@ This document explains what each left-panel parameter does and how different set
   - Must uniquely map repeated samples to the same subject.
 - **Risk**:
   - Incorrect ID column causes invalid paired statistics.
+  - If the selected subject ID is not repeated across groups, the app keeps the independent comparison behavior and shows a pairing-not-ready message.
 
 ### 3.5 Show Regression Line / Group variable type / Regression method
 - **Show Regression Line**:
@@ -160,6 +162,7 @@ This document explains what each left-panel parameter does and how different set
 - **When disabled**:
   - Plot type returns to `Bar plot`.
   - `Show p-value bars` is re-enabled.
+  - When pairing is enabled, the repeated-measures logic follows the same x-axis grouping used by the plot, and the overall test switches to `Friedman test` when there are 3 or more x-axis groups.
 
 ### 3.6 Taxonomic Level
 - Same interpretation principles as Bar plot.

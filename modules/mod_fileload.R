@@ -53,6 +53,31 @@ mod_fileload_ui <- function(id) {
         padding-top: 6px;
         padding-bottom: 6px;
       }
+      .fileload-waiting {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .fileload-spinner {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        color: #c57f00;
+        transform-origin: 50% 50%;
+      }
+      .fileload-spinner.is-running {
+        animation: fileload-spin 0.9s linear infinite;
+      }
+      @keyframes fileload-spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
     ")),
     h4(icon("upload"), "Data Input"),
     div(
@@ -136,6 +161,7 @@ mod_fileload_server <- function(id) {
     
     load_completed <- reactiveVal(FALSE) 
     load_error <- reactiveVal(NULL)
+    load_in_progress <- reactiveVal(FALSE)
     example_files <- reactiveVal(NULL)
     ps_initial_val <- reactiveVal(NULL)
 
@@ -254,6 +280,7 @@ mod_fileload_server <- function(id) {
       ps_initial_val(NULL)
       load_completed(FALSE)
       load_error(NULL)
+      load_in_progress(FALSE)
 
       has_manual_input <- !is.null(input$otu_file) || !is.null(input$tax_file) || !is.null(input$meta_file)
       selected_files <- if (isTRUE(has_manual_input)) NULL else example_files()
@@ -266,114 +293,119 @@ mod_fileload_server <- function(id) {
         return(NULL)
       }
 
-      otu_df <- read_microbiome_file(otu_input)
-      if (is.null(otu_df)) {
-        error_message <- "OTU file read error: Check the ASV/OTU abundance matrix format, delimiter, and row names. Please re-upload the OTU file."
-        load_error(error_message)
-        showNotification(error_message, type = "error", duration = 10)
-        return(NULL)
-      }
+      load_in_progress(TRUE)
+      session$onFlushed(function() {
+        on.exit(load_in_progress(FALSE), add = TRUE)
 
-      tax_df <- read_microbiome_file(tax_input)
-      if (is.null(tax_df)) {
-        error_message <- "Taxonomy file read error: Check the taxonomy table format, delimiter, and row names. Please re-upload the taxonomy file."
-        load_error(error_message)
-        showNotification(error_message, type = "error", duration = 10)
-        return(NULL)
-      }
+        otu_df <- read_microbiome_file(otu_input)
+        if (is.null(otu_df)) {
+          error_message <- "OTU file read error: Check the ASV/OTU abundance matrix format, delimiter, and row names. Please re-upload the OTU file."
+          load_error(error_message)
+          showNotification(error_message, type = "error", duration = 10)
+          return(NULL)
+        }
 
-      meta_df <- read_microbiome_file(meta_input, is_meta = TRUE)
-      if (is.null(meta_df)) {
-        error_message <- "Metadata file read error: Check the metadata table format, delimiter, and column structure. Please re-upload the metadata file."
-        load_error(error_message)
-        showNotification(error_message, type = "error", duration = 10)
-        return(NULL)
-      }
+        tax_df <- read_microbiome_file(tax_input)
+        if (is.null(tax_df)) {
+          error_message <- "Taxonomy file read error: Check the taxonomy table format, delimiter, and row names. Please re-upload the taxonomy file."
+          load_error(error_message)
+          showNotification(error_message, type = "error", duration = 10)
+          return(NULL)
+        }
 
-      ps <- tryCatch({
-        colnames(meta_df)[1] <- "SampleID"
-        if (ncol(meta_df) == 1) {
-          meta_df$Group <- "All"
-          showNotification(
-            "Metadata contains only SampleID. A default 'Group' column with value 'All' was added.",
-            type = "warning",
-            duration = 8
+        meta_df <- read_microbiome_file(meta_input, is_meta = TRUE)
+        if (is.null(meta_df)) {
+          error_message <- "Metadata file read error: Check the metadata table format, delimiter, and column structure. Please re-upload the metadata file."
+          load_error(error_message)
+          showNotification(error_message, type = "error", duration = 10)
+          return(NULL)
+        }
+
+        ps <- tryCatch({
+          colnames(meta_df)[1] <- "SampleID"
+          if (ncol(meta_df) == 1) {
+            meta_df$Group <- "All"
+            showNotification(
+              "Metadata contains only SampleID. A default 'Group' column with value 'All' was added.",
+              type = "warning",
+              duration = 8
+            )
+          }
+          rownames(meta_df) <- meta_df$SampleID
+
+          otu <- otu_table(as.matrix(otu_df), taxa_are_rows = TRUE)
+          tax <- tax_table(as.matrix(tax_df))
+          meta <- sample_data(meta_df)
+
+          ps <- phyloseq(otu, tax, meta)
+
+          sample_keep <- sample_names(otu) %in% sample_names(meta)
+          if (length(sample_keep) != nsamples(ps)) {
+            stop(sprintf(
+              paste0(
+                "Length mismatch before prune_samples: ",
+                "length(sample_names(otu) %%in%% sample_names(meta)) = %d, ",
+                "nsamples(ps) = %d, ",
+                "length(sample_names(otu)) = %d, ",
+                "length(sample_names(meta)) = %d"
+              ),
+              length(sample_keep),
+              nsamples(ps),
+              length(sample_names(otu)),
+              length(sample_names(meta))
+            ))
+          }
+          ps <- prune_samples(sample_keep, ps)
+
+          taxa_keep <- taxa_names(otu) %in% taxa_names(tax)
+          if (length(taxa_keep) != ntaxa(ps)) {
+            stop(sprintf(
+              paste0(
+                "Length mismatch before prune_taxa: ",
+                "length(taxa_names(otu) %%in%% taxa_names(tax)) = %d, ",
+                "ntaxa(ps) = %d, ",
+                "length(taxa_names(otu)) = %d, ",
+                "length(taxa_names(tax)) = %d"
+              ),
+              length(taxa_keep),
+              ntaxa(ps),
+              length(taxa_names(otu)),
+              length(taxa_names(tax))
+            ))
+          }
+          ps <- prune_taxa(taxa_keep, ps)
+          ps <- prune_taxa(taxa_sums(ps) > 0, ps)
+          ps <- prune_samples(sample_sums(ps) > 0, ps)
+
+          if (ntaxa(ps) == 0) {
+            stop("No valid taxa found. Check ASV/Taxonomy ID matching. (0 taxa)")
+          }
+          if (nsamples(ps) == 0) {
+            stop("No valid samples found. Check Sample ID matching. (0 samples)")
+          }
+
+          ps
+        }, error = function(e) {
+          error_message <- paste0(
+            "Data construction error while building the phyloseq object: ",
+            conditionMessage(e),
+            "\nPlease correct the file contents and re-upload the files."
           )
+          load_error(error_message)
+          showNotification(
+            error_message,
+            type = "error",
+            duration = 10
+          )
+          NULL
+        })
+
+        if (!is.null(ps)) {
+          ps_initial_val(ps)
+          load_completed(TRUE)
+          load_error(NULL)
         }
-        rownames(meta_df) <- meta_df$SampleID
-
-        otu <- otu_table(as.matrix(otu_df), taxa_are_rows = TRUE)
-        tax <- tax_table(as.matrix(tax_df))
-        meta <- sample_data(meta_df)
-
-        ps <- phyloseq(otu, tax, meta)
-
-        sample_keep <- sample_names(otu) %in% sample_names(meta)
-        if (length(sample_keep) != nsamples(ps)) {
-          stop(sprintf(
-            paste0(
-              "Length mismatch before prune_samples: ",
-              "length(sample_names(otu) %%in%% sample_names(meta)) = %d, ",
-              "nsamples(ps) = %d, ",
-              "length(sample_names(otu)) = %d, ",
-              "length(sample_names(meta)) = %d"
-            ),
-            length(sample_keep),
-            nsamples(ps),
-            length(sample_names(otu)),
-            length(sample_names(meta))
-          ))
-        }
-        ps <- prune_samples(sample_keep, ps)
-
-        taxa_keep <- taxa_names(otu) %in% taxa_names(tax)
-        if (length(taxa_keep) != ntaxa(ps)) {
-          stop(sprintf(
-            paste0(
-              "Length mismatch before prune_taxa: ",
-              "length(taxa_names(otu) %%in%% taxa_names(tax)) = %d, ",
-              "ntaxa(ps) = %d, ",
-              "length(taxa_names(otu)) = %d, ",
-              "length(taxa_names(tax)) = %d"
-            ),
-            length(taxa_keep),
-            ntaxa(ps),
-            length(taxa_names(otu)),
-            length(taxa_names(tax))
-          ))
-        }
-        ps <- prune_taxa(taxa_keep, ps)
-        ps <- prune_taxa(taxa_sums(ps) > 0, ps)
-        ps <- prune_samples(sample_sums(ps) > 0, ps)
-
-        if (ntaxa(ps) == 0) {
-          stop("No valid taxa found. Check ASV/Taxonomy ID matching. (0 taxa)")
-        }
-        if (nsamples(ps) == 0) {
-          stop("No valid samples found. Check Sample ID matching. (0 samples)")
-        }
-
-        ps
-      }, error = function(e) {
-        error_message <- paste0(
-          "Data construction error while building the phyloseq object: ",
-          conditionMessage(e),
-          "\nPlease correct the file contents and re-upload the files."
-        )
-        load_error(error_message)
-        showNotification(
-          error_message,
-          type = "error",
-          duration = 10
-        )
-        NULL
-      })
-
-      if (!is.null(ps)) {
-        ps_initial_val(ps)
-        load_completed(TRUE)
-        load_error(NULL)
-      }
+      }, once = TRUE)
     }, ignoreInit = TRUE)
 
     ps_obj_initial <- reactive({
@@ -396,9 +428,22 @@ mod_fileload_server <- function(id) {
           span(load_error(), style = "color: red; font-weight: bold;"),
           style = "margin-top: 2px; margin-bottom: 0; white-space: pre-line;"
         )
+      } else if (isTRUE(load_in_progress())) {
+        h5(
+          span(
+            class = "fileload-waiting",
+            span(icon("circle-notch"), class = "fileload-spinner is-running"),
+            span("Waiting for 3 data files...", style = "color: orange;")
+          ),
+          style = "margin-top: 2px; margin-bottom: 0;"
+        )
       } else {
         h5(
-          span("Waiting for 3 data files...", style = "color: orange;"),
+          span(
+            class = "fileload-waiting",
+            span(icon("circle-notch"), class = "fileload-spinner"),
+            span("Waiting for 3 data files...", style = "color: orange;")
+          ),
           style = "margin-top: 2px; margin-bottom: 0;"
         )
       }
@@ -408,6 +453,7 @@ mod_fileload_server <- function(id) {
       ps_initial = ps_obj_initial,
       meta_vars = meta_vars,
       load_completed = load_completed,
+      load_in_progress = load_in_progress,
       load_error = load_error
     ))
   })

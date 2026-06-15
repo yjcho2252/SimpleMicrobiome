@@ -55,6 +55,24 @@ mod_spieceasi_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
+      .spieceasi-run-btn .spieceasi-run-icon {
+        display: none;
+        margin-right: 6px;
+      }
+      .spieceasi-run-btn .spieceasi-run-icon i {
+        display: inline-block;
+      }
+      .spieceasi-run-btn.is-running .spieceasi-run-icon {
+        display: inline-block;
+        animation: spieceasi-run-spin 0.9s linear infinite;
+      }
+      .spieceasi-run-btn.is-running .spieceasi-run-label {
+        opacity: 0.85;
+      }
+      @keyframes spieceasi-run-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
     ")),
     sidebarLayout(
       sidebarPanel(
@@ -103,7 +121,15 @@ mod_spieceasi_ui <- function(id) {
         numericInput(ns("plot_height"), "Plot height (px)", value = 550, min = 300, max = 2400, step = 50),
         tags$div(
           style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;",
-          actionButton(ns("run_network_btn"), "Run SpiecEasi", class = "btn-danger", style = "font-size: 12px;"),
+          tags$button(
+            id = ns("run_network_btn"),
+            type = "button",
+            class = "action-button btn btn-danger spieceasi-run-btn",
+            `data-val` = 0,
+            style = "font-size: 12px;",
+            tags$span(class = "spieceasi-run-icon", icon("spinner", class = "fa-spin")),
+            tags$span(class = "spieceasi-run-label", "Run SpiecEasi")
+          ),
           tags$span("May take a long time.", style = "font-size: 11px; color: #b94a48;")
         ),
         tags$script(HTML(
@@ -111,7 +137,9 @@ mod_spieceasi_ui <- function(id) {
              var btn = document.getElementById(msg.id);
              if (!btn) return;
              btn.disabled = !!msg.disabled;
-             if (msg.label) btn.textContent = msg.label;
+             btn.classList.toggle('is-running', !!msg.running);
+             var label = btn.querySelector('.spieceasi-run-label');
+             if (label && msg.label) label.textContent = msg.label;
            });
            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
              var el = document.getElementById(msg.id);
@@ -478,10 +506,10 @@ mod_spieceasi_server <- function(id, ps_obj) {
       )
       network_running(TRUE)
 
-      session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, label = "Running..."))
+      session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, running = TRUE, label = "Running..."))
       on.exit({
         network_running(FALSE)
-        session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, label = "Run SpiecEasi"))
+        session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, running = FALSE, label = "Run SpiecEasi"))
       }, add = TRUE)
 
       set.seed(as.integer(input$seed))

@@ -32,6 +32,24 @@ mod_maaslin2_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
+      .maaslin2-run-btn .maaslin2-run-icon {
+        display: none;
+        margin-right: 6px;
+      }
+      .maaslin2-run-btn .maaslin2-run-icon i {
+        display: inline-block;
+      }
+      .maaslin2-run-btn.is-running .maaslin2-run-icon {
+        display: inline-block;
+        animation: maaslin2-run-spin 0.9s linear infinite;
+      }
+      .maaslin2-run-btn.is-running .maaslin2-run-label {
+        opacity: 0.85;
+      }
+      @keyframes maaslin2-run-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
     ")),
     tags$style(HTML(paste0(
       "#", ns("maaslin2_table"), " th, #", ns("maaslin2_table"), " td {",
@@ -130,13 +148,23 @@ mod_maaslin2_ui <- function(id) {
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2000, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 400, min = 300, max = 2000, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        actionButton(ns("run_maaslin2_btn"), "Run MaAsLin2", class = "btn-danger", style = "font-size: 12px;"),
+        tags$button(
+          id = ns("run_maaslin2_btn"),
+          type = "button",
+          class = "action-button btn btn-danger maaslin2-run-btn",
+          `data-val` = 0,
+          style = "font-size: 12px;",
+          tags$span(class = "maaslin2-run-icon", icon("spinner", class = "fa-spin")),
+          tags$span(class = "maaslin2-run-label", "Run MaAsLin2")
+        ),
         tags$script(HTML(
           "Shiny.addCustomMessageHandler('toggle-maaslin2-run-btn', function(msg) {
              var btn = document.getElementById(msg.id);
              if (!btn) return;
              btn.disabled = !!msg.disabled;
-             if (msg.label) btn.textContent = msg.label;
+             btn.classList.toggle('is-running', !!msg.running);
+             var label = btn.querySelector('.maaslin2-run-label');
+             if (label && msg.label) label.textContent = msg.label;
            });
            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
              var el = document.getElementById(msg.id);
@@ -761,6 +789,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       session$sendCustomMessage("toggle-maaslin2-run-btn", list(
         id = session$ns("run_maaslin2_btn"),
         disabled = TRUE,
+        running = TRUE,
         label = "Running..."
       ))
       on.exit({
@@ -768,6 +797,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
         session$sendCustomMessage("toggle-maaslin2-run-btn", list(
           id = session$ns("run_maaslin2_btn"),
           disabled = FALSE,
+          running = FALSE,
           label = "Run MaAsLin2"
         ))
       }, add = TRUE)

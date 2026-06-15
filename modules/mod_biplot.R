@@ -32,6 +32,24 @@ mod_biplot_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
+      .biplot-run-btn .biplot-run-icon {
+        display: none;
+        margin-right: 6px;
+      }
+      .biplot-run-btn .biplot-run-icon i {
+        display: inline-block;
+      }
+      .biplot-run-btn.is-running .biplot-run-icon {
+        display: inline-block;
+        animation: biplot-run-spin 0.9s linear infinite;
+      }
+      .biplot-run-btn.is-running .biplot-run-label {
+        opacity: 0.85;
+      }
+      @keyframes biplot-run-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
     ")),
     tags$style(HTML(paste0(
       "#", ns("selected_taxa"), "-selectized::placeholder { font-size: 10px; }",
@@ -111,7 +129,15 @@ mod_biplot_ui <- function(id) {
         checkboxInput(ns("show_group_vectors"), "Show group vectors", value = TRUE),
         checkboxInput(ns("show_group_centroid"), "Show group centroids", value = TRUE),
         checkboxInput(ns("show_sample_names"), "Show sample names", value = FALSE),
-        actionButton(ns("run_biplot"), "Run Biplot", class = "btn-danger", style = "font-size: 12px;"),
+        tags$button(
+          id = ns("run_biplot"),
+          type = "button",
+          class = "action-button btn btn-danger biplot-run-btn",
+          `data-val` = 0,
+          style = "font-size: 12px;",
+          tags$span(class = "biplot-run-icon", icon("spinner", class = "fa-spin")),
+          tags$span(class = "biplot-run-label", "Run Biplot")
+        ),
         hr(),
         h5(icon("download"), "Download"),
         tags$div(
@@ -132,8 +158,10 @@ mod_biplot_ui <- function(id) {
              var btn = document.getElementById(msg.id);
              if (!btn) return;
              btn.disabled = !!msg.disabled;
-             if (msg.label) btn.textContent = msg.label;
-           });
+             btn.classList.toggle('is-running', !!msg.running);
+             var label = btn.querySelector('.biplot-run-label');
+             if (label && msg.label) label.textContent = msg.label;
+            });
            $(document).on('change', 'select[id$=\"analysis_method\"]', function() {
              var method = $(this).val();
              var panel = $(this).closest('.well, .sidebar, .form-group, body');
@@ -240,14 +268,14 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       biplot_running(TRUE)
       session$sendCustomMessage(
         "toggle-biplot-run-btn",
-        list(id = session$ns("run_biplot"), disabled = TRUE, label = "Running...")
+        list(id = session$ns("run_biplot"), disabled = TRUE, running = TRUE, label = "Running...")
       )
       on.exit(
         {
           biplot_running(FALSE)
           session$sendCustomMessage(
             "toggle-biplot-run-btn",
-            list(id = session$ns("run_biplot"), disabled = FALSE, label = "Run Biplot")
+            list(id = session$ns("run_biplot"), disabled = FALSE, running = FALSE, label = "Run Biplot")
           )
         },
         add = TRUE

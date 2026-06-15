@@ -21,6 +21,7 @@ Loads all base inputs required by downstream modules.
 ### 2.4 Example data load/download
 - Loads known-valid demo set to validate app state quickly.
 - Useful to isolate whether issues are data-specific.
+- While the data are being parsed and validated, the file-load status area shows a waiting message and a spinner only during active processing.
 
 ### 2.5 QZA converter link/entry
 - Path for converting QIIME2 artifact formats before import.
