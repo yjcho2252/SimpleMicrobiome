@@ -43,6 +43,10 @@ mod_beta_ui <- function(id) {
         
         selectInput(ns("primary_group_var"), "Primary Variable (Color):", choices = character(0), selected = NULL),
         selectInput(ns("secondary_group_var"), "Secondary Variable (Shape):", choices = c("None"), selected = "None"),
+        hr(),
+        h4(icon("link"), "Pairing"),
+        checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
+        uiOutput(ns("subject_id_selector")),
         selectInput(
           ns("distance_metric"),
           "Distance metric:",
@@ -305,6 +309,102 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       metadata <- as(phyloseq::sample_data(ps_obj()), "data.frame")
       resolve_meta_colname(input$secondary_group_var, colnames(metadata))
+    })
+
+    output$subject_id_selector <- renderUI({
+      req(meta_cols())
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return(NULL)
+      }
+      subject_choices <- setdiff(meta_cols(), c("SampleID", input$primary_group_var, input$secondary_group_var))
+      selectInput(
+        session$ns("subject_id_var"),
+        "Subject ID Variable:",
+        choices = subject_choices,
+        selected = if (length(subject_choices) > 0) subject_choices[1] else NULL
+      )
+    })
+
+    observe({
+      req(meta_cols())
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return()
+      }
+      subject_choices <- setdiff(meta_cols(), c("SampleID", input$primary_group_var, input$secondary_group_var))
+      current_subject <- input$subject_id_var
+      if (is.null(current_subject) || !current_subject %in% subject_choices) {
+        current_subject <- if (length(subject_choices) > 0) subject_choices[1] else NULL
+      }
+      updateSelectInput(session, "subject_id_var", choices = subject_choices, selected = current_subject)
+    })
+
+    paired_ready <- reactive({
+      req(data_prepared(), primary_group_var())
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return(FALSE)
+      }
+      metadata <- data_prepared()$metadata
+      primary_col <- primary_group_var()
+      secondary_col <- secondary_group_var()
+      subject_col <- resolve_meta_colname(input$subject_id_var, colnames(metadata))
+      is_secondary <- !is.null(secondary_col) && !identical(secondary_col, "None")
+      x_axis_col <- if (is_secondary) secondary_col else primary_col
+      if (is.null(subject_col) || !nzchar(subject_col) || !(subject_col %in% colnames(metadata))) {
+        return(FALSE)
+      }
+      if (is.null(x_axis_col) || !nzchar(x_axis_col) || !(x_axis_col %in% colnames(metadata))) {
+        return(FALSE)
+      }
+      check_df <- metadata[, c(subject_col, x_axis_col), drop = FALSE]
+      check_df[[subject_col]] <- as.character(check_df[[subject_col]])
+      check_df <- check_df[!is.na(check_df[[subject_col]]) & nzchar(check_df[[subject_col]]), , drop = FALSE]
+      if (nrow(check_df) == 0) {
+        return(FALSE)
+      }
+      pair_counts <- stats::aggregate(
+        check_df[[x_axis_col]],
+        by = list(SubjectID = check_df[[subject_col]]),
+        FUN = function(x) length(unique(x))
+      )
+      any(pair_counts$x >= 2, na.rm = TRUE)
+    })
+
+    paired_ready_reason <- reactive({
+      req(data_prepared(), primary_group_var())
+      if (!isTRUE(input$enable_within_subject_pairing)) {
+        return("Within-subject pairing is off.")
+      }
+      metadata <- data_prepared()$metadata
+      primary_col <- primary_group_var()
+      secondary_col <- secondary_group_var()
+      subject_col <- resolve_meta_colname(input$subject_id_var, colnames(metadata))
+      is_secondary <- !is.null(secondary_col) && !identical(secondary_col, "None")
+      x_axis_col <- if (is_secondary) secondary_col else primary_col
+      if (is.null(subject_col) || !nzchar(subject_col) || !(subject_col %in% colnames(metadata))) {
+        return("Subject ID variable was not found in the metadata.")
+      }
+      if (is.null(x_axis_col) || !nzchar(x_axis_col) || !(x_axis_col %in% colnames(metadata))) {
+        return("The selected grouping variable was not found in the metadata.")
+      }
+      check_df <- metadata[, c(subject_col, x_axis_col), drop = FALSE]
+      check_df[[subject_col]] <- as.character(check_df[[subject_col]])
+      check_df <- check_df[!is.na(check_df[[subject_col]]) & nzchar(check_df[[subject_col]]), , drop = FALSE]
+      if (nrow(check_df) == 0) {
+        return("No rows remain after filtering to non-empty subject IDs.")
+      }
+      pair_counts <- stats::aggregate(
+        check_df[[x_axis_col]],
+        by = list(SubjectID = check_df[[subject_col]]),
+        FUN = function(x) length(unique(x))
+      )
+      if (!any(pair_counts$x >= 2, na.rm = TRUE)) {
+        return(paste0(
+          "No subject has repeated measurements across at least 2 ",
+          x_axis_col,
+          " levels."
+        ))
+      }
+      "Paired data are available."
     })
 
     coerce_group_vars_to_factor <- function(ps_data, primary_var, secondary_var = "None") {
@@ -1803,27 +1903,69 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (!requireNamespace("vegan", quietly = TRUE)) {
         stop("The 'vegan' package is required for PERMANOVA. Please install it.")
       }
-      
-      permanova_formula <- as.formula(paste("data$dist_mat ~", primary_group_var()))
-      
-      permanova_result <- vegan::adonis2(permanova_formula,
-                                         data = data$metadata,
-                                         permutations = 999)
+
+      metadata <- data$metadata
+      primary_col <- primary_group_var()
+      secondary_col <- secondary_group_var()
+      is_secondary <- !is.null(secondary_col) && !identical(secondary_col, "None")
+      x_axis_col <- if (is_secondary) secondary_col else primary_col
+      subject_col <- if (isTRUE(input$enable_within_subject_pairing)) resolve_meta_colname(input$subject_id_var, colnames(metadata)) else NULL
+
+      if (isTRUE(paired_ready()) && !is.null(subject_col) && subject_col %in% colnames(metadata)) {
+        permanova_formula <- as.formula(paste("data$dist_mat ~", x_axis_col))
+        permanova_result <- vegan::adonis2(
+          permanova_formula,
+          data = metadata,
+          permutations = 999,
+          strata = metadata[[subject_col]]
+        )
+      } else {
+        permanova_formula <- as.formula(paste("data$dist_mat ~", x_axis_col))
+        permanova_result <- vegan::adonis2(
+          permanova_formula,
+          data = metadata,
+          permutations = 999
+        )
+      }
       
       R2 <- permanova_result$R2[[1]]
       Pval <- permanova_result$`Pr(>F)`[[1]]
       
-      list(R2 = R2, Pval = Pval)
+      list(
+        R2 = R2,
+        Pval = Pval,
+        paired = isTRUE(paired_ready()),
+        pairing_var = if (isTRUE(paired_ready()) && !is.null(subject_col)) subject_col else NULL,
+        grouping_var = x_axis_col
+      )
     })
     
     output$permanova_results_out <- renderUI({
       req(permanova_result <- permanova_reactive(), primary_group_var())
+      pairing_line <- if (isTRUE(permanova_result$paired) && !is.null(permanova_result$pairing_var)) {
+        paste0(
+          "<strong>Pairing:</strong> within-subject pairing enabled using <strong>",
+          permanova_result$pairing_var,
+          "</strong> as the blocking variable.<br>"
+        )
+      } else if (isTRUE(input$enable_within_subject_pairing)) {
+        paste0(
+          "<strong>Pairing:</strong> within-subject pairing enabled but not ready (",
+          paired_ready_reason(),
+          ").<br>"
+        )
+      } else {
+        "<strong>Pairing:</strong> none<br>"
+      }
       HTML(paste0(
-        "<strong>Grouping Variable:</strong> ", primary_group_var(), "<br>",
+        "<strong>Tool:</strong> vegan::adonis2 (PERMANOVA)<br>",
+        "<strong>Grouping Variable:</strong> ", permanova_result$grouping_var, "<br>",
         "<strong>Distance Metric:</strong> ", distance_label(), "<br>",
+        pairing_line,
         "---<br>",
         "<strong>R-squared:</strong> ", format(permanova_result$R2, digits = 3, nsmall = 3), "<br>",
-        "<strong>P-value:</strong> ", format(permanova_result$Pval, digits = 3)
+        "<strong>P-value:</strong> ", format(permanova_result$Pval, digits = 3),
+        if (isTRUE(permanova_result$paired)) "<br><strong>Permutation mode:</strong> restricted by subject" else ""
       ))
     })
 
@@ -1869,6 +2011,13 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       metric_label <- distance_label()
       metric_phrase <- if (grepl("Aitchison", metric_label, fixed = TRUE)) metric_label else paste0(metric_label, " distance")
       tax_level_label <- tolower(input$beta_tax_level)
+      pairing_sentence <- if (isTRUE(input$enable_within_subject_pairing) && isTRUE(paired_ready()) && !is.null(input$subject_id_var) && nzchar(input$subject_id_var)) {
+        paste0(" PERMANOVA uses ", input$subject_id_var, " as the within-subject blocking variable.")
+      } else if (isTRUE(input$enable_within_subject_pairing)) {
+        paste0(" Within-subject pairing is enabled, but PERMANOVA pairing is not ready: ", paired_ready_reason())
+      } else {
+        ""
+      }
       tags$div(
         tags$div(
           style = "font-weight: 600; margin-bottom: 4px;",
@@ -1882,7 +2031,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             tax_level_label,
             " level. Points represent samples and are colored by group. ",
             if (isTRUE(input$show_ellipses)) "Group ellipses show 80% confidence regions. " else "",
-            if (isTRUE(input$show_group_hulls)) "Group hulls show convex envelopes (chull)." else ""
+            if (isTRUE(input$show_group_hulls)) "Group hulls show convex envelopes (chull). " else "",
+            pairing_sentence
           )
         )
       )

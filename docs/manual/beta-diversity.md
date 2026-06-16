@@ -45,13 +45,22 @@ The distance choice is the most important modeling decision in this module.
   - Adds another layer of interpretation without forcing facets.
   - Too many shape levels can become visually noisy.
 
-### 2.4 Taxonomic Level
+### 2.4 Within-Subject Pairing
+- **What it controls**: Enables repeated-measures handling for PERMANOVA when the metadata contain a subject-level identifier.
+- **Required input**: A `Subject ID Variable` that identifies the paired samples across the grouping axis.
+- **Current behavior**:
+  - When the selected subject ID has repeated measurements across the grouping axis, PERMANOVA is run with `vegan::adonis2()`.
+  - The subject ID is used as the blocking variable so permutations are restricted within subject.
+  - The results box shows both the calculation tool and the pairing status.
+  - When pairing is enabled but the data are not ready, the results box shows a pairing-not-ready message instead of implying paired inference.
+
+### 2.5 Taxonomic Level
 - **Options**: `ASV`, `Species`, `Genus`.
 - **Effect of setting**:
   - `ASV`: highest resolution, often noisier/sparser.
   - `Genus`: more stable, often easier to interpret group trends.
 
-### 2.5 Plot Settings
+### 2.6 Plot Settings
 - **Dot Size**: larger points improve visibility but can hide overlap.
 - **Show Dot Outline**: improves separation between overlapping groups.
 - **Show Group Ellipses**: adds centroid/spread cues; helpful for group-level pattern reading.
@@ -60,14 +69,29 @@ The distance choice is the most important modeling decision in this module.
   - Hulls are useful for quick group footprint comparison, but are sensitive to outliers.
 - **Show Sample Names**: useful for QC/outlier identification; can clutter dense plots.
 
-### 2.6 Axis Limits
+### 2.7 Axis Limits
 - Manual `x/y min/max` can standardize view across runs.
 - Leave blank for auto scale.
 - Use fixed limits when comparing multiple plots side by side.
 
 ## 3. Post-Ordination Analyses
 
-### 3.1 Clustering
+### 3.1 PERMANOVA
+PERMANOVA is the main hypothesis test shown in the results box.
+
+- **Tool used**: `vegan::adonis2()`
+- **Display fields**:
+  - Grouping variable
+  - Distance metric
+  - Pairing status
+  - R-squared
+  - P-value
+- **Paired data behavior**:
+  - If `Within-Subject Pairing` is enabled and a valid subject ID variable is available, the app treats that subject as a blocking factor.
+  - This keeps the test aligned with repeated-measures structure rather than independent-sample permutations.
+  - If pairing is enabled but not ready, the UI explicitly says so instead of implying paired inference.
+
+### 3.2 Clustering
 Used to segment samples in ordination-derived space.
 
 #### Clustering mode
@@ -103,7 +127,7 @@ Used to segment samples in ordination-derived space.
 - `Average silhouette width` is the mean silhouette value across all samples (not a mean of per-cluster means).
 - In auto mode, optimal `k` is selected by maximizing average silhouette width.
 
-### 3.2 EnvFit
+### 3.3 EnvFit
 Fits metadata/taxa vectors onto ordination to identify directional associations.
 
 #### EnvFit variable selector

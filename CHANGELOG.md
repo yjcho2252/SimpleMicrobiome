@@ -12,10 +12,14 @@ All notable changes to this project are documented in this file.
 - Taxa Comparison (`modules/mod_taxa_comparison.R`):
   - Refined pairing-line rendering and paired-mode handling around x-axis grouping and repeated-measures checks.
   - Adjusted regression q-value label placement and pairing-related status text.
+- Beta Diversity (`modules/mod_beta.R`):
+  - Added `Within-Subject Pairing` controls and subject-aware PERMANOVA status text.
+  - Paired PERMANOVA now uses `vegan::adonis2()` with subject blocking when repeated measurements are available.
+  - Displayed the PERMANOVA tool label in the results box so the calculation source is explicit.
 - File load (`modules/mod_fileload.R`):
   - Added a spinner-based waiting state that appears only while the file set is actively being parsed.
 - Manual documentation:
-  - Updated `docs/manual/alpha-diversity.md`, `docs/manual/taxa-profiles.md`, and `docs/manual/data-loading.md` to match the current pairing and loading behavior.
+  - Updated `docs/manual/alpha-diversity.md`, `docs/manual/beta-diversity.md`, `docs/manual/taxa-profiles.md`, and `docs/manual/data-loading.md` to match the current pairing and loading behavior.
 
 ## [2026-06-09]
 
