@@ -1,7 +1,7 @@
 # SimpleMicrobiome
 
 <p align="center">
-  <img src="www/icon_transparent.png" alt="SimpleMicrobiome icon" width="220" />
+  <img src="www/260617_SimpleMicrobiome_icon.png" alt="SimpleMicrobiome icon" width="200" />
 </p>
 
 [![R](https://img.shields.io/badge/R-%3E%3D4.2-276DC3)](https://www.r-project.org/)

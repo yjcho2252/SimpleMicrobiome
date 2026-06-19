@@ -1,10 +1,9 @@
 #!/usr/bin/env Rscript
 
 # Install dependencies for local execution of SimpleMicrobiome.
+# Keep this list aligned with app.R and modules/*.R.
 # Usage (from project root):
 #   source("install.R")
-
-message("==> SimpleMicrobiome dependency installer")
 
 cran_repo <- "https://cloud.r-project.org"
 options(repos = c(CRAN = cran_repo))
@@ -14,6 +13,7 @@ cran_packages <- c(
   "cluster",
   "dplyr",
   "DT",
+  "circlize",
   "ggpattern",
   "ggplot2",
   "ggpubr",
@@ -36,8 +36,6 @@ cran_packages <- c(
 )
 
 bioc_packages <- c(
-  "ANCOMBC",
-  "ALDEx2",
   "ComplexHeatmap",
   "Maaslin2",
   "microbiome",
@@ -81,6 +79,31 @@ ensure_remotes <- function() {
   }
 }
 
+install_pinned_cvxr <- function() {
+  # 2026-06-19: ANCOMBC currently expects an older CVXR API that still exports solve().
+  target_version <- "1.0-13"
+  current_version <- if (is_installed("CVXR")) as.character(utils::packageVersion("CVXR")) else NA_character_
+  if (identical(current_version, target_version)) {
+    message("CVXR already pinned at version ", target_version, ".")
+    return(invisible(character(0)))
+  }
+
+  ensure_remotes()
+  if (is_installed("CVXR")) {
+    message("Removing existing CVXR version: ", current_version)
+    remove.packages("CVXR")
+  }
+
+  message("Installing pinned CVXR version: ", target_version)
+  remotes::install_version("CVXR", version = target_version, upgrade = "never", dependencies = TRUE, repos = cran_repo)
+
+  if (is_installed("CVXR") && identical(as.character(utils::packageVersion("CVXR")), target_version)) {
+    character(0)
+  } else {
+    "CVXR"
+  }
+}
+
 install_missing_bioc <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, is_installed, logical(1))]
   if (length(missing) == 0) {
@@ -92,6 +115,19 @@ install_missing_bioc <- function(pkgs) {
   message("Bioconductor packages to install: ", paste(missing, collapse = ", "))
   BiocManager::install(missing, ask = FALSE, update = FALSE)
   missing[!vapply(missing, is_installed, logical(1))]
+}
+
+install_ancombc <- function() {
+  ensure_bioc_manager()
+
+  if (!is_installed("CVXR")) {
+    return("CVXR")
+  }
+
+  message("Reinstalling ANCOMBC against pinned CVXR...")
+  BiocManager::install("ANCOMBC", ask = FALSE, update = FALSE, force = TRUE)
+
+  if (is_installed("ANCOMBC")) character(0) else "ANCOMBC"
 }
 
 install_github_if_missing <- function(spec) {
@@ -117,6 +153,8 @@ install_github_if_missing <- function(spec) {
 
 failed <- character(0)
 failed <- c(failed, install_missing_cran(cran_packages))
+failed <- c(failed, install_pinned_cvxr())
+failed <- c(failed, install_ancombc())
 failed <- c(failed, install_missing_bioc(bioc_packages))
 failed <- c(failed, unlist(lapply(github_packages, install_github_if_missing), use.names = FALSE))
 failed <- unique(failed)

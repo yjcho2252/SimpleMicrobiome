@@ -659,37 +659,6 @@ mod_ancom_server <- function(id, ps_obj) {
         }
       }
 
-      prevalence_cutoff <- input$prevalence_filter_pct
-      if (is.null(prevalence_cutoff) || length(prevalence_cutoff) == 0 || is.na(prevalence_cutoff)) {
-        prevalence_cutoff <- 5
-      }
-      prevalence_cutoff <- max(0, min(20, as.numeric(prevalence_cutoff)))
-
-      taxa_before_filter <- phyloseq::ntaxa(ps_sub)
-
-      otu_mat <- as.matrix(phyloseq::otu_table(ps_sub))
-      if (!phyloseq::taxa_are_rows(phyloseq::otu_table(ps_sub))) {
-        otu_mat <- t(otu_mat)
-      }
-
-      taxa_prevalence_pct <- rowMeans(otu_mat > 0) * 100
-      keep_taxa <- taxa_prevalence_pct > prevalence_cutoff
-      ps_sub <- phyloseq::prune_taxa(keep_taxa, ps_sub)
-
-      taxa_after_filter <- phyloseq::ntaxa(ps_sub)
-      taxa_counts(list(before = taxa_before_filter, after = taxa_after_filter))
-
-      validate(
-        need(
-          phyloseq::ntaxa(ps_sub) > 0,
-          paste0(
-            "ERROR: No taxa remain after prevalence filtering (cutoff = ",
-            prevalence_cutoff,
-            "%). Lower the cutoff."
-          )
-        )
-      )
-
       ps_sub
     })
 
@@ -823,6 +792,37 @@ mod_ancom_server <- function(id, ps_obj) {
           } else {
             NULL
           }
+
+          prevalence_cutoff <- input$prevalence_filter_pct
+          if (is.null(prevalence_cutoff) || length(prevalence_cutoff) == 0 || is.na(prevalence_cutoff)) {
+            prevalence_cutoff <- 5
+          }
+          prevalence_cutoff <- max(0, min(20, as.numeric(prevalence_cutoff)))
+
+          taxa_before_filter <- phyloseq::ntaxa(ps_current)
+
+          otu_mat <- as.matrix(phyloseq::otu_table(ps_current))
+          if (!phyloseq::taxa_are_rows(phyloseq::otu_table(ps_current))) {
+            otu_mat <- t(otu_mat)
+          }
+
+          taxa_prevalence_pct <- rowMeans(otu_mat > 0) * 100
+          keep_taxa <- taxa_prevalence_pct > prevalence_cutoff
+          ps_current <- phyloseq::prune_taxa(keep_taxa, ps_current)
+
+          taxa_after_filter <- phyloseq::ntaxa(ps_current)
+          taxa_counts(list(before = taxa_before_filter, after = taxa_after_filter))
+
+          validate(
+            need(
+              phyloseq::ntaxa(ps_current) > 0,
+              paste0(
+                "ERROR: No taxa remain after prevalence filtering (cutoff = ",
+                prevalence_cutoff,
+                "%). Lower the cutoff."
+              )
+            )
+          )
 
           trend_control_arg <- NULL
           if (isTRUE(use_trend_test)) {
@@ -1626,7 +1626,7 @@ mod_ancom_server <- function(id, ps_obj) {
           " level against reference group ",
           input$reference_level,
           ". Red indicates taxa increased in the comparison group and blue indicates taxa decreased. ",
-          "Before fitting, taxa are filtered by prevalence > ",
+          "After model terms are set, taxa are filtered by prevalence > ",
           input$prevalence_filter_pct,
           "%, zero-variance taxa are removed, and structural zeros are handled by ANCOM-BC2."
         )
@@ -1636,9 +1636,9 @@ mod_ancom_server <- function(id, ps_obj) {
           tolower(input$tax_level),
           " level. Reference group is ",
           input$reference_level,
-          ". Prevalence filtering (> ",
+          ". After model terms are set, prevalence filtering (> ",
           input$prevalence_filter_pct,
-          "%) and zero-variance removal are applied before fitting."
+          "%) and zero-variance removal are applied."
         )
       } else {
         paste0(
@@ -1649,7 +1649,7 @@ mod_ancom_server <- function(id, ps_obj) {
           ", and the y-axis is -log10(",
           y_metric_label,
           "). Dashed lines indicate |log2FC| = 0.5 and p/q = 0.05 thresholds. ",
-          "Taxa are filtered by prevalence > ",
+          "After model terms are set, taxa are filtered by prevalence > ",
           input$prevalence_filter_pct,
           "%, zero-variance taxa are removed, and structural zeros are modeled by ANCOM-BC2."
         )

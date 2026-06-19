@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-06-19]
+
+### Changed
+- Installation (`install.R`):
+  - Pinned `CVXR` to `1.0-13` so `ANCOMBC` can load with the expected `solve()` API.
+  - Reinstalled `ANCOMBC` after pinning `CVXR` to recover environments that already had a mismatched namespace.
+  - Added `circlize` to the CRAN install list and aligned the dependency list with the codebase.
+- ANCOM-BC2 (`modules/mod_ancom.R`):
+  - Moved prevalence filtering to run after fixed and random effect terms are prepared.
+  - Updated on-screen status text to describe the new filtering order.
+- MaAsLin2 (`modules/mod_maaslin2.R`):
+  - Moved prevalence filtering to run after fixed and random effect terms are prepared.
+  - Updated on-screen status text to describe the new filtering order.
+- Beta diversity (`modules/mod_beta.R`):
+  - Reordered the sidebar so `Within-Subject Pairing` now appears under ordination setup controls.
+- Branding assets:
+  - Replaced the favicon with the new SimpleMicrobiome icon asset.
+  - Updated the wordmark/README branding to use the new icon asset.
+
 ## [2026-06-15]
 
 ### Changed

@@ -44,9 +44,7 @@ mod_beta_ui <- function(id) {
         selectInput(ns("primary_group_var"), "Primary Variable (Color):", choices = character(0), selected = NULL),
         selectInput(ns("secondary_group_var"), "Secondary Variable (Shape):", choices = c("None"), selected = "None"),
         hr(),
-        h4(icon("link"), "Pairing"),
-        checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
-        uiOutput(ns("subject_id_selector")),
+        h4(icon("compass"), "Ordination Setup"),
         selectInput(
           ns("distance_metric"),
           "Distance metric:",
@@ -64,6 +62,8 @@ mod_beta_ui <- function(id) {
           choices = c("ASV" = "ASV", "Species" = "Species", "Genus" = "Genus"),
           selected = "ASV"
         ),
+        checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
+        uiOutput(ns("subject_id_selector")),
         hr(),
         
         h4(icon("sliders"), "Plot Settings"),
