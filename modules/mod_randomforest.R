@@ -2358,6 +2358,22 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       active_tab <- if (is.null(input$rf_active_tab) || !nzchar(input$rf_active_tab)) "RF Bar plot" else input$rf_active_tab
       model_mode <- if (identical(input$outcome_type, "Auto")) "Auto-detected" else input$outcome_type
       validation_label <- if (is.null(input$validation_mode) || !nzchar(input$validation_mode)) "Holdout split" else input$validation_mode
+      display_outcome <- {
+        fallback <- if (identical(input$outcome_var, "None")) input$group_var else input$outcome_var
+        resolved <- tryCatch(
+          if (identical(input$outcome_var, "None")) group_var_resolved() else outcome_var_resolved(),
+          error = function(e) fallback
+        )
+        resolved <- as.character(resolved)
+        if (length(resolved) == 0 || is.na(resolved[1]) || !nzchar(resolved[1])) {
+          resolved <- as.character(fallback)
+        }
+        if (identical(input$outcome_var, "None")) {
+          paste0(resolved[1], " (primary grouping variable)")
+        } else {
+          resolved[1]
+        }
+      }
 
       legend_title <- if (identical(active_tab, "ROC / AUC")) {
         "Random Forest ROC/AUC plot"
@@ -2392,7 +2408,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           paste0(
             legend_body,
             " Model setup: outcome = ",
-            input$outcome_var,
+            display_outcome,
             ", outcome type = ",
             model_mode,
             ", taxonomic level = ",

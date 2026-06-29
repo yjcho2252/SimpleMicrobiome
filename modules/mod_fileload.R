@@ -105,6 +105,23 @@ mod_fileload_ui <- function(id) {
       )
     ),
     div(
+      class = "file-input-row",
+      tags$p("Example dataset", class = "file-input-label"),
+      div(
+        class = "file-input-control",
+        selectInput(
+          ns("example_dataset"),
+          NULL,
+          choices = c(
+            "HMP V3-V5 body-site cohort" = "HMPV3V5",
+            "SprockettTH multi-age fecal cohort" = "SprockettTH_subset"
+          ),
+          selected = "HMPV3V5",
+          width = "100%"
+        )
+      )
+    ),
+    div(
       style = "display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; margin-bottom: 4px;",
       actionButton(
         ns("load_example"),
@@ -165,28 +182,51 @@ mod_fileload_server <- function(id) {
     example_files <- reactiveVal(NULL)
     ps_initial_val <- reactiveVal(NULL)
 
-    resolve_sample_dir <- function() {
-      file.path(getwd(), "sample")
+    example_sets <- list(
+      HMPV3V5 = list(
+        label = "HMP V3-V5 body-site cohort",
+        dir = file.path(getwd(), "sample", "HMPV3V5"),
+        files = c("1_ASV_table.txt", "2_taxonomy_table.txt", "3_metadata.txt")
+      ),
+      SprockettTH_subset = list(
+        label = "SprockettTH multi-age fecal cohort",
+        dir = file.path(getwd(), "sample", "SprockettTH_subset"),
+        files = c("1_ASV_table.txt", "2_taxonomy_table.txt", "3_metadata.txt")
+      )
+    )
+
+    selected_example_set <- function() {
+      selected <- input$example_dataset
+      if (is.null(selected) || !selected %in% names(example_sets)) {
+        selected <- "HMPV3V5"
+      }
+      example_sets[[selected]]
+    }
+
+    selected_example_paths <- function() {
+      example_set <- selected_example_set()
+      list(
+        label = example_set$label,
+        dir = example_set$dir,
+        files = example_set$files,
+        paths = file.path(example_set$dir, example_set$files)
+      )
     }
 
     observeEvent(input$load_example, {
-      sample_dir <- resolve_sample_dir()
-      if (!dir.exists(sample_dir)) {
+      example <- selected_example_paths()
+      if (!dir.exists(example$dir)) {
         showNotification(
-          "Example load failed: sample folder was not found.",
+          paste0("Example load failed: sample folder was not found for ", example$label, "."),
           type = "error",
           duration = 8
         )
         return(NULL)
       }
-      otu_path <- file.path(sample_dir, "1_ASV_table.txt")
-      tax_path <- file.path(sample_dir, "2_taxonomy_table.txt")
-      meta_path <- file.path(sample_dir, "3_metadata.txt")
 
-      required_paths <- c(otu_path, tax_path, meta_path)
-      if (!all(file.exists(required_paths))) {
+      if (!all(file.exists(example$paths))) {
         showNotification(
-          "Example load failed: required files are missing.",
+          paste0("Example load failed: required files are missing for ", example$label, "."),
           type = "error",
           duration = 8
         )
@@ -194,13 +234,13 @@ mod_fileload_server <- function(id) {
       }
 
       example_files(list(
-        otu_file = list(datapath = otu_path, name = basename(otu_path)),
-        tax_file = list(datapath = tax_path, name = basename(tax_path)),
-        meta_file = list(datapath = meta_path, name = basename(meta_path))
+        otu_file = list(datapath = example$paths[[1]], name = basename(example$paths[[1]])),
+        tax_file = list(datapath = example$paths[[2]], name = basename(example$paths[[2]])),
+        meta_file = list(datapath = example$paths[[3]], name = basename(example$paths[[3]]))
       ))
 
       showNotification(
-        "Example files loaded!",
+        paste0(example$label, " example files loaded!"),
         type = "message",
         duration = 3
       )
@@ -208,27 +248,25 @@ mod_fileload_server <- function(id) {
 
     output$download_example <- downloadHandler(
       filename = function() {
-        "example_data.zip"
+        selected <- input$example_dataset
+        if (is.null(selected) || !selected %in% names(example_sets)) {
+          selected <- "HMPV3V5"
+        }
+        paste0("simplemicrobiome_", selected, "_example.zip")
       },
       content = function(file) {
-        sample_dir <- resolve_sample_dir()
-        if (!dir.exists(sample_dir)) {
-          stop("Example download failed: sample folder was not found.")
+        example <- selected_example_paths()
+        if (!dir.exists(example$dir)) {
+          stop(paste0("Example download failed: sample folder was not found for ", example$label, "."))
         }
-        required_files <- c(
-          "1_ASV_table.txt",
-          "2_taxonomy_table.txt",
-          "3_metadata.txt"
-        )
-        required_paths <- file.path(sample_dir, required_files)
 
-        if (!all(file.exists(required_paths))) {
-          stop("Example download failed: required files are missing in the sample folder.")
+        if (!all(file.exists(example$paths))) {
+          stop(paste0("Example download failed: required files are missing for ", example$label, "."))
         }
 
         temp_export_dir <- file.path(tempdir(), paste0("example_data_", as.integer(Sys.time())))
         dir.create(temp_export_dir, recursive = TRUE, showWarnings = FALSE)
-        file.copy(required_paths, temp_export_dir, overwrite = TRUE)
+        file.copy(example$paths, temp_export_dir, overwrite = TRUE)
 
         old_wd <- getwd()
         on.exit(setwd(old_wd), add = TRUE)
@@ -236,7 +274,7 @@ mod_fileload_server <- function(id) {
 
         utils::zip(
           zipfile = file,
-          files = required_files,
+          files = example$files,
           flags = "-r9Xq"
         )
       }

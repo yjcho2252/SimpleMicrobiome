@@ -19,7 +19,10 @@ Loads all base inputs required by downstream modules.
 - Column types (categorical vs numeric) affect available analyses and model behavior.
 
 ### 2.4 Example data load/download
-- Loads known-valid demo set to validate app state quickly.
+- Selects and loads a known-valid demo set to validate app state quickly.
+- Available example datasets include the HMP V3-V5 body-site cohort and the SprockettTH multi-age fecal cohort.
+- `Load Example` loads the currently selected example dataset into the app.
+- `Download Example` exports the currently selected example dataset as a zip file.
 - Useful to isolate whether issues are data-specific.
 - While the data are being parsed and validated, the file-load status area shows a waiting message and a spinner only during active processing.
 

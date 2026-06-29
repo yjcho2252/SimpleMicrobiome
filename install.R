@@ -7,10 +7,12 @@
 
 cran_repo <- "https://cloud.r-project.org"
 options(repos = c(CRAN = cran_repo))
+runtime_dependencies <- c("Depends", "Imports", "LinkingTo")
 
 cran_packages <- c(
   "bslib",
   "cluster",
+  "CVXR",
   "dplyr",
   "DT",
   "circlize",
@@ -45,12 +47,19 @@ bioc_packages <- c(
 
 github_packages <- c(
   "zdk123/SpiecEasi",
-  "GraceYoon/SPRING",
+  "GraceYoon/SPRING@3d641a4b939b1b3cc042c064a05000aa48266af0",
   "stefpeschel/NetCoMi"
 )
 
+package_version_or_na <- function(pkg) {
+  tryCatch(
+    as.character(utils::packageVersion(pkg)),
+    error = function(e) NA_character_
+  )
+}
+
 is_installed <- function(pkg) {
-  requireNamespace(pkg, quietly = TRUE)
+  !is.na(package_version_or_na(pkg))
 }
 
 install_missing_cran <- function(pkgs) {
@@ -61,7 +70,7 @@ install_missing_cran <- function(pkgs) {
   }
 
   message("CRAN packages to install: ", paste(missing, collapse = ", "))
-  install.packages(missing, dependencies = TRUE, repos = cran_repo)
+  install.packages(missing, dependencies = runtime_dependencies, repos = cran_repo)
   missing[!vapply(missing, is_installed, logical(1))]
 }
 
@@ -79,28 +88,72 @@ ensure_remotes <- function() {
   }
 }
 
-install_pinned_cvxr <- function() {
-  # 2026-06-19: ANCOMBC currently expects an older CVXR API that still exports solve().
-  target_version <- "1.0-13"
-  current_version <- if (is_installed("CVXR")) as.character(utils::packageVersion("CVXR")) else NA_character_
-  if (identical(current_version, target_version)) {
-    message("CVXR already pinned at version ", target_version, ".")
+install_pinned_rcpparmadillo <- function() {
+  # Match the tested Docker environment used by the public app.
+  install_version <- "15.0.2-2"
+  check_version <- "15.0.2.2"
+
+  current_version <- package_version_or_na("RcppArmadillo")
+
+  if (identical(current_version, check_version)) {
+    message("RcppArmadillo already pinned at version ", check_version, ".")
     return(invisible(character(0)))
   }
 
   ensure_remotes()
-  if (is_installed("CVXR")) {
-    message("Removing existing CVXR version: ", current_version)
-    remove.packages("CVXR")
+  if (is_installed("RcppArmadillo")) {
+    message("Removing existing RcppArmadillo version: ", current_version)
+    remove.packages("RcppArmadillo")
   }
 
-  message("Installing pinned CVXR version: ", target_version)
-  remotes::install_version("CVXR", version = target_version, upgrade = "never", dependencies = TRUE, repos = cran_repo)
+  message("Installing pinned RcppArmadillo version: ", install_version)
+  remotes::install_version(
+    "RcppArmadillo",
+    version = install_version,
+    upgrade = "never",
+    dependencies = c("Depends", "Imports", "LinkingTo"),
+    repos = cran_repo
+  )
 
-  if (is_installed("CVXR") && identical(as.character(utils::packageVersion("CVXR")), target_version)) {
+  if (is_installed("RcppArmadillo") &&
+      identical(package_version_or_na("RcppArmadillo"), check_version)) {
     character(0)
   } else {
-    "CVXR"
+    "RcppArmadillo"
+  }
+}
+
+install_pinned_rbiom <- function() {
+  # NetCoMi 1.2.0 expects the older rbiom API that exports unifrac().
+  install_version <- "2.2.1"
+  check_version <- "2.2.1"
+  current_version <- package_version_or_na("rbiom")
+
+  if (identical(current_version, check_version)) {
+    message("rbiom already pinned at version ", check_version, ".")
+    return(invisible(character(0)))
+  }
+
+  ensure_remotes()
+  if (is_installed("rbiom")) {
+    message("Removing existing rbiom version: ", current_version)
+    remove.packages("rbiom")
+  }
+
+  message("Installing pinned rbiom version: ", install_version)
+  remotes::install_version(
+    "rbiom",
+    version = install_version,
+    upgrade = "never",
+    dependencies = runtime_dependencies,
+    repos = cran_repo
+  )
+
+  if (is_installed("rbiom") &&
+      identical(package_version_or_na("rbiom"), check_version)) {
+    character(0)
+  } else {
+    "rbiom"
   }
 }
 
@@ -113,7 +166,7 @@ install_missing_bioc <- function(pkgs) {
 
   ensure_bioc_manager()
   message("Bioconductor packages to install: ", paste(missing, collapse = ", "))
-  BiocManager::install(missing, ask = FALSE, update = FALSE)
+  BiocManager::install(missing, ask = FALSE, update = FALSE, dependencies = runtime_dependencies)
   missing[!vapply(missing, is_installed, logical(1))]
 }
 
@@ -124,14 +177,15 @@ install_ancombc <- function() {
     return("CVXR")
   }
 
-  message("Reinstalling ANCOMBC against pinned CVXR...")
+  message("Installing ANCOMBC with the available CVXR version...")
   BiocManager::install("ANCOMBC", ask = FALSE, update = FALSE, force = TRUE)
 
   if (is_installed("ANCOMBC")) character(0) else "ANCOMBC"
 }
 
 install_github_if_missing <- function(spec) {
-  pkg_name <- sub(".*/", "", spec)
+  repo_part <- sub("@.*$", "", spec)
+  pkg_name <- sub(".*/", "", repo_part)
   if (is_installed(pkg_name)) {
     message("GitHub package already installed: ", pkg_name)
     return(invisible(character(0)))
@@ -144,7 +198,7 @@ install_github_if_missing <- function(spec) {
   remotes::install_github(
     spec,
     upgrade = "never",
-    dependencies = TRUE,
+    dependencies = runtime_dependencies,
     repos = c(c(CRAN = cran_repo), BiocManager::repositories())
   )
 
@@ -152,10 +206,16 @@ install_github_if_missing <- function(spec) {
 }
 
 failed <- character(0)
+failed <- c(failed, install_pinned_rcpparmadillo())
 failed <- c(failed, install_missing_cran(cran_packages))
-failed <- c(failed, install_pinned_cvxr())
 failed <- c(failed, install_ancombc())
 failed <- c(failed, install_missing_bioc(bioc_packages))
+failed <- c(failed, install_pinned_rbiom())
+if (!is_installed("bluster")) {
+  ensure_bioc_manager()
+  BiocManager::install("bluster", ask = FALSE, update = FALSE, type = "source")
+}
+if (!is_installed("bluster")) failed <- c(failed, "bluster")
 failed <- c(failed, unlist(lapply(github_packages, install_github_if_missing), use.names = FALSE))
 failed <- unique(failed)
 

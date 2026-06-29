@@ -4,7 +4,7 @@
   <img src="www/260617_SimpleMicrobiome_icon.png" alt="SimpleMicrobiome icon" width="200" />
 </p>
 
-[![R](https://img.shields.io/badge/R-%3E%3D4.2-276DC3)](https://www.r-project.org/)
+[![R](https://img.shields.io/badge/R-%3E%3D4.5.0-276DC3)](https://www.r-project.org/)
 [![Shiny](https://img.shields.io/badge/Shiny-App-1F77B4)](https://shiny.posit.co/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -22,7 +22,7 @@ SimpleMicrobiome is developed and maintained by the Microbial Genomics Laborator
   - App overview, quick workflow and version history
 - **Data Loading**
   - Upload ASV/OTU table, taxonomy table, metadata
-  - Load/download bundled example data
+  - Select, load, and download bundled example datasets
   - external QZA converter link
 - **Preprocessing**
   - Sample/taxa filtering before downstream analyses
@@ -62,7 +62,7 @@ SimpleMicrobiome supports two usage modes:
 
 #### Prerequisites
 
-- R (recommended: 4.2+)
+- R 4.5.0
 - Internet access for package installation
 - System build tools may be required for some packages:
   - Windows: Rtools

@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-06-29]
+
+### Changed
+- Installation (`install.R`):
+  - Reduced dependency installation to runtime package categories (`Depends`, `Imports`, and `LinkingTo`) to avoid installing unnecessary optional packages.
+  - Added `CVXR` to the regular CRAN dependency list and removed the older CVXR pinning workflow so ANCOMBC can use the current R 4.5/Bioconductor-compatible CVXR requirement.
+  - Pinned `RcppArmadillo` to `15.0.2-2` to match the tested Docker environment and avoid C++ standard mismatches during GitHub package compilation on Windows.
+  - Pinned `SPRING` to commit `3d641a4b939b1b3cc042c064a05000aa48266af0` for compatibility with the current R 4.5 local deployment workflow.
+  - Pinned `rbiom` to `2.2.1` so NetCoMi 1.2.0 can load against the expected `unifrac()` API.
+  - Added source installation handling for `bluster`, which may not be available as a Windows binary in the required Bioconductor setup.
+  - Improved package detection and GitHub package-name parsing so pinned GitHub specs are checked by package name rather than full repository spec.
+- Data Loading (`modules/mod_fileload.R`):
+  - Added an `Example dataset` selector for bundled example datasets.
+  - Updated `Load Example` and `Download Example` so both actions use the currently selected dataset.
+  - Added support for the HMP V3-V5 body-site cohort and SprockettTH multi-age fecal cohort examples.
+- Random Forest (`modules/mod_randomforest.R`):
+  - Improved report text so the displayed outcome variable uses the resolved grouping/outcome label, including the primary grouping fallback.
+- Documentation:
+  - Updated the README local requirement to R 4.5.0.
+  - Updated the Data Loading manual to describe the multiple example dataset workflow.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-06-29.md`
+
 ## [2026-06-19]
 
 ### Changed
