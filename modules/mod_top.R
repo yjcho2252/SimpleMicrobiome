@@ -168,6 +168,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260630: v0.4.3 - ANCOM-BC2/SparCC fixes, favicon fix, and manual documentation updates."),
             tags$li("260629: v0.4.2 - R 4.5 installer updates, selectable example datasets, and Random Forest report text fixes."),
             tags$li("260619: v0.4.1 - ANCOM-BC2 install compatibility and UI order updates."),
             tags$li("260608: v0.4.0 - PNG export bug fixes."),

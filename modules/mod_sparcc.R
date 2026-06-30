@@ -191,6 +191,7 @@ mod_sparcc_ui <- function(id) {
           ),
           tabPanel(
             "Differential Edges",
+            downloadButton(ns("download_comparison_edge_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
             tags$div(
               class = "sparcc-dt-panel",
               DTOutput(ns("comparison_edge_table"))
@@ -199,6 +200,7 @@ mod_sparcc_ui <- function(id) {
           tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary"))),
           tabPanel(
             "Hub Table",
+            downloadButton(ns("download_hub_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
             tags$div(
               class = "sparcc-dt-panel",
               DTOutput(ns("hub_table"))
@@ -1201,7 +1203,8 @@ mod_sparcc_server <- function(id, ps_obj) {
       palette <- c("Shared" = "#7F8C8D")
       if (length(only_status) >= 1) palette[only_status[1]] <- "#1F78B4"
       if (length(only_status) >= 2) palette[only_status[2]] <- "#E31A1C"
-      draw_comparison_network_plot(edge_tbl, palette)
+      p <- draw_comparison_network_plot(edge_tbl, palette)
+      print(p)
     },
     height = function() {
       if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
@@ -1236,7 +1239,8 @@ mod_sparcc_server <- function(id, ps_obj) {
 
         grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
         on.exit(grDevices::dev.off(), add = TRUE)
-        draw_comparison_network_plot(edge_tbl, palette)
+        p <- draw_comparison_network_plot(edge_tbl, palette)
+        print(p)
       }
     )
     outputOptions(output, "comparison_network_plot", suspendWhenHidden = FALSE)
@@ -1522,6 +1526,16 @@ mod_sparcc_server <- function(id, ps_obj) {
     output$download_edge_table_all <- downloadHandler(
       filename = function() paste0("sparcc_edges_all_", Sys.Date(), ".tsv"),
       content = function(file) readr::write_tsv(edge_table_all(), file)
+    )
+
+    output$download_comparison_edge_table <- downloadHandler(
+      filename = function() paste0("sparcc_differential_edges_", Sys.Date(), ".tsv"),
+      content = function(file) readr::write_tsv(comparison_edge_table(), file)
+    )
+
+    output$download_hub_table <- downloadHandler(
+      filename = function() paste0("sparcc_hub_table_", Sys.Date(), ".tsv"),
+      content = function(file) readr::write_tsv(hub_table(), file)
     )
 
     output$sparcc_legend_box <- renderUI({

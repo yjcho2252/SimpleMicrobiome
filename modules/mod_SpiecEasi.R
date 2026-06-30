@@ -191,6 +191,7 @@ mod_spieceasi_ui <- function(id) {
           ),
           tabPanel(
             "Differential Edges",
+            downloadButton(ns("download_comparison_edge_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
             tags$div(
               class = "spieceasi-dt-panel",
               DTOutput(ns("comparison_edge_table"))
@@ -199,6 +200,7 @@ mod_spieceasi_ui <- function(id) {
           tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary"))),
           tabPanel(
             "Hub Table",
+            downloadButton(ns("download_hub_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
             tags$div(
               class = "spieceasi-dt-panel",
               DTOutput(ns("hub_table"))
@@ -1547,6 +1549,16 @@ mod_spieceasi_server <- function(id, ps_obj) {
     output$download_edge_table_all <- downloadHandler(
       filename = function() paste0("spieceasi_edges_all_", Sys.Date(), ".tsv"),
       content = function(file) readr::write_tsv(edge_table_all(), file)
+    )
+
+    output$download_comparison_edge_table <- downloadHandler(
+      filename = function() paste0("spieceasi_differential_edges_", Sys.Date(), ".tsv"),
+      content = function(file) readr::write_tsv(comparison_edge_table(), file)
+    )
+
+    output$download_hub_table <- downloadHandler(
+      filename = function() paste0("spieceasi_hub_table_", Sys.Date(), ".tsv"),
+      content = function(file) readr::write_tsv(hub_table(), file)
     )
 
     output$spieceasi_legend_box <- renderUI({

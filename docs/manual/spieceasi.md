@@ -70,6 +70,7 @@ The module supports:
 ### 3.3 Table
 - Lists filtered edges from all estimated group networks.
 - Edge weight sign indicates positive or negative association.
+- The table can be downloaded as a TSV file.
 
 ### 3.4 Summary
 - Reports sample count, taxa count, group variable, nodes, edges, and connected components for each estimated group network.
@@ -85,6 +86,7 @@ The module supports:
   - status (`Shared`, `Only group 1`, `Only group 2`)
   - group-specific weights
   - weight delta
+- The table can be downloaded as a TSV file.
 
 ### 3.7 Comparison Summary
 - Summarizes node/edge counts, shared edges, unique edges, hub taxa, and modularity for the two groups.
@@ -92,6 +94,7 @@ The module supports:
 ### 3.8 Hub Table
 - Lists hub candidates based on centrality-derived hub scores.
 - The hub score combines standardized degree, betweenness, and eigenvector centrality.
+- The table can be downloaded as a TSV file.
 
 ## 4. Interpretation Guide
 

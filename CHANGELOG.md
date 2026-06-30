@@ -11,6 +11,13 @@ All notable changes to this project are documented in this file.
 - SparCC (`modules/mod_sparcc.R`):
   - Prevented `Compare two groups` selection from triggering NetCoMi/SparCC estimation before `Run SparCC` is clicked.
   - Added DataTables panel spacing for the `Table`, `Differential Edges`, and `Hub Table` tabs to prevent overlap with the legend/status area.
+  - Added TSV download buttons for `Differential Edges` and `Hub Table`.
+  - Fixed `Comparison Network` PNG downloads by explicitly rendering the ggplot object before closing the graphics device.
+- SpiecEasi (`modules/mod_SpiecEasi.R`):
+  - Added TSV download buttons for `Differential Edges` and `Hub Table`.
+- App shell (`app.R`):
+  - Switched the browser tab favicon to the PNG icon asset so browsers render it reliably.
+  - Aligned `www/favicon.svg` with the 260617 PNG icon asset for consistency.
 
 ### Changed
 - Manual documentation:

@@ -78,7 +78,8 @@ ui <- page_navbar(
   ),
   header = tags$head(
     tags$title("SimpleMicrobiome"),
-    tags$link(rel = "icon", type = "image/svg+xml", href = "favicon.svg"),
+    tags$link(rel = "icon", type = "image/png", sizes = "64x64", href = "260617_SimpleMicrobiome_icon_64.png"),
+    tags$link(rel = "shortcut icon", type = "image/png", href = "260617_SimpleMicrobiome_icon_64.png"),
     tags$style(HTML("
       body { font-size: 14px; }
       .navbar { min-height: 40px; }
