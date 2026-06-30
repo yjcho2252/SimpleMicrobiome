@@ -11,6 +11,14 @@ Main outputs include:
 - SHAP importance views
 - Permutation importance views
 
+Current result tabs:
+- `RF Table`: permutation importance table.
+- `RF Bar plot`: bar plot of permutation importance.
+- `ROC / AUC`: ROC curves and AUC values for classification models when available.
+- `SHAP Table`: mean absolute SHAP summary table.
+- `SHAP Bar plot`: SHAP importance bar plot.
+- `Result`: model status and detailed result text.
+
 ## 2. Left Panel Parameters (Detailed)
 
 ### 2.1 Primary grouping variable
@@ -102,6 +110,7 @@ Main outputs include:
 
 ### 3.1 Classification metrics (typical)
 - **Accuracy**: overall correct classification rate.
+- **Macro-F1**: mean F1 score across classes.
 - **AUC/ROC** (if available): discrimination quality across thresholds.
 - **Confusion pattern**: identifies which classes are commonly confused.
 

@@ -183,6 +183,9 @@ This document explains what each left-panel parameter does and how different set
   - Filtering always uses taxa-level multiple-testing-adjusted q-values (`q < 0.05`) from group-comparison statistics.
   - `Show Regression Line` does not change the taxa filtering rule.
   - When `Within-Subject Pairing` is enabled and group count is 3 or more, overall group comparison uses `Friedman test` (repeated measures) instead of Kruskal-Wallis.
+- **Important distinction**:
+  - This option filters which taxa are included in the taxa-selection workflow.
+  - It is separate from the p-value bar option below.
 
 ### 3.9 Transformation
 - **Options**:
@@ -215,11 +218,12 @@ This document explains what each left-panel parameter does and how different set
 
 ### 3.12 Show p-value bars / significance display
 - **Show p-value bars**: toggles bracket annotations.
-- **Show only p-value < 0.05**: hides non-significant brackets.
+- **Show only p-value < 0.05**: hides non-significant brackets after applying the selected pairwise multiple-testing correction.
 - **Show as significant marks**: converts numeric labels to symbolic marks.
 - **Interpretation note**:
   - Numeric p-values are better for technical reports.
   - Significance marks are better for compact slides.
+  - If `Pairwise Multiple Testing Correction` is `None`, the displayed/filtering value is the raw pairwise p-value. Otherwise it is the adjusted pairwise p-value.
 
 ### 3.13 Statistical Method
 - **Options**: `Wilcoxon`, `T-test`.

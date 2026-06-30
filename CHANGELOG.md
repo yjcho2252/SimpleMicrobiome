@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-06-30]
+
+### Fixed
+- ANCOM-BC2 (`modules/mod_ancom.R`):
+  - Kept the ranked bar plot axis anchored at zero so bars remain visible when all selected LFC values are positive.
+  - Filtered bar-plot input to finite LFC values before ranking and axis calculation.
+- SparCC (`modules/mod_sparcc.R`):
+  - Prevented `Compare two groups` selection from triggering NetCoMi/SparCC estimation before `Run SparCC` is clicked.
+  - Added DataTables panel spacing for the `Table`, `Differential Edges`, and `Hub Table` tabs to prevent overlap with the legend/status area.
+
+### Changed
+- Manual documentation:
+  - Updated ANCOM-BC2, MaAsLin2, SparCC, SpiecEasi, Correlation Heatmap, Taxa Profiles, and Random Forest manuals to match current UI controls and server behavior.
+  - Documented MaAsLin2 automatic normalization/transform settings by analysis method (`LM = TSS + LOG`, `ZINB = NONE + NONE`).
+  - Clarified ANCOM-BC2 log2FC direction, `diff = TRUE`/q-value behavior, and bar-plot top-10/fallback logic.
+  - Removed unsupported SparCC p-value threshold wording and documented minimum edge-weight filtering plus descriptive two-group network comparison behavior.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-06-30.md`
+
 ## [2026-06-29]
 
 ### Changed

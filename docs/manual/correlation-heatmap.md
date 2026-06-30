@@ -1,89 +1,110 @@
-﻿# Correlation Heatmap Manual
+# Correlation Heatmap Manual
 
 ## 1. What This Module Does
-Correlation Heatmap visualizes association structure among taxa and/or metadata as a matrix.
-It is useful for identifying co-varying patterns and candidate relationships.
+Correlation Heatmap visualizes associations between taxa and metadata groups as a matrix.
+The module supports abundance-based associations and prevalence-based binary associations.
 
-## 2. Left Panel Parameters (Detailed)
+## 2. Left Panel Parameters
 
-### 2.1 Association Mode
-- Typical options: `Abundance-based` and `Prevalence-based` (module-dependent).
+### 2.1 Primary grouping variable
+- Defines the metadata variable used for group-aware association summaries.
+- In subgroup mode, the analysis can be restricted to one primary level before using the secondary grouping variable.
 
-#### Abundance-based
-- Uses abundance magnitude information.
-- Better for gradient-like quantitative relationships.
+### 2.2 Select subgroup / primary level / secondary grouping variable
+- `Select subgroup` restricts samples to one primary level.
+- When enabled, the secondary grouping variable is used as the group variable for the heatmap context.
+- Small subgroup sample sizes can make associations unstable.
 
-#### Prevalence-based
-- Uses occurrence pattern logic (presence/absence context).
-- Better when detection pattern differences are the focus.
+### 2.3 Group type
+- Options: `Auto`, `Continuous`, `Categorical`.
+- `Auto` infers the group type from metadata values.
+- Continuous and categorical groups are interpreted differently in association calculations and legends.
 
-### 2.2 Target Variable Selection
-- Defines which taxa/metadata are included in rows/columns.
-- Broad selection increases coverage but reduces readability.
-- Curated selection improves interpretability.
+### 2.4 Taxonomic level
+- Options: `ASV`, `Genus`, `Species`, `Strain`.
+- Lower levels are more specific and sparse.
+- Higher levels are usually more stable and readable.
 
-### 2.3 Taxonomic Level
-- Controls taxa aggregation rank used in matrix construction.
-- Lower rank increases detail and sparsity.
-- Higher rank improves stability and visual clarity.
+### 2.5 Association mode
+- `Abundance-based`: uses abundance values.
+- `Prevalence-based (binary)`: binarizes taxa to presence/absence before computing associations.
+- Prevalence mode is useful when detection patterns are more relevant than abundance magnitude.
 
-### 2.4 Data Transform Options
-- Controls feature scale before association calculation.
-- Choice affects dynamic range and sign/magnitude distribution in heatmap.
+### 2.6 Heatmap value scale
+- `Raw`: shows the association values on the original module scale.
+- `Z-score (by taxa)`: standardizes values by taxa to emphasize relative patterns.
+- Do not compare color intensity across heatmaps unless value scale and settings are the same.
 
-### 2.5 Correlation / Association Method
-- Method determines how pairwise relationships are computed.
-- Use method consistent with variable type and distribution assumptions.
+### 2.7 Advanced options
+- `Data transform`: `TSS` or `CLR` for abundance-based calculations.
+- `Correlation method`: `Pearson` or `Spearman` for abundance-based calculations.
+- `Prevalence filter (%)`: removes low-prevalence taxa before heatmap construction.
+- `Max taxa`: limits the number of taxa shown.
+- `Selected taxa (optional)`: if selected, only those taxa are shown.
+- `Show row dendrogram` and `Show column dendrogram`: controls clustering display.
+- `Color scale abs limit (0 = auto)`: fixes the symmetric color scale limit when nonzero.
+- `Mask non-significant cells (FDR)`: hides cells that do not pass the selected FDR cutoff.
+- `FDR cutoff (q)`: q-value threshold used when masking is enabled.
 
-### 2.6 Value Scale / Color Mapping
-- Defines mapping of association values to colors.
-- Symmetric scales are preferred for signed associations.
-- Narrow scale highlights subtle differences; wide scale emphasizes strong effects only.
+### 2.8 Plot dimensions
+- `Cell width`, `Cell height`, and `Base Font Size` control readability.
+- Increase cell size for long labels or dense matrices.
 
-### 2.7 Filtering / Threshold Options (if shown)
-- Can hide weak or non-significant associations.
-- Useful for decluttering, but may hide borderline patterns.
+## 3. Result Interpretation
 
-### 2.8 Plot Width / Height / Base Font Size
-- Key for large matrices.
-- Increase dimensions for many variables or long labels.
+### 3.1 Abundance-based mode
+- Values summarize abundance-based association direction and magnitude.
+- Positive values indicate positive association.
+- Negative values indicate inverse association.
+- The selected transform and correlation method affect the scale and interpretation.
 
-## 3. How to Interpret Heatmap Values
+### 3.2 Prevalence-based mode
+- Taxa are converted to binary present/absent values.
+- For categorical groups, values reflect directional prevalence differences between group contexts.
+- This mode answers detection-pattern questions rather than abundance-magnitude questions.
 
-### 3.1 Positive vs negative values
-- Positive: variables tend to increase together.
-- Negative: inverse pattern tendency.
-- Association does not imply direct interaction or causality.
+### 3.3 FDR masking
+- When enabled, non-significant cells are masked based on the selected q-value cutoff.
+- Masking improves readability but can hide borderline cells.
+- Report the q cutoff when exporting or presenting masked heatmaps.
 
-### 3.2 Magnitude
-- Larger absolute values indicate stronger modeled association.
-- Compare magnitudes only within the same analysis settings.
+### 3.4 Dendrograms
+- Row/column dendrograms cluster similar association profiles.
+- Clustering is descriptive and depends on the selected values and scale.
 
-### 3.3 Block patterns
-- Grouped high/low blocks can indicate module-like structure.
-- Validate biological plausibility with metadata and external knowledge.
+## 4. Practical Presets
 
-## 4. Practical Parameter Presets
+### Preset A: Abundance association scan
+- Association mode: `Abundance-based`
+- Transform: `CLR`
+- Correlation method: `Pearson` or `Spearman`
+- Value scale: `Raw`
+- FDR masking: off for first-pass exploration
 
-### Preset A: Exploratory scan
-- Moderate variable count
-- Default association mode/method
-- Broad value scale
+### Preset B: Detection-pattern scan
+- Association mode: `Prevalence-based (binary)`
+- Moderate prevalence filter
+- Value scale: `Raw`
+- FDR masking: optional for report figures
 
-### Preset B: Report-ready matrix
-- Curated variable subset
-- Consistent taxonomic level with other analyses
-- Symmetric value scale
-- Optional significance/threshold filtering for clarity
+### Preset C: Report-ready matrix
+- Curated selected taxa
+- Fixed color scale abs limit
+- FDR masking on with reported cutoff
+- Larger cell dimensions for label readability
 
 ## 5. Common Pitfalls
-- Interpreting color intensity across heatmaps with different scales.
-- Overloading too many variables into one matrix.
-- Mixing transforms/methods and comparing results as directly equivalent.
+- Comparing colors across heatmaps with different value scales or transforms.
+- Treating masked cells as zero values; masked means not displayed under the selected FDR rule.
+- Overloading too many taxa into one matrix.
+- Interpreting association as causation.
 
 ## 6. Recommended Reporting Items
-- Association mode and method
-- Transform and taxonomic level
-- Variable selection criteria
-- Value scale/threshold settings
-- Key positive/negative association clusters
+- Primary/subgroup setup
+- Group type
+- Taxonomic level
+- Association mode
+- Transform and correlation method when abundance-based
+- Prevalence filter and max taxa
+- Value scale and color scale limit
+- Whether FDR masking was used and the q cutoff

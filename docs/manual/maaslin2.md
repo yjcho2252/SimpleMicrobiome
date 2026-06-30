@@ -1,103 +1,110 @@
-﻿# MaAsLin2 Manual
+# MaAsLin2 Manual
 
 ## 1. What This Module Does
 MaAsLin2 fits multivariable association models between microbial features and metadata variables.
-It is suitable when adjustment covariates are required.
+This module is designed for selected group-level contrasts with optional fixed covariates, interaction terms, and random effects.
 
-## 2. Left Panel Parameters (Detailed)
+## 2. Left Panel Parameters
 
-### 2.1 Primary target / grouping variable
-- Defines main association focus.
-- Must match the hypothesis being tested.
+### 2.1 Primary grouping variable
+- Defines the main metadata variable used for analysis.
+- If subgroup mode is off, this variable is the comparison variable.
 
-### 2.2 Select subgroup / primary level
-- Restricts analysis to a specific stratum when needed.
-- Helps reduce heterogeneity but can reduce power.
+### 2.2 Select subgroup / primary level to include
+- Restricts the analysis to a selected primary level before model fitting.
+- When subgroup mode is enabled, the secondary grouping variable becomes the comparison variable.
 
-### 2.3 Secondary grouping / comparison levels
-- Focuses analysis on selected level combinations.
-- Ensure adequate sample size per included level.
+### 2.3 Comparison groups (levels)
+- Selects levels included in the model.
+- The reference level must be one of the selected levels.
 
-### 2.4 Taxonomic level
-- Chooses feature aggregation rank.
-- Lower rank gives higher specificity but more sparsity.
+### 2.4 Reference level
+- Defines the baseline level for model contrasts.
+- Positive log2FC means increased in the comparison level versus the reference level.
+- Negative log2FC means decreased in the comparison level versus the reference level.
 
-### 2.5 Prevalence filter
+### 2.5 Taxonomic level
+- Options: `ASV`, `Genus`, `Species`, `Strain`.
+- Higher ranks are usually more stable; lower ranks are more specific and sparse.
+
+### 2.6 Statistical metric
+- Options: `q-value (FDR)` and `p-value`.
+- This controls the volcano plot y-axis and the numeric labels shown on the bar plot.
+
+### 2.7 Prevalence filter
 - Default: `5%`.
 - Allowed UI range: `0-20%`.
-- What it does:
-  - Keeps taxa whose prevalence is greater than the selected threshold within the currently included sample subset.
-  - Prevalence is computed on the relative-abundance table before MaAsLin2 fitting.
-- Practical note:
-  - Lower values retain more rare taxa but increase sparsity.
-  - Higher values simplify the model but may remove low-frequency signals.
+- Taxa are retained only when prevalence is greater than the selected threshold in the included sample subset.
+- Zero-variance taxa are removed after prevalence filtering.
 
-### 2.6 Zero-variance taxa removal
-- Applied after prevalence filtering.
-- What it does:
-  - Removes taxa that have no variation in the selected subset before model fitting.
-- Why it matters:
-  - Prevents uninformative taxa from entering the regression model.
+### 2.8 Analysis method and automatic normalization/transform
+- Options: `LM` and `ZINB`.
+- The module does not expose normalization and transform as separate user controls.
+- They are selected automatically from the analysis method:
 
-### 2.7 Transform/normalization options
-- Changes input scale before fitting.
-- Coefficients and significance can vary by transform.
+| Analysis method | MaAsLin2 normalization | MaAsLin2 transform |
+|---|---|---|
+| `LM` | `TSS` | `LOG` |
+| `ZINB` | `NONE` | `NONE` |
 
-### 2.8 Covariate selection
-- Adds adjustment variables for confounding control.
-- Over-adjustment can reduce interpretability and power.
+- These settings affect coefficient scale and should be reported with MaAsLin2 results.
 
-### 2.9 Significance/output filters
-- Controls display/reporting thresholds.
-- Prefer adjusted significance for final reporting.
+### 2.9 Fixed effects, interactions, and random effects
+- `Additional covariates for fixed effects`: metadata variables added to the fixed-effect model.
+- `Interaction terms for fixed effects`: selected interaction terms are expanded into derived metadata columns before fitting.
+- `Random effects`: metadata grouping variables passed to MaAsLin2 as random effects.
+- The model formula preview shows the applied fixed effects, selected interactions, and random effects.
 
-## 3. Result Columns: How to Read
-(Exact labels may vary by module version.)
+## 3. Result Tabs
 
-### 3.1 Feature / Taxon
+### 3.1 Volcano plot
+- x-axis: log2FC for the selected comparison level against the reference level.
+- y-axis: `-log10(q-value)` or `-log10(p-value)`, depending on the selected statistical metric.
+- Positive log2FC means increased in the comparison level versus the reference level.
+
+### 3.2 Bar plot
+- Bars show the top 10 significant taxa ranked by absolute log2FC.
+- If no significant rows are available, the plot falls back to the top 10 finite log2FC rows.
+- The number printed beside each bar is the selected statistical metric (`q-value` or `p-value`).
+
+### 3.3 Table
+- Reports MaAsLin2 coefficient estimates, transformed effect sizes, significance values, selected contrast labels, and taxonomy fields.
+
+## 4. Result Columns
+
+### 4.1 Feature / taxon
 - Microbial feature tested in the model.
 
-### 3.2 Metadata / Variable
+### 4.2 Metadata / variable
 - Predictor associated with the reported coefficient.
-- In multi-covariate models, coefficient is conditional on other variables.
+- With covariates, the coefficient is conditional on the other model terms.
 
-### 3.3 Coefficient
-- Direction:
-  - Positive: feature tends to increase with predictor (or compared level).
-  - Negative: feature tends to decrease with predictor (or compared level).
-- Magnitude is model-scale dependent (transform aware).
+### 4.3 Coefficient / log2FC-style effect
+- Direction is relative to the reference level for group contrasts.
+- Magnitude depends on the automatic normalization/transform and selected analysis method.
 
-### 3.4 Standard error
-- Precision of coefficient estimate.
-- Large SE suggests unstable estimate or weak support.
-
-### 3.5 p-value
+### 4.4 p-value
 - Unadjusted evidence level.
-- Use primarily for screening, not final claim.
+- Useful for screening but not sufficient alone for high-dimensional reporting.
 
-### 3.6 q-value / adjusted p-value
-- Multiple-testing corrected significance.
-- Recommended main significance criterion.
+### 4.5 q-value
+- Multiple-testing adjusted p-value.
+- Preferred significance value for reporting.
 
-### 3.7 Model fit/status fields (if shown)
-- Help identify convergence or estimation problems.
-- Flagged rows should be interpreted cautiously.
-
-## 4. Interpretation Workflow
-1. Prioritize q-value significant associations.
-2. Confirm the taxa passed prevalence filtering and zero-variance removal.
-3. Read coefficient direction and relative magnitude.
-4. Check whether direction is consistent across related taxa levels.
-5. Confirm robustness under a second transform setting.
-
-## 5. Common Pitfalls
-- Treating coefficients as unadjusted bivariate effects.
-- Ignoring collinearity among covariates.
-- Reporting only significance without effect direction.
+## 5. Interpretation Workflow
+1. Confirm comparison variable, selected levels, and reference level.
+2. Confirm analysis method and the automatic normalization/transform it implies.
+3. Check sample counts and prevalence filtering.
+4. Interpret coefficient direction relative to the reference level.
+5. Prioritize q-value significant associations.
+6. Review covariates, interactions, and random effects for biological and statistical plausibility.
 
 ## 6. Recommended Reporting Items
-- Outcome/predictor/covariate definitions
-- Transform and taxonomic level
-- Correction method
+- Primary/subgroup setup and comparison variable
+- Included levels and reference level
+- Taxonomic level
+- Analysis method
+- Automatic normalization and transform
+- Prevalence cutoff
+- Fixed effects, interactions, and random effects
 - Significant associations with coefficient direction and q-values
-- Any subgroup restrictions

@@ -1393,9 +1393,10 @@ mod_ancom_server <- function(id, ps_obj) {
       target_levels <- setdiff(selected_levels, input$reference_level)
       target_label <- if (length(target_levels) == 1) target_levels[1] else "selected comparison levels"
       sig_col <- input$volcano_y_axis
-      plot_df <- res[res$diff & !is.na(res$lfc), , drop = FALSE]
+      finite_lfc <- !is.na(res$lfc) & is.finite(res$lfc)
+      plot_df <- res[res$diff & finite_lfc, , drop = FALSE]
       if (nrow(plot_df) == 0) {
-        plot_df <- res[!is.na(res$lfc), , drop = FALSE]
+        plot_df <- res[finite_lfc, , drop = FALSE]
       }
       validate(
         need(nrow(plot_df) > 0, "No valid rows to plot for bar chart.")
@@ -1430,7 +1431,8 @@ mod_ancom_server <- function(id, ps_obj) {
       label_right <- max(0, max(res_top$lfc, na.rm = TRUE)) + label_offset
       res_top$label_y <- label_right
       res_top$label_hjust <- 0
-      y_limits <- c(min(res_top$lfc, na.rm = TRUE), label_right + (label_offset * 4))
+      y_left <- min(0, min(res_top$lfc, na.rm = TRUE))
+      y_limits <- c(y_left, label_right + (label_offset * 4))
 
       p <- ggplot(res_top, aes(x = reorder(taxa_label_current, lfc), y = lfc, fill = direction_flag)) +
         geom_col(color = "black") +

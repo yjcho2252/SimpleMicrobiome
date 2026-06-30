@@ -36,6 +36,19 @@ mod_sparcc_ui <- function(id) {
         padding: 5px 8px;
         white-space: nowrap;
       }
+      .sparcc-dt-panel {
+        margin-top: 10px;
+        margin-bottom: 36px;
+        overflow: visible;
+      }
+      .sparcc-dt-panel::after {
+        content: '';
+        display: block;
+        clear: both;
+      }
+      .sparcc-dt-panel .dataTables_wrapper {
+        padding-bottom: 20px;
+      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -162,7 +175,10 @@ mod_sparcc_ui <- function(id) {
           tabPanel(
             "Table",
             downloadButton(ns("download_edge_table_all"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
-            DTOutput(ns("edge_table_all"))
+            tags$div(
+              class = "sparcc-dt-panel",
+              DTOutput(ns("edge_table_all"))
+            )
           ),
           tabPanel("Summary", verbatimTextOutput(ns("network_summary"))),
           tabPanel(
@@ -173,9 +189,21 @@ mod_sparcc_ui <- function(id) {
               plotOutput(ns("comparison_network_plot"), height = "auto")
             )
           ),
-          tabPanel("Differential Edges", DTOutput(ns("comparison_edge_table"))),
+          tabPanel(
+            "Differential Edges",
+            tags$div(
+              class = "sparcc-dt-panel",
+              DTOutput(ns("comparison_edge_table"))
+            )
+          ),
           tabPanel("Comparison Summary", verbatimTextOutput(ns("comparison_summary"))),
-          tabPanel("Hub Table", DTOutput(ns("hub_table")))
+          tabPanel(
+            "Hub Table",
+            tags$div(
+              class = "sparcc-dt-panel",
+              DTOutput(ns("hub_table"))
+            )
+          )
           )
         ),
         uiOutput(ns("sparcc_legend_box")),
@@ -454,7 +482,7 @@ mod_sparcc_server <- function(id, ps_obj) {
 
     network_running <- reactiveVal(FALSE)
 
-    network_run_nonce <- reactiveVal(0L)
+    network_run_nonce <- reactiveVal(NULL)
     network_next_allowed_at <- reactiveVal(as.POSIXct(NA))
 
     observeEvent(input$run_network_btn, {
@@ -470,10 +498,13 @@ mod_sparcc_server <- function(id, ps_obj) {
         return(invisible(NULL))
       }
       network_next_allowed_at(now_ts + 10)
-      network_run_nonce(network_run_nonce() + 1L)
+      current_nonce <- network_run_nonce()
+      if (is.null(current_nonce)) current_nonce <- 0L
+      network_run_nonce(current_nonce + 1L)
     }, ignoreInit = TRUE)
 
     network_result <- eventReactive(network_run_nonce(), {
+      req(!is.null(input$run_network_btn) && input$run_network_btn > 0)
       req(build_network_inputs())
       validate(
         need(requireNamespace("NetCoMi", quietly = TRUE), "NetCoMi package is not installed. Please install 'NetCoMi'."),

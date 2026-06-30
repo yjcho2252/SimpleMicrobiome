@@ -1,112 +1,122 @@
-﻿# ANCOM-BC2 Manual
+# ANCOM-BC2 Manual
 
 ## 1. What This Module Does
 ANCOM-BC2 performs differential abundance (DA) testing while accounting for compositional bias.
-It is used to identify taxa whose abundance differs between defined groups.
+This module compares selected metadata levels and reports taxon-level log2 fold-change, p-values, q-values, and ANCOM-BC2 differential-abundance flags.
 
-## 2. Left Panel Parameters (Detailed)
+## 2. Left Panel Parameters
 
 ### 2.1 Primary grouping variable
-- Defines the main biological comparison axis.
-- All DA interpretation depends on this grouping context.
+- Defines the main metadata variable used for comparison.
+- If subgroup mode is off, this variable is also the comparison variable.
 
-### 2.2 Select subgroup
-- Enables stratified analysis mode.
-- Restricts analysis to a selected primary level before testing.
+### 2.2 Select subgroup / primary level to include
+- Restricts the analysis to one selected primary level before fitting ANCOM-BC2.
+- When subgroup mode is enabled, the selected secondary grouping variable becomes the comparison variable.
+- Narrow subsets reduce sample count and can destabilize model estimates.
 
-### 2.3 Primary level to include
-- Active in subgroup mode.
-- Too strict subset can reduce power and destabilize estimates.
+### 2.3 Comparison groups (levels)
+- Selects the group levels included in the ANCOM-BC2 model.
+- At least one non-reference level is required.
+- Up to five levels can be selected in the current UI.
 
-### 2.4 Comparison groups (levels)
-- Chooses which levels are included in pairwise contrasts.
-- Include only scientifically relevant levels to reduce noise/multiplicity.
+### 2.4 Reference level
+- Defines the baseline group for log2FC contrasts.
+- Positive log2FC means the taxon is increased in the comparison level relative to the reference level.
+- Negative log2FC means the taxon is decreased in the comparison level relative to the reference level.
 
 ### 2.5 Taxonomic level
-- Sets aggregation rank for testing.
-- Higher rank: more stable, less specific.
-- Lower rank: more specific, more sparse.
+- Options: `ASV`, `Genus`, `Species`, `Strain`.
+- Higher ranks are usually more stable but less specific.
+- Lower ranks are more specific but often sparser.
 
-### 2.6 Prevalence filter
+### 2.6 Statistical metric
+- Options: `q-value (FDR)` and `p-value`.
+- This controls the volcano plot y-axis and the numeric labels shown on the bar plot.
+- It does not change ANCOM-BC2 fitting. ANCOM-BC2 is run with `alpha = 0.05`.
+
+### 2.7 Prevalence filter
 - Default: `5%`.
 - Allowed UI range: `0-20%`.
-- What it does:
-  - Keeps taxa whose prevalence is greater than the selected threshold within the currently included sample subset.
-  - Prevalence is computed before model fitting on the relative-abundance table.
-- Practical note:
-  - Lower values keep more rare taxa but increase sparsity.
-  - Higher values simplify the model but may remove biologically relevant low-prevalence taxa.
+- Taxa are retained only when prevalence is greater than the selected threshold in the currently included sample subset.
+- Prevalence filtering is applied before ANCOM-BC2 fitting.
 
-### 2.7 Zero-variance taxa removal
-- Applied after prevalence filtering.
-- What it does:
-  - Removes taxa with no remaining variation in the selected subset before ANCOM-BC2 fitting.
-- Why it matters:
-  - Prevents degenerate taxa from entering the model.
-  - Can reduce the number of tested features substantially in sparse subsets.
+### 2.8 Zero-variance taxa removal
+- Applied after prevalence filtering and before model fitting.
+- Taxa with no remaining variation in the selected subset are removed.
 
-### 2.8 Structural zero handling
-- Enabled in the module by default through ANCOM-BC2 fitting.
-- What it does:
-  - Treats taxa that are completely absent in a group as structural zeros rather than ordinary missing detections.
-- Interpretation note:
-  - This is different from prevalence filtering.
-  - Prevalence filtering removes globally rare taxa first; structural zero handling addresses group-specific all-zero patterns during model fitting.
+### 2.9 Structural zero handling
+- Enabled in ANCOM-BC2 through `struc_zero = TRUE`.
+- The module also uses `neg_lb = TRUE`.
+- Structural zero handling addresses group-specific all-zero patterns during ANCOM-BC2 fitting.
 
-### 2.9 Statistical/model options
-- Controls module-specific fitting and display behavior.
-- Use consistent settings when comparing runs across groups.
+### 2.10 Advanced options
+- `Additional covariates for fix_formula`: metadata variables added as fixed effects.
+- `Interaction terms for fix_formula`: selected interaction terms among fixed effects.
+- `Random-effect grouping variables`: random intercept terms written as `(1|variable)`.
+- `Enable ordered trend test`: runs ANCOM-BC2 trend testing only when enabled and at least three levels are selected.
+- The formula preview shows the fixed and random model terms that will be used.
 
-### 2.10 Multiple testing correction
-- Controls adjusted significance in multi-taxa testing context.
-- Prefer corrected significance for reporting.
+## 3. Result Tabs
 
-## 3. Result Columns: How to Read
-(Exact labels can vary by module version.)
+### 3.1 Volcano plot
+- x-axis: log2FC for the selected contrast against the reference level.
+- y-axis: `-log10(q-value)` or `-log10(p-value)`, depending on the selected statistical metric.
+- Dashed vertical lines mark `|log2FC| = 0.5`.
+- Dashed horizontal line marks `p/q = 0.05`.
 
-### 3.1 Taxon / Feature ID
-- The tested taxonomic unit at current selected rank.
+### 3.2 Bar plot
+- Bars show the top 10 taxa ranked by absolute log2FC.
+- The primary selection is ANCOM-BC2 `diff = TRUE`, which corresponds to taxa significant at `q < alpha` from ANCOM-BC2. In this module `alpha = 0.05`.
+- If no `diff = TRUE` taxa are available, the plot falls back to the top 10 taxa by absolute finite log2FC.
+- The number printed beside each bar is the selected statistical metric (`q-value` or `p-value`).
 
-### 3.2 Effect size (e.g., coefficient / log-fold-like estimate)
-- Direction:
-  - Positive: relatively higher in reference contrast direction.
-  - Negative: relatively lower in reference contrast direction.
-- Magnitude reflects modeled difference size, not absolute abundance.
+### 3.3 Table
+- Reports selected ANCOM-BC2 coefficient estimates, standard errors, W statistics, p-values, q-values, differential flags, contrast labels, and taxonomy fields.
 
-### 3.3 Standard error (SE)
-- Uncertainty of effect estimate.
-- Large SE indicates unstable estimate (often small group/sample support).
+## 4. Result Columns
 
-### 3.4 Test statistic / W statistic
-- Strength of evidence under model assumptions.
-- Use together with p-value/q-value, not in isolation.
+### 4.1 feature_id
+- The tested taxon or feature ID at the selected taxonomic level.
 
-### 3.5 p-value
-- Unadjusted significance.
-- Not sufficient alone for high-dimensional DA claims.
+### 4.2 contrast
+- The non-reference group level being compared against the reference level.
 
-### 3.6 Adjusted p-value / q-value
-- Multiplicity-corrected significance (recommended primary criterion).
+### 4.3 lfc
+- Log2 fold-change for the contrast.
+- Positive values indicate increase in the comparison group versus the reference group.
+- Negative values indicate decrease in the comparison group versus the reference group.
 
-### 3.7 Detection/significance flags (if shown)
-- Convenience indicators for thresholded significance.
-- Always verify corresponding adjusted value.
+### 4.4 se
+- Standard error of the log2FC estimate.
 
-## 4. Interpretation Workflow
-1. Filter by adjusted significance threshold.
-2. Confirm the taxa passed prevalence filtering and zero-variance removal.
-3. Check effect direction and magnitude.
-4. Confirm biological plausibility at neighboring taxonomic levels.
-5. Validate robustness with alternative filtering/transform context upstream.
+### 4.5 W
+- ANCOM-BC2 test statistic.
 
-## 5. Common Pitfalls
-- Interpreting unadjusted p-values as final findings.
-- Ignoring group imbalance after subgroup filtering.
-- Overstating tiny effect sizes that are only marginally significant.
+### 4.6 p_val
+- Raw p-value.
+
+### 4.7 q_val
+- Multiple-testing adjusted p-value.
+- This is the preferred significance value for reporting.
+
+### 4.8 diff
+- ANCOM-BC2 differential-abundance flag.
+- In ANCOM-BC2 output this is based on whether the adjusted value is below `alpha`.
+
+## 5. Interpretation Workflow
+1. Confirm the comparison variable, selected levels, and reference level.
+2. Check sample counts in the status box.
+3. Prioritize `diff = TRUE` and q-value significant taxa.
+4. Interpret log2FC direction relative to the reference level.
+5. Check whether results are robust to prevalence cutoff, covariates, and taxonomic level.
 
 ## 6. Recommended Reporting Items
-- Grouping setup and included levels
+- Primary/subgroup setup and comparison variable
+- Included levels and reference level
 - Taxonomic level
-- Correction method
-- Significant taxa list with effect direction and adjusted p-values
-- Any subgroup restriction used
+- Prevalence cutoff
+- Fixed effects, interactions, and random effects
+- Whether ordered trend testing was enabled
+- ANCOM-BC2 `alpha`
+- Significant taxa with log2FC direction, q-values, and contrast labels

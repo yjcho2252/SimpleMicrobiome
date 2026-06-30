@@ -1,85 +1,125 @@
-﻿# SparCC Manual
+# SparCC Manual
 
 ## 1. What This Module Does
 SparCC estimates correlation-like associations between taxa under compositional constraints.
-It is typically used to build co-occurrence/co-exclusion style microbial networks.
+This module uses NetCoMi with `measure = "sparcc"` to estimate taxon association networks.
 
-## 2. Left Panel Parameters (Detailed)
+The module supports:
+- `Single network`: estimate one or more group-specific networks.
+- `Compare two groups`: estimate two group-specific networks and compare their edges.
 
-### 2.1 Group / Subgroup Filters
-- Defines which samples are included before network inference.
-- Different subsets can produce very different edge structures.
-- Recommendation: keep subset definition biologically coherent and sample size adequate.
+## 2. Left Panel Parameters
 
-### 2.2 Taxonomic Level
-- Controls node granularity (e.g., ASV/Genus/Species depending on module settings).
-- Lower level -> more nodes, more sparsity, noisier correlations.
-- Higher level -> more stable, less specific network.
+### 2.1 Primary grouping variable
+- Defines the metadata variable used for grouping samples.
+- If subgroup mode is off, selected levels from this variable determine which group networks are estimated.
 
-### 2.3 Pre-filter / Feature Inclusion Controls
-- Removes low-prevalence or low-abundance taxa before SparCC.
-- Higher filtering stringency:
-  - Pros: less noise, faster runtime, cleaner network.
-  - Cons: can remove weak but real biological interactions.
+### 2.2 Select subgroup / primary level to include
+- Restricts samples to a selected primary level before network inference.
+- When subgroup mode is enabled, the secondary grouping variable becomes the grouping variable for network estimation.
 
-### 2.4 Correlation Threshold (|r| cutoff)
-- Keeps only edges above absolute correlation strength.
-- Lower cutoff -> dense network (“hairball” risk).
-- Higher cutoff -> sparse network (clearer, but may miss moderate links).
+### 2.3 Group levels
+- Selects the group levels included in the run.
+- In `Single network` mode, one or more levels can be selected.
+- In `Compare two groups` mode, exactly two levels must be selected.
 
-### 2.5 Significance Threshold (if enabled)
-- Filters edges by p-value support.
-- Lower p-cutoff (stricter) improves confidence but reduces edge count.
+### 2.4 Analysis mode
+- `Single network`: estimates networks for the selected eligible group levels.
+- `Compare two groups`: estimates one SparCC network per selected group, then compares shared and group-specific edges.
+- Compare mode is descriptive. It does not run a separate edge-level statistical test between groups.
 
-### 2.6 Positive/Negative Edge Display (if available)
-- Controls whether co-occurrence (+), co-exclusion (-), or both are shown.
-- Important for biological interpretation of interaction directionality.
+### 2.5 Taxonomic level
+- Options: `ASV`, `Genus`, `Species`, `Strain`.
+- Lower levels give more specific but sparser networks.
+- Higher levels usually produce more stable and readable networks.
 
-### 2.7 Network Visualization Controls
-- Node/edge size, labels, and layout controls mainly affect readability.
-- These do not change inferred associations.
+### 2.6 Prevalence filter
+- Default: `10%`.
+- Taxa below the selected prevalence threshold are removed before network inference.
+- Stronger filtering reduces noise and runtime but can remove rare taxa.
 
-### 2.8 Plot/Export Controls
-- Export options should be used with threshold settings recorded.
-- Always save threshold values with exported network for reproducibility.
+### 2.7 Node size and node color
+- Node size options: `Connectivity`, `Abundance`.
+- Node color is currently fixed to `None` in the UI.
+- These options affect visualization, not the estimated SparCC associations.
 
-## 3. How to Interpret SparCC Results
+### 2.8 Minimum absolute edge weight
+- Default: `0.1`.
+- Edges are shown in plots/tables only when `abs(weight) >= threshold`.
+- This is an effect-size threshold, not a p-value threshold.
+- The current SparCC module does not expose edge p-value filtering.
 
-### 3.1 Edge sign
-- Positive edge: taxa tend to vary together.
+### 2.9 Max taxa for network
+- Limits the number of taxa entering network estimation.
+- Lower values reduce runtime and visual complexity.
+
+### 2.10 Seed
+- Sets the random seed used before network estimation for reproducibility.
+
+## 3. Result Tabs
+
+### 3.1 All
+- Shows all nodes from the estimated network after edge filtering.
+- Isolated nodes may remain visible.
+
+### 3.2 Connected
+- Shows the connected-node view after edge filtering.
+- Isolated nodes are excluded.
+
+### 3.3 Table
+- Lists filtered edges from all estimated group networks.
+- Edge weight sign indicates positive or negative association.
+
+### 3.4 Summary
+- Reports sample count, taxa count, group variable, nodes, edges, and connected components for each estimated group network.
+
+### 3.5 Comparison Network
+- Available when `Analysis mode = Compare two groups`.
+- Visualizes edges classified as `Shared`, `Only <group 1>`, or `Only <group 2>`.
+
+### 3.6 Differential Edges
+- Available in compare mode.
+- Reports edge-level differences between the two estimated networks:
+  - edge endpoints
+  - status (`Shared`, `Only group 1`, `Only group 2`)
+  - group-specific weights
+  - weight delta
+
+### 3.7 Comparison Summary
+- Summarizes node/edge counts, shared edges, unique edges, hub taxa, and modularity for the two groups.
+
+### 3.8 Hub Table
+- Lists hub candidates based on centrality-derived hub scores.
+- The hub score combines standardized degree, betweenness, and eigenvector centrality.
+
+## 4. Interpretation Guide
+
+### 4.1 Edge sign
+- Positive edge: taxa tend to vary together under SparCC estimation.
 - Negative edge: taxa tend to vary inversely.
-- Note: correlation-like association is not causal interaction.
+- Edges are association patterns, not causal interactions.
 
-### 3.2 Edge strength
-- Larger |r| suggests stronger association pattern under current preprocessing/subset.
-- Compare strengths within the same run settings only.
+### 4.2 Edge strength
+- Larger absolute weight indicates a stronger estimated association within the same run settings.
+- Compare weights only when preprocessing, taxonomic level, and threshold settings are the same.
 
-### 3.3 Node connectivity
-- Highly connected taxa can be ecological hubs, but may also reflect compositional or prevalence artifacts.
-
-## 4. Practical Parameter Presets
-
-### Preset A: Exploratory network
-- Moderate prevalence filter
-- Moderate |r| threshold
-- No overly strict p-cutoff initially
-- Goal: map overall structure
-
-### Preset B: Report-ready network
-- Stronger prevalence filter
-- Higher |r| threshold
-- Significant edges only
-- Goal: robust, interpretable core network
+### 4.3 Compare mode
+- Compare mode compares two independently estimated group networks.
+- `Only group` edges are edges retained in one group network but not the other after the current edge threshold.
+- `weight delta` is descriptive and should not be interpreted as a formal differential-correlation p-value.
 
 ## 5. Common Pitfalls
-- Treating network edges as direct biological interactions.
-- Comparing networks built with different thresholds as if directly equivalent.
-- Over-interpreting hubs from very sparse/imbalanced datasets.
-- Ignoring sample-size reduction from subgroup filtering.
+- Interpreting network edges as direct biological interactions.
+- Treating compare-mode edge differences as formal statistical tests.
+- Comparing networks built with different filtering or edge thresholds.
+- Ignoring small group sample sizes. Groups with fewer than three samples are skipped.
 
 ## 6. Recommended Reporting Items
-- Sample subset definition
+- Group/subgroup selection and included levels
+- Analysis mode
 - Taxonomic level
-- Pre-filter criteria
-- Correlation and significance thresholds
-- Number of nodes/edges and positive/negative edge counts
+- Prevalence filter
+- Max taxa for network
+- Minimum absolute edge weight
+- Number of samples, nodes, and edges by group
+- For compare mode: shared edges, group-specific edges, and threshold used
