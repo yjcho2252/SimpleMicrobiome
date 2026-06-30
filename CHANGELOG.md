@@ -22,6 +22,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 - Manual documentation:
   - Updated ANCOM-BC2, MaAsLin2, SparCC, SpiecEasi, Correlation Heatmap, Taxa Profiles, and Random Forest manuals to match current UI controls and server behavior.
+  - Expanded the Data Loading manual with bundled example dataset descriptions, recommended metadata variables, and references for the HMP V3-V5 and SprockettTH examples.
   - Documented MaAsLin2 automatic normalization/transform settings by analysis method (`LM = TSS + LOG`, `ZINB = NONE + NONE`).
   - Clarified ANCOM-BC2 log2FC direction, `diff = TRUE`/q-value behavior, and bar-plot top-10/fallback logic.
   - Removed unsupported SparCC p-value threshold wording and documented minimum edge-weight filtering plus descriptive two-group network comparison behavior.
