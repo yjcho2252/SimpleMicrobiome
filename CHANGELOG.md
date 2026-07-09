@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-07-08]
+
+### Changed
+- Beta diversity (`modules/mod_beta.R`):
+  - Renamed the NMDS action button from `Redraw Plot` to `Re-run NMDS`.
+  - Set NMDS ordination to use 2 dimensions and `trymax = 20`.
+  - Added NMDS run details to the results panel, including tool, taxonomic level, distance metric, dimensions, final stress, starts, trymax, and convergence status.
+  - Added NMDS run details to the plot description when the NMDS tab is active.
+- Documentation (`README.md`):
+  - Reframed the app as a downstream microbiome analysis GUI.
+  - Documented three usage modes: hosted web app, Docker image, and source-code installation.
+  - Added recommended Docker pull/run instructions and Docker-specific troubleshooting guidance.
+
+### Notes
+- Detailed release notes: `docs/releases/2026-07-08.md`
+
 ## [2026-06-30]
 
 ### Fixed

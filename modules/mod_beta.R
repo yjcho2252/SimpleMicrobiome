@@ -183,7 +183,7 @@ mod_beta_ui <- function(id) {
                 style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
                 actionButton(
                   ns("redraw_nmds"),
-                  "Redraw Plot",
+                  "Re-run NMDS",
                   style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
                 )
               )
@@ -576,6 +576,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         "Bray-Curtis"
       }
     })
+
+    nmds_dimensions <- 2L
+    nmds_trymax <- 20L
 
     ps_normalized_local <- reactive({
       req(ps_obj(), input$distance_metric, input$beta_tax_level)
@@ -1551,10 +1554,52 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
     )
     
-    nmds_ordination_reactive <- eventReactive(input$redraw_nmds, {
-      req(ps_plot_obj())
-      isolate(phyloseq::ordinate(ps_plot_obj(), method = "NMDS", distance = dist_method()))
-    }, ignoreNULL = FALSE)
+    nmds_ordination_reactive <- reactive({
+      req(ps_plot_obj(), dist_method())
+      input$redraw_nmds
+      phyloseq::ordinate(
+        ps_plot_obj(),
+        method = "NMDS",
+        distance = dist_method(),
+        k = nmds_dimensions,
+        trymax = nmds_trymax
+      )
+    })
+
+    nmds_run_info <- reactive({
+      ord <- nmds_ordination_reactive()
+      points_mat <- ord$points
+      dims <- if (!is.null(points_mat) && !is.null(dim(points_mat)) && length(dim(points_mat)) >= 2) {
+        ncol(points_mat)
+      } else {
+        nmds_dimensions
+      }
+      stress <- suppressWarnings(as.numeric(ord$stress))
+      if (length(stress) != 1 || is.na(stress)) stress <- NA_real_
+      tries <- suppressWarnings(as.integer(ord$tries))
+      if (length(tries) != 1 || is.na(tries)) tries <- NA_integer_
+      converged <- ord$converged
+      convergence_label <- if (is.null(converged)) {
+        "not reported"
+      } else if (is.logical(converged)) {
+        if (isTRUE(converged)) "converged" else "not converged"
+      } else if (is.numeric(converged)) {
+        if (is.finite(converged) && converged > 0) {
+          paste0("best solution repeated ", as.integer(converged), " time(s)")
+        } else {
+          "not reported"
+        }
+      } else {
+        as.character(converged)
+      }
+      list(
+        dimensions = dims,
+        stress = stress,
+        tries = tries,
+        trymax = nmds_trymax,
+        convergence = convergence_label
+      )
+    })
     
     nmds_plot_reactive <- reactive({
       req(ps_plot_obj(), primary_group_var(), ord <- nmds_ordination_reactive(), input$dot_size)
@@ -2018,6 +2063,26 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       } else {
         ""
       }
+      nmds_sentence <- ""
+      if (identical(input$beta_tabs, "NMDS")) {
+        info <- tryCatch(nmds_run_info(), error = function(e) NULL)
+        if (!is.null(info)) {
+          stress_text <- if (is.finite(info$stress)) format(round(info$stress, 3), nsmall = 3) else "not available"
+          tries_text <- if (length(info$tries) > 0 && !is.na(info$tries)) {
+            paste0(info$tries, " start(s)")
+          } else {
+            paste0("up to ", info$trymax, " starts")
+          }
+          nmds_sentence <- paste0(
+            " NMDS run details: dimensions = ", info$dimensions,
+            ", stress = ", stress_text,
+            ", starts = ", tries_text,
+            ", trymax = ", info$trymax,
+            ", convergence = ", info$convergence,
+            "."
+          )
+        }
+      }
       tags$div(
         tags$div(
           style = "font-weight: 600; margin-bottom: 4px;",
@@ -2032,16 +2097,46 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             " level. Points represent samples and are colored by group. ",
             if (isTRUE(input$show_ellipses)) "Group ellipses show 80% confidence regions. " else "",
             if (isTRUE(input$show_group_hulls)) "Group hulls show convex envelopes (chull). " else "",
-            pairing_sentence
+            pairing_sentence,
+            nmds_sentence
           )
         )
       )
+    })
+
+    output$nmds_results_out <- renderUI({
+      if (!identical(input$beta_tabs, "NMDS")) {
+        return(HTML("Open the NMDS tab to calculate and display NMDS run details."))
+      }
+      info <- nmds_run_info()
+      stress_text <- if (is.finite(info$stress)) format(round(info$stress, 3), nsmall = 3) else "not available"
+      tries_text <- if (length(info$tries) > 0 && !is.na(info$tries)) {
+        paste0(info$tries, " start(s)")
+      } else {
+        paste0("up to ", info$trymax, " starts")
+      }
+      HTML(paste0(
+        "<strong>Tool:</strong> phyloseq::ordinate / vegan::metaMDS<br>",
+        "<strong>Taxonomic level:</strong> ", input$beta_tax_level, "<br>",
+        "<strong>Distance metric:</strong> ", distance_label(), "<br>",
+        "<strong>Dimensions:</strong> ", info$dimensions, "<br>",
+        "<strong>Final stress:</strong> ", stress_text, "<br>",
+        "<strong>Starts:</strong> ", tries_text, "<br>",
+        "<strong>Trymax:</strong> ", info$trymax, "<br>",
+        "<strong>Convergence:</strong> ", info$convergence
+      ))
     })
 
     output$beta_results_boxes <- renderUI({
       req(input$plot_width_px)
       box_width <- if (is.null(input$plot_width_px) || !is.finite(input$plot_width_px)) 500 else input$plot_width_px
       tags$div(
+        tags$h5(icon("project-diagram"), "NMDS Run Details"),
+        tags$div(
+          class = "beta-result-card",
+          style = paste0("width: ", box_width, "px; max-width: 100%;"),
+          htmlOutput(session$ns("nmds_results_out"))
+        ),
         tags$h5(icon("flask"), "Statistical Test: PERMANOVA Results"),
         tags$div(
           class = "beta-result-card",

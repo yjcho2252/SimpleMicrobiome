@@ -8,7 +8,7 @@
 [![Shiny](https://img.shields.io/badge/Shiny-App-1F77B4)](https://shiny.posit.co/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-SimpleMicrobiome is an R Shiny application for end-to-end microbiome analysis with a GUI.  
+SimpleMicrobiome is an R Shiny application for downstream microbiome analysis with a GUI.  
 It integrates data loading, preprocessing, taxa profiling, diversity, differential abundance, network analysis, and association analysis in a single workflow.
 Public app: https://simplemicrobiome.mglab.org/
 
@@ -47,10 +47,11 @@ SimpleMicrobiome is developed and maintained by the Microbial Genomics Laborator
 
 ## How to Use
 
-SimpleMicrobiome supports two usage modes:
+SimpleMicrobiome supports three usage modes:
 
 - Use the hosted web app (no local installation required)
-- Run locally (requires dependency installation)
+- Run locally with the Docker image (recommended for local use)
+- Install from source code (mainly for development or code modification)
 
 ### Use on Web
 
@@ -58,7 +59,47 @@ SimpleMicrobiome supports two usage modes:
 - Upload your input files in **Data Loading**
 - Continue analysis through each module
 
-### Run Locally
+### Run Locally with Docker (Recommended)
+
+For local use, the Docker image is recommended because it avoids most R package
+dependency conflicts that can occur when installing the latest CRAN,
+Bioconductor, and GitHub packages directly on a local machine.
+
+Docker image: https://hub.docker.com/r/mglab2252/simplemicrobiome
+
+#### 1) Pull the image
+
+```bash
+docker pull mglab2252/simplemicrobiome:latest
+```
+
+#### 2) Run the app
+
+```bash
+docker run --rm -p 3838:3838 mglab2252/simplemicrobiome:latest
+```
+
+#### 3) Open the app
+
+Open your browser at:
+
+```text
+http://localhost:3838
+```
+
+If port 3838 is already in use, map another local port:
+
+```bash
+docker run --rm -p 3839:3838 mglab2252/simplemicrobiome:latest
+```
+
+Then open:
+
+```text
+http://localhost:3839
+```
+
+### Install from Source Code
 
 #### Prerequisites
 
@@ -126,7 +167,8 @@ The app automatically:
 - Verify sample ID matching between abundance and metadata.
 - Verify taxa ID matching between abundance and taxonomy.
 - If a module output is empty, revisit preprocessing filters and group sizes.
-- For local mode, ensure `source("install.R")` completes without missing-package errors.
+- For Docker mode, check that Docker Desktop or Docker Engine is running and that the selected local port is not already in use.
+- For source-code installation, ensure `source("install.R")` completes without missing-package errors.
 
 ## License
 
