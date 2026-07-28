@@ -641,6 +641,55 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       list(ps = ps_data, dist_mat = dist_mat, metadata = metadata, dist_method = dist_method())
     })
 
+    phyloseq_signature <- function(ps) {
+      otu <- as(phyloseq::otu_table(ps), "matrix")
+      if (!phyloseq::taxa_are_rows(ps)) otu <- t(otu)
+      values <- as.numeric(otu)
+      metadata <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      metadata[] <- lapply(metadata, as.character)
+      tax_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      taxonomy <- if (is.null(tax_obj)) NULL else as.data.frame(tax_obj, stringsAsFactors = FALSE)
+      if (!is.null(taxonomy)) taxonomy[] <- lapply(taxonomy, as.character)
+      list(
+        samples = sort(phyloseq::sample_names(ps)),
+        taxa = sort(phyloseq::taxa_names(ps)),
+        ranks = phyloseq::rank_names(ps),
+        abundance = c(
+          total = sum(values, na.rm = TRUE),
+          squares = sum(values^2, na.rm = TRUE),
+          weighted = sum(values * seq_along(values), na.rm = TRUE)
+        ),
+        metadata = metadata,
+        taxonomy = taxonomy
+      )
+    }
+
+    current_cluster_settings <- reactive({
+      req(data_prepared())
+      mode <- input$cluster_mode
+      list(
+        data = phyloseq_signature(data_prepared()$ps),
+        distance_metric = input$distance_metric,
+        cluster_mode = mode,
+        cluster_k = if (identical(mode, "manual")) as.integer(input$cluster_k) else NULL,
+        cluster_k_min = if (identical(mode, "auto")) as.integer(input$cluster_k_min) else NULL,
+        cluster_k_max = if (identical(mode, "auto")) as.integer(input$cluster_k_max) else NULL
+      )
+    })
+
+    current_envfit_settings <- reactive({
+      req(data_prepared())
+      list(
+        data = phyloseq_signature(data_prepared()$ps),
+        distance_metric = input$distance_metric,
+        envfit_vars = as.character(input$envfit_vars),
+        envfit_taxa_vars = as.character(input$envfit_taxa_vars),
+        envfit_only_sig = isTRUE(input$envfit_only_sig),
+        envfit_p_cutoff = as.numeric(input$envfit_p_cutoff),
+        nmds_redraw = input$redraw_nmds
+      )
+    })
+
     cluster_result_val <- reactiveVal(list(
       result = NULL,
       note = "Clustering has not been run yet."
@@ -755,6 +804,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       })
 
       if (!is.null(run_result)) {
+        run_result$run_settings <- isolate(current_cluster_settings())
         cluster_result_val(list(
           result = run_result,
           note = "Clustering completed successfully."
@@ -766,6 +816,12 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       cluster_obj <- cluster_result_val()
       res <- cluster_obj$result
       req(res)
+      validate(
+        need(
+          identical(res$run_settings, current_cluster_settings()),
+          "Beta-diversity settings changed after clustering. Click 'Run Clustering' again."
+        )
+      )
       data.frame(
         SampleID = as.character(res$sample_ids),
         Cluster = as.factor(res$cluster),
@@ -1069,10 +1125,19 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         )
       }
 
+      envfit_run_settings <- isolate(current_envfit_settings())
+      envfit_run_settings$envfit_vars <- as.character(vars_selected)
+      envfit_run_settings$envfit_taxa_vars <- as.character(taxa_selected)
+
       out <- tryCatch({
         pcoa_vec <- build_envfit_df(pcoa_ord, "Axis.1", "Axis.2")
         nmds_vec <- build_envfit_df(nmds_ord, "NMDS1", "NMDS2")
-        list(pcoa = pcoa_vec, nmds = nmds_vec, note = NULL)
+        list(
+          pcoa = pcoa_vec,
+          nmds = nmds_vec,
+          note = NULL,
+          run_settings = envfit_run_settings
+        )
       }, error = function(e) {
         list(
           pcoa = data.frame(),
@@ -1084,6 +1149,27 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       envfit_result_val(out)
     }, ignoreInit = TRUE)
 
+    cluster_results_stale <- reactive({
+      res <- cluster_result_val()$result
+      !is.null(res) && !identical(res$run_settings, current_cluster_settings())
+    })
+
+    envfit_results_stale <- reactive({
+      res <- envfit_result_val()
+      !is.null(res$run_settings) && !identical(res$run_settings, current_envfit_settings())
+    })
+
+    display_envfit_result <- reactive({
+      res <- envfit_result_val()
+      validate(
+        need(
+          !envfit_results_stale(),
+          "Beta-diversity or EnvFit settings changed after the last run. Click 'Run EnvFit' again."
+        )
+      )
+      res
+    })
+
     output$download_clustering_table <- downloadHandler(
       filename = function() {
         paste0("beta_clustering_assignments_", Sys.Date(), ".tsv")
@@ -1092,6 +1178,12 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         cluster_obj <- cluster_result_val()
         req(cluster_obj$result)
         res <- cluster_obj$result
+        validate(
+          need(
+            !cluster_results_stale(),
+            "Beta-diversity settings changed after clustering. Click 'Run Clustering' again."
+          )
+        )
         assignment_df <- data.frame(
           SampleID = as.character(res$sample_ids),
           Cluster = as.integer(res$cluster),
@@ -1328,7 +1420,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           )
         }
       }
-      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
+      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
           plot_data$SampleID <- as.character(plot_data$SampleID)
@@ -1380,7 +1472,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         }
       }
 
-      if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result)) {
+      if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
           plot_data$SampleID <- as.character(plot_data$SampleID)
@@ -1396,8 +1488,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         }
       }
 
-      if (isTRUE(input$show_envfit_vectors) && isTRUE(input$run_envfit > 0)) {
-        vec_obj <- envfit_result_val()
+      if (isTRUE(input$show_envfit_vectors) && isTRUE(input$run_envfit > 0) && !envfit_results_stale()) {
+        vec_obj <- display_envfit_result()
         vec_df <- if (is.null(vec_obj)) NULL else vec_obj$pcoa
         if (!is.null(vec_df) && nrow(vec_df) > 0) {
           x_rng <- range(plot_data$Axis.1, na.rm = TRUE)
@@ -1556,7 +1648,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     
     nmds_ordination_reactive <- reactive({
       req(ps_plot_obj(), dist_method())
-      input$redraw_nmds
+      redraw_index <- if (is.null(input$redraw_nmds)) 0L else as.integer(input$redraw_nmds)
+      set.seed(42L + redraw_index)
       phyloseq::ordinate(
         ps_plot_obj(),
         method = "NMDS",
@@ -1715,7 +1808,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           )
         }
       }
-      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result)) {
+      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
           plot_data$SampleID <- as.character(plot_data$SampleID)
@@ -1767,7 +1860,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         }
       }
 
-      if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result)) {
+      if (isTRUE(input$show_cluster_labels) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
           plot_data$SampleID <- as.character(plot_data$SampleID)
@@ -1783,8 +1876,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         }
       }
 
-      if (isTRUE(input$show_envfit_vectors) && isTRUE(input$run_envfit > 0)) {
-        vec_obj <- envfit_result_val()
+      if (isTRUE(input$show_envfit_vectors) && isTRUE(input$run_envfit > 0) && !envfit_results_stale()) {
+        vec_obj <- display_envfit_result()
         vec_df <- if (is.null(vec_obj)) NULL else vec_obj$nmds
         if (!is.null(vec_df) && nrow(vec_df) > 0) {
           x_rng <- range(plot_data$NMDS1, na.rm = TRUE)
@@ -1955,6 +2048,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       is_secondary <- !is.null(secondary_col) && !identical(secondary_col, "None")
       x_axis_col <- if (is_secondary) secondary_col else primary_col
       subject_col <- if (isTRUE(input$enable_within_subject_pairing)) resolve_meta_colname(input$subject_id_var, colnames(metadata)) else NULL
+      set.seed(42L)
 
       if (isTRUE(paired_ready()) && !is.null(subject_col) && subject_col %in% colnames(metadata)) {
         permanova_formula <- as.formula(paste("data$dist_mat ~", x_axis_col))
@@ -2164,6 +2258,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (is.null(res)) {
         return(cluster_obj$note)
       }
+      if (cluster_results_stale()) {
+        return("Beta-diversity or clustering settings changed after the last run. Click 'Run Clustering' again. Previous cluster labels are not overlaid.")
+      }
       cluster_counts <- table(res$cluster)
       cluster_lines <- paste0("Cluster ", names(cluster_counts), ": ", as.integer(cluster_counts), " sample(s)")
 
@@ -2192,15 +2289,19 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (!isTRUE(input$run_envfit > 0)) {
         return("EnvFit has not been run yet.\nOpen Advanced Options and click 'Run EnvFit'.")
       }
-      env_obj <- envfit_result_val()
+      if (envfit_results_stale()) {
+        return("Beta-diversity or EnvFit settings changed after the last run. Click 'Run EnvFit' again. Previous vectors are not overlaid.")
+      }
+      env_obj <- display_envfit_result()
       if (is.null(env_obj)) {
         return("EnvFit is running or did not return results yet. Please click 'Run EnvFit' again.")
       }
       pcoa_n <- if (is.null(env_obj$pcoa)) 0 else nrow(env_obj$pcoa)
       nmds_n <- if (is.null(env_obj$nmds)) 0 else nrow(env_obj$nmds)
-      vars_selected <- input$envfit_vars
+      run_settings <- env_obj$run_settings
+      vars_selected <- if (!is.null(run_settings)) run_settings$envfit_vars else input$envfit_vars
       if (is.null(vars_selected)) vars_selected <- character(0)
-      taxa_selected <- input$envfit_taxa_vars
+      taxa_selected <- if (!is.null(run_settings)) run_settings$envfit_taxa_vars else input$envfit_taxa_vars
       if (is.null(taxa_selected)) taxa_selected <- character(0)
       env_note <- env_obj$note
 
@@ -2238,8 +2339,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           paste0("Selected metadata variables: ", if (length(vars_selected) == 0) "None" else paste(vars_selected, collapse = ", ")),
           paste0("Selected taxa variables: ", if (length(taxa_selected) == 0) "None" else paste(taxa_selected, collapse = ", ")),
           if (!is.null(env_note) && nzchar(env_note)) paste0("Note: ", env_note) else NULL,
-          paste0("Only significant vectors: ", ifelse(isTRUE(input$envfit_only_sig), "Yes", "No")),
-          paste0("p-value cutoff: ", input$envfit_p_cutoff),
+          paste0("Only significant vectors: ", ifelse(isTRUE(if (!is.null(run_settings)) run_settings$envfit_only_sig else input$envfit_only_sig), "Yes", "No")),
+          paste0("p-value cutoff: ", if (!is.null(run_settings)) run_settings$envfit_p_cutoff else input$envfit_p_cutoff),
           paste0("PCoA vectors shown: ", pcoa_n),
           paste0("NMDS vectors shown: ", nmds_n),
           "",
@@ -2248,6 +2349,6 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         collapse = "\n"
       )
     })
-    
+
   })
 }

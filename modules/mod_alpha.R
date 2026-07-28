@@ -120,7 +120,7 @@ mod_alpha_ui <- function(id) {
             tabPanel(
               "Data",
               tags$div(
-                style = "margin-top: 8px;",
+                style = "margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center;",
                 downloadButton(
                   ns("download_alpha_data"),
                   "Download Data (TSV)",

@@ -168,6 +168,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("260728: v0.4.5 - Reproducible R 4.5.1 setup, dataset-aware taxonomic ranks, and run-consistent analysis outputs."),
             tags$li("260708: v0.4.4 - Beta diversity NMDS run details and Docker-based local usage documentation."),
             tags$li("260630: v0.4.3 - ANCOM-BC2/SparCC fixes, favicon fix, and manual documentation updates."),
             tags$li("260629: v0.4.2 - R 4.5 installer updates, selectable example datasets, and Random Forest report text fixes."),

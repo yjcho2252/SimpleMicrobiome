@@ -227,6 +227,23 @@ mod_randomforest_ui <- function(id) {
 ## Server
 mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
   moduleServer(id, function(input, output, session) {
+    supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
+
+    observeEvent(ps_obj_filtered_raw(), {
+      ps <- ps_obj_filtered_raw()
+      available_ranks <- tryCatch(phyloseq::rank_names(ps), error = function(e) character(0))
+      rank_choices <- c("ASV", supported_taxonomic_ranks[supported_taxonomic_ranks %in% available_ranks])
+      current_rank <- isolate(input$tax_level)
+      selected_rank <- if (!is.null(current_rank) && current_rank %in% rank_choices) {
+        current_rank
+      } else if ("Genus" %in% rank_choices) {
+        "Genus"
+      } else {
+        "ASV"
+      }
+      updateSelectInput(session, "tax_level", choices = rank_choices, selected = selected_rank)
+    }, ignoreInit = FALSE)
+
     observe({
       width_px <- suppressWarnings(as.integer(input$plot_width))
       if (!is.finite(width_px) || is.na(width_px) || width_px <= 0) width_px <- 1160L
@@ -604,6 +621,53 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     rf_run_nonce <- reactiveVal(0L)
     rf_next_allowed_at <- reactiveVal(as.POSIXct(NA))
 
+    phyloseq_signature <- function(ps) {
+      otu <- as(phyloseq::otu_table(ps), "matrix")
+      if (!phyloseq::taxa_are_rows(ps)) otu <- t(otu)
+      values <- as.numeric(otu)
+      metadata <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      metadata[] <- lapply(metadata, as.character)
+      tax_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      taxonomy <- if (is.null(tax_obj)) NULL else as.data.frame(tax_obj, stringsAsFactors = FALSE)
+      if (!is.null(taxonomy)) taxonomy[] <- lapply(taxonomy, as.character)
+      list(
+        samples = sort(phyloseq::sample_names(ps)),
+        taxa = sort(phyloseq::taxa_names(ps)),
+        ranks = phyloseq::rank_names(ps),
+        abundance = c(
+          total = sum(values, na.rm = TRUE),
+          squares = sum(values^2, na.rm = TRUE),
+          weighted = sum(values * seq_along(values), na.rm = TRUE)
+        ),
+        metadata = metadata,
+        taxonomy = taxonomy
+      )
+    }
+
+    current_analysis_settings <- reactive({
+      req(ps_obj_filtered_raw())
+      list(
+        data = phyloseq_signature(ps_obj_filtered_raw()),
+        group_var = input$group_var,
+        use_subgroup = isTRUE(input$use_subgroup),
+        primary_level = input$primary_level,
+        outcome_var = input$outcome_var,
+        outcome_levels = as.character(input$outcome_levels),
+        outcome_type = input$outcome_type,
+        tax_level = input$tax_level,
+        transform_method = input$transform_method,
+        validation_mode = input$validation_mode,
+        train_ratio = as.numeric(input$train_ratio),
+        cv_folds = as.integer(input$cv_folds),
+        prevalence_filter_pct = as.numeric(input$prevalence_filter_pct),
+        top_n_features = as.integer(input$top_n_features),
+        ntree = as.integer(input$ntree),
+        mtry = as.integer(input$mtry),
+        seed = as.integer(input$seed),
+        shap_target_class = input$shap_target_class
+      )
+    })
+
     observeEvent(rf_run_nonce(), {
       now_ts <- Sys.time()
       next_allowed <- rf_next_allowed_at()
@@ -656,13 +720,13 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           feature_map <- NULL
 
           if (!identical(input$tax_level, "ASV")) {
-            validate(
-              need(!is.null(phyloseq::tax_table(ps)), "Taxonomy table is required for taxonomic aggregation.")
-            )
+            if (is.null(phyloseq::tax_table(ps, errorIfNULL = FALSE))) {
+              stop("Taxonomy table is required for taxonomic aggregation.", call. = FALSE)
+            }
             tax_cols <- colnames(phyloseq::tax_table(ps))
-            validate(
-              need(input$tax_level %in% tax_cols, paste0("Selected taxonomic rank '", input$tax_level, "' is not available."))
-            )
+            if (!input$tax_level %in% tax_cols) {
+              stop(paste0("Selected taxonomic rank '", input$tax_level, "' is not available."), call. = FALSE)
+            }
             ps <- apply_disambiguated_taxrank(ps, input$tax_level)
             ps <- phyloseq::tax_glom(ps, taxrank = input$tax_level, NArm = FALSE)
           }
@@ -1470,7 +1534,8 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             shap_class_summary = shap_class_summary,
             shap_local_default = shap_local_default,
             shap_target_class = shap_target_class_used,
-            shap_baseline = shap_baseline
+            shap_baseline = shap_baseline,
+            run_settings = isolate(current_analysis_settings())
           ))
 
           status_text("Model completed.")
@@ -1482,7 +1547,21 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       }, error = function(e) {
         log_rf(paste("error:", conditionMessage(e)))
         status_text(paste("Error:", conditionMessage(e)))
+        showNotification(conditionMessage(e), type = "error", duration = 6)
       })
+    })
+
+    display_model_result <- reactive({
+      req(!is.null(input$run_rf) && input$run_rf > 0)
+      result <- model_result()
+      req(result)
+      validate(
+        need(
+          identical(result$run_settings, current_analysis_settings()),
+          "Analysis settings changed after the last run. Click 'Run Random Forest' to update all result tabs."
+        )
+      )
+      result
     })
 
     output$rf_sample_status <- renderText({
@@ -1533,12 +1612,15 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     })
 
     output$rf_result_text <- renderText({
-      res <- model_result()
       if (isTRUE(rf_running())) {
         return("Model status: Running Random Forest...")
       }
+      if (is.null(input$run_rf) || input$run_rf < 1) {
+        return("Model status: Waiting for model run.")
+      }
+      res <- display_model_result()
 
-      current_status <- isolate(status_text())
+      current_status <- status_text()
       lines <- character(0)
       if (!is.null(current_status) && nzchar(current_status)) {
         lines <- c(lines, paste0("Model status: ", current_status))
@@ -1573,7 +1655,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     })
 
     output$importance_table <- renderDT({
-      res <- model_result()
+      res <- display_model_result()
       req(res)
       datatable(
         res$importance,
@@ -1594,7 +1676,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         paste0("random_forest_table_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".tsv")
       },
       content = function(file) {
-        res <- model_result()
+        res <- display_model_result()
         req(res)
         utils::write.table(
           res$importance,
@@ -1725,7 +1807,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     }
 
     output$shap_summary_table <- renderDT({
-      res <- model_result()
+      res <- display_model_result()
       req(res)
       ss <- derive_shap_summary(res)
       validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
@@ -1909,7 +1991,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           graphics::text(0.5, 0.5, "Random Forest is running. Please wait...", cex = 0.85)
           return(invisible(NULL))
         }
-        res <- model_result()
+        res <- display_model_result()
         if (is.null(res)) {
           graphics::plot.new()
           graphics::text(0.5, 0.5, "Random Forest results are not ready yet. Please wait...", cex = 0.85)
@@ -1948,7 +2030,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         paste0("random_forest_shap_summary_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".tsv")
       },
       content = function(file) {
-        res <- model_result()
+        res <- display_model_result()
         req(res)
         ss <- derive_shap_summary(res)
         validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
@@ -1962,7 +2044,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         paste0("random_forest_shap_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
       },
       content = function(file) {
-        res <- model_result()
+        res <- display_model_result()
         req(res)
         ss <- derive_shap_summary(res)
         validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP plot is not available."))
@@ -2122,7 +2204,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           graphics::text(0.5, 0.5, "Random Forest is running. Please wait...", cex = 0.85)
           return(invisible(NULL))
         }
-        res <- model_result()
+        res <- display_model_result()
         if (is.null(res)) {
           graphics::plot.new()
           graphics::text(0.5, 0.5, "Random Forest results are not ready yet. Please wait...", cex = 0.85)
@@ -2158,7 +2240,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         paste0("random_forest_barplot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
       },
       content = function(file) {
-        res <- model_result()
+        res <- display_model_result()
         req(res)
         w <- as.integer(input$plot_width)
         h <- as.integer(input$plot_height)
@@ -2191,7 +2273,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     )
 
     output$roc_auc_text <- renderText({
-      res <- model_result()
+      res <- display_model_result()
       req(res)
       if (is.null(res$roc) || length(res$roc$auc_by_class) == 0) {
         return("ROC/AUC is available only for classification results with valid test-set probabilities.")
@@ -2273,7 +2355,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           graphics::text(0.5, 0.5, "Random Forest is running. Please wait...", cex = 0.85)
           return(invisible(NULL))
         }
-        res <- model_result()
+        res <- display_model_result()
         if (is.null(res)) {
           graphics::plot.new()
           graphics::text(0.5, 0.5, "Random Forest results are not ready yet. Please wait...", cex = 0.85)
@@ -2302,7 +2384,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         paste0("random_forest_roc_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
       },
       content = function(file) {
-        res <- model_result()
+        res <- display_model_result()
         req(res)
         grDevices::png(filename = file, width = 3600, height = 1800, res = 300)
         if (is.null(res$roc) || length(res$roc$curves) == 0) {
@@ -2354,6 +2436,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     })
 
     output$rf_figure_legend <- renderUI({
+      req(display_model_result())
       req(input$outcome_var, input$tax_level, input$transform_method)
       active_tab <- if (is.null(input$rf_active_tab) || !nzchar(input$rf_active_tab)) "RF Bar plot" else input$rf_active_tab
       model_mode <- if (identical(input$outcome_type, "Auto")) "Auto-detected" else input$outcome_type
@@ -2434,5 +2517,6 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         height = paste0(h, "px")
       )
     })
+
   })
 }

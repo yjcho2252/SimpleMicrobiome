@@ -1669,5 +1669,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         )
       )
     })
+
   })
 }

@@ -213,6 +213,23 @@ mod_maaslin2_ui <- function(id) {
 ## Server
 mod_maaslin2_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
+    supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
+
+    observeEvent(ps_obj(), {
+      ps <- ps_obj()
+      available_ranks <- tryCatch(phyloseq::rank_names(ps), error = function(e) character(0))
+      rank_choices <- c("ASV", supported_taxonomic_ranks[supported_taxonomic_ranks %in% available_ranks])
+      current_rank <- isolate(input$tax_level)
+      selected_rank <- if (!is.null(current_rank) && current_rank %in% rank_choices) {
+        current_rank
+      } else if ("Genus" %in% rank_choices) {
+        "Genus"
+      } else {
+        "ASV"
+      }
+      updateSelectInput(session, "tax_level", choices = rank_choices, selected = selected_rank)
+    }, ignoreInit = FALSE)
+
     draw_wait_message <- function(message_text) {
       old_par <- graphics::par(no.readonly = TRUE)
       on.exit(graphics::par(old_par), add = TRUE)
@@ -720,6 +737,54 @@ mod_maaslin2_server <- function(id, ps_obj) {
     maaslin2_running <- reactiveVal(FALSE)
     maaslin2_run_nonce <- reactiveVal(0L)
     maaslin2_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+    last_run_settings <- reactiveVal(NULL)
+
+    phyloseq_signature <- function(ps) {
+      otu <- as(phyloseq::otu_table(ps), "matrix")
+      if (!phyloseq::taxa_are_rows(ps)) otu <- t(otu)
+      values <- as.numeric(otu)
+      metadata <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      metadata[] <- lapply(metadata, as.character)
+      tax_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      taxonomy <- if (is.null(tax_obj)) NULL else as.data.frame(tax_obj, stringsAsFactors = FALSE)
+      if (!is.null(taxonomy)) taxonomy[] <- lapply(taxonomy, as.character)
+      list(
+        samples = sort(phyloseq::sample_names(ps)),
+        taxa = sort(phyloseq::taxa_names(ps)),
+        ranks = phyloseq::rank_names(ps),
+        abundance = c(
+          total = sum(values, na.rm = TRUE),
+          squares = sum(values^2, na.rm = TRUE),
+          weighted = sum(values * seq_along(values), na.rm = TRUE)
+        ),
+        metadata = metadata,
+        taxonomy = taxonomy
+      )
+    }
+
+    current_analysis_settings <- reactive({
+      req(ps_obj())
+      list(
+        data = phyloseq_signature(ps_obj()),
+        group_var = input$group_var,
+        use_subgroup = isTRUE(input$use_subgroup),
+        primary_level = input$primary_level,
+        secondary_var = input$secondary_var,
+        group_levels = as.character(input$group_levels),
+        reference_level = input$reference_level,
+        tax_level = input$tax_level,
+        prevalence_filter_pct = as.numeric(input$prevalence_filter_pct),
+        fix_covariates = as.character(input$fix_covariates),
+        fix_interactions = as.character(input$fix_interactions),
+        random_effects = as.character(input$random_effects),
+        analysis_method = input$analysis_method
+      )
+    })
+
+    results_stale <- reactive({
+      previous <- last_run_settings()
+      !is.null(previous) && !identical(previous, current_analysis_settings())
+    })
 
     observeEvent(input$run_maaslin2_btn, {
       now_ts <- Sys.time()
@@ -1087,6 +1152,17 @@ mod_maaslin2_server <- function(id, ps_obj) {
         need(!is.null(result), "MaAsLin2 analysis failed. Check the error message above.")
       )
 
+      last_run_settings(isolate(current_analysis_settings()))
+      result
+    })
+
+    display_maaslin2_res <- reactive({
+      req(!is.null(input$run_maaslin2_btn) && input$run_maaslin2_btn > 0)
+      result <- maaslin2_res()
+      validate(
+        need(!is.null(last_run_settings()), "Click 'Run MaAsLin2' to generate results."),
+        need(!results_stale(), "Analysis settings changed after the last run. Click 'Run MaAsLin2' to update all result tabs.")
+      )
       result
     })
 
@@ -1137,8 +1213,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
     }
 
     maaslin2_table_data <- reactive({
-      req(maaslin2_res())
-      res <- maaslin2_res()
+      req(display_maaslin2_res())
+      res <- display_maaslin2_res()
 
       if ("coef" %in% colnames(res)) {
         coef_num_raw <- suppressWarnings(as.numeric(res$coef))
@@ -1162,8 +1238,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
     })
 
     maaslin2_processed <- reactive({
-      req(maaslin2_res())
-      res <- maaslin2_res()
+      req(display_maaslin2_res())
+      res <- display_maaslin2_res()
       selected_levels <- group_selection_info()$selected_levels
       ref_level <- input$reference_level
 
@@ -1657,6 +1733,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
     })
 
     output$maaslin2_figure_legend <- renderUI({
+      req(display_maaslin2_res())
       req(input$tax_level, input$reference_level)
       active_tab <- if (is.null(input$maaslin2_active_tab) || !nzchar(input$maaslin2_active_tab)) "Volcano plot" else input$maaslin2_active_tab
       y_metric_label <- if (identical(input$volcano_y_axis, "q_val")) {
@@ -1714,5 +1791,6 @@ mod_maaslin2_server <- function(id, ps_obj) {
         tags$div(legend_body)
       )
     })
+
   })
 }

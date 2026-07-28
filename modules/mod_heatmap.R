@@ -214,6 +214,23 @@ mod_heatmap_ui <- function(id) {
 ## Server
 mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
+    supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
+
+    observeEvent(ps_obj(), {
+      ps <- ps_obj()
+      available_ranks <- tryCatch(phyloseq::rank_names(ps), error = function(e) character(0))
+      rank_choices <- c("ASV", supported_taxonomic_ranks[supported_taxonomic_ranks %in% available_ranks])
+      current_rank <- isolate(input$tax_level)
+      selected_rank <- if (!is.null(current_rank) && current_rank %in% rank_choices) {
+        current_rank
+      } else if ("Genus" %in% rank_choices) {
+        "Genus"
+      } else {
+        "ASV"
+      }
+      updateSelectInput(session, "tax_level", choices = rank_choices, selected = selected_rank)
+    }, ignoreInit = FALSE)
+
     analysis_target <- reactive("taxa_group")
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
@@ -447,6 +464,52 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     heatmap_running <- reactiveVal(FALSE)
     heatmap_run_nonce <- reactiveVal(0L)
     heatmap_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+
+    phyloseq_signature <- function(ps) {
+      otu <- as(phyloseq::otu_table(ps), "matrix")
+      if (!phyloseq::taxa_are_rows(ps)) otu <- t(otu)
+      values <- as.numeric(otu)
+      metadata <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      metadata[] <- lapply(metadata, as.character)
+      tax_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      taxonomy <- if (is.null(tax_obj)) NULL else as.data.frame(tax_obj, stringsAsFactors = FALSE)
+      if (!is.null(taxonomy)) taxonomy[] <- lapply(taxonomy, as.character)
+      list(
+        samples = sort(phyloseq::sample_names(ps)),
+        taxa = sort(phyloseq::taxa_names(ps)),
+        ranks = phyloseq::rank_names(ps),
+        abundance = c(
+          total = sum(values, na.rm = TRUE),
+          squares = sum(values^2, na.rm = TRUE),
+          weighted = sum(values * seq_along(values), na.rm = TRUE)
+        ),
+        metadata = metadata,
+        taxonomy = taxonomy
+      )
+    }
+
+    current_analysis_settings <- reactive({
+      req(ps_obj())
+      list(
+        data = phyloseq_signature(ps_obj()),
+        group_var = input$group_var,
+        use_subgroup = isTRUE(input$use_subgroup),
+        primary_level = input$primary_level,
+        secondary_var = input$secondary_var,
+        group_type = input$group_type,
+        tax_level = input$tax_level,
+        transform_method = input$transform_method,
+        association_mode = input$association_mode,
+        corr_method = input$corr_method,
+        value_scale = input$value_scale,
+        prevalence_filter_pct = as.numeric(input$prevalence_filter_pct),
+        max_taxa = as.integer(input$max_taxa),
+        apply_sig_filter = isTRUE(input$apply_sig_filter),
+        q_cutoff = as.numeric(input$q_cutoff),
+        show_row_dendrogram = isTRUE(input$show_row_dendrogram),
+        show_col_dendrogram = isTRUE(input$show_col_dendrogram)
+      )
+    })
 
     observeEvent(input$run_heatmap, {
       now_ts <- Sys.time()
@@ -881,9 +944,22 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         row_hclust = row_hclust,
         col_hclust = col_hclust,
         n_tests = sum(is.finite(heat_df$QValue)),
-        n_sig = sum(is.finite(heat_df$QValue) & heat_df$QValue <= q_cutoff, na.rm = TRUE)
+        n_sig = sum(is.finite(heat_df$QValue) & heat_df$QValue <= q_cutoff, na.rm = TRUE),
+        run_settings = isolate(current_analysis_settings())
       )
     }, ignoreNULL = TRUE)
+
+    display_corr_payload <- reactive({
+      req(!is.null(input$run_heatmap) && input$run_heatmap > 0)
+      payload <- corr_payload()
+      validate(
+        need(
+          identical(payload$run_settings, current_analysis_settings()),
+          "Analysis settings changed after the last run. Click 'Run Heatmap' to update all result tabs."
+        )
+      )
+      payload
+    })
 
     observeEvent(corr_payload(), {
       taxa_choices <- rownames(corr_payload()$assoc_mat)
@@ -905,9 +981,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     heatmap_plot_obj <- reactive({
-      req(corr_payload())
-      heat_df <- corr_payload()$heat_df
-      assoc_mat <- corr_payload()$assoc_mat
+      req(display_corr_payload())
+      heat_df <- display_corr_payload()$heat_df
+      assoc_mat <- display_corr_payload()$assoc_mat
       if (length(input$selected_taxa) > 0) {
         taxa_keep <- intersect(input$selected_taxa, rownames(assoc_mat))
         validate(need(length(taxa_keep) > 0, "None of the selected taxa are available in the current matrix."))
@@ -1026,7 +1102,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     plot_dims_px <- reactive({
-      payload <- tryCatch(corr_payload(), error = function(e) NULL)
+      payload <- tryCatch(display_corr_payload(), error = function(e) NULL)
       if (is.null(payload)) {
         return(list(width_px = 900L, height_px = 500L))
       }
@@ -1079,8 +1155,8 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     )
 
     output$heatmap_status <- renderText({
-      req(corr_payload())
-      payload <- corr_payload()
+      req(display_corr_payload())
+      payload <- display_corr_payload()
       primary_group_label <- if (is.null(input$group_var) || !nzchar(input$group_var)) "(Not selected)" else input$group_var
       primary_level_label <- if (is.null(input$primary_level) || !nzchar(input$primary_level)) "(All / Not selected)" else as.character(input$primary_level)
       current_secondary_var <- secondary_var_resolved()
@@ -1228,8 +1304,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     output$heatmap_figure_legend <- renderUI({
+      req(display_corr_payload())
       req(input$tax_level, input$transform_method, input$association_mode, input$corr_method, input$value_scale)
-      payload <- tryCatch(corr_payload(), error = function(e) NULL)
+      payload <- tryCatch(display_corr_payload(), error = function(e) NULL)
       assoc_type_label <- if (!is.null(payload) && "assoc_type" %in% names(payload)) payload$assoc_type else "N/A"
       sig_note_label <- if (!is.null(payload) && "sig_note" %in% names(payload)) payload$sig_note else "N/A"
       current_secondary_var <- secondary_var_resolved()
@@ -1311,7 +1388,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         )
       },
       content = function(file) {
-        req(corr_payload())
+        req(display_corr_payload())
         dims <- plot_dims_px()
         dpi_val <- 300
         grDevices::png(
@@ -1338,11 +1415,12 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     output$download_corr_tsv <- downloadHandler(
       filename = function() paste0("association_matrix_", analysis_target(), "_", Sys.Date(), ".tsv"),
       content = function(file) {
-        req(corr_payload())
-        mat_df <- as.data.frame(corr_payload()$assoc_mat, stringsAsFactors = FALSE)
+        req(display_corr_payload())
+        mat_df <- as.data.frame(display_corr_payload()$assoc_mat, stringsAsFactors = FALSE)
         mat_df <- cbind(Taxon = rownames(mat_df), mat_df, stringsAsFactors = FALSE)
         utils::write.table(mat_df, file = file, sep = "\t", quote = FALSE, row.names = FALSE)
       }
     )
+
   })
 }

@@ -1,232 +1,251 @@
 #!/usr/bin/env Rscript
 
-# Install dependencies for local execution of SimpleMicrobiome.
-# Keep this list aligned with app.R and modules/*.R.
-# Usage (from project root):
+# Restore the R package environment used by SimpleMicrobiome.
+#
+# The package versions and remote GitHub commits are defined in renv.lock.
+# Run this script from the project root with either:
+#   Rscript install.R
 #   source("install.R")
+#
+# Docker sets SIMPLEMICROBIOME_R_LIBRARY explicitly. For an interactive local
+# installation, the first writable default R library is used.
 
-cran_repo <- "https://cloud.r-project.org"
-options(repos = c(CRAN = cran_repo))
-runtime_dependencies <- c("Depends", "Imports", "LinkingTo")
+options(timeout = max(1200, getOption("timeout", 60)))
 
-cran_packages <- c(
-  "bslib",
-  "cluster",
-  "CVXR",
-  "dplyr",
-  "DT",
-  "circlize",
-  "ggpattern",
-  "ggplot2",
-  "ggpubr",
-  "ggraph",
-  "ggrepel",
-  "httr2",
-  "igraph",
-  "randomForest",
-  "RColorBrewer",
-  "readr",
-  "scales",
-  "shapr",
-  "shiny",
-  "shinyWidgets",
-  "tibble",
-  "tidyr",
-  "tidyselect",
-  "tidyverse",
-  "vegan"
+find_lockfile <- function() {
+  script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+  script_dir <- if (length(script_arg)) {
+    dirname(normalizePath(sub("^--file=", "", script_arg[[1]]), mustWork = FALSE))
+  } else {
+    character(0)
+  }
+
+  candidates <- unique(c(
+    file.path(getwd(), "renv.lock"),
+    if (length(script_dir)) file.path(script_dir, "renv.lock") else character(0)
+  ))
+  existing <- candidates[file.exists(candidates)]
+
+  if (!length(existing)) {
+    stop(
+      "renv.lock was not found. Keep install.R and renv.lock together, ",
+      "or run install.R from the project root.",
+      call. = FALSE
+    )
+  }
+
+  normalizePath(existing[[1]], mustWork = TRUE)
+}
+
+select_install_library <- function() {
+  requested <- Sys.getenv("SIMPLEMICROBIOME_R_LIBRARY", unset = "")
+
+  if (nzchar(requested)) {
+    requested <- path.expand(requested)
+    dir.create(requested, recursive = TRUE, showWarnings = FALSE)
+    if (file.access(requested, 2) != 0) {
+      stop("R library is not writable: ", requested, call. = FALSE)
+    }
+    .libPaths(unique(c(requested, .libPaths())))
+    return(normalizePath(requested, mustWork = TRUE))
+  }
+
+  libraries <- .libPaths()
+  writable <- libraries[dir.exists(libraries) & file.access(libraries, 2) == 0]
+
+  if (!length(writable)) {
+    user_library <- path.expand(Sys.getenv("R_LIBS_USER", unset = ""))
+    if (!nzchar(user_library)) {
+      stop(
+        "No writable R library was found. Set R_LIBS_USER or ",
+        "SIMPLEMICROBIOME_R_LIBRARY to a writable directory.",
+        call. = FALSE
+      )
+    }
+    dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
+    if (file.access(user_library, 2) != 0) {
+      stop("R user library is not writable: ", user_library, call. = FALSE)
+    }
+    .libPaths(unique(c(user_library, .libPaths())))
+    writable <- user_library
+  }
+
+  normalizePath(writable[[1]], mustWork = TRUE)
+}
+
+lockfile <- find_lockfile()
+project_dir <- dirname(lockfile)
+install_library <- select_install_library()
+
+message("Using lockfile: ", lockfile)
+message("Installing into R library: ", install_library)
+
+# Bootstrap renv only when it is unavailable. renv then restores its recorded
+# version, along with all other packages, from renv.lock.
+if (!requireNamespace("renv", quietly = TRUE)) {
+  install.packages(
+    "renv",
+    lib = install_library,
+    repos = c(CRAN = "https://cloud.r-project.org"),
+    dependencies = c("Depends", "Imports", "LinkingTo")
+  )
+}
+
+if (!requireNamespace("renv", quietly = TRUE)) {
+  stop("Failed to install the renv package.", call. = FALSE)
+}
+
+lock <- renv::lockfile_read(lockfile)
+locked_r_version <- lock$R$Version
+current_r_version <- as.character(getRversion())
+restore_repositories <- c(CRAN = "https://cloud.r-project.org")
+
+# rocker images may define a dated Posit Package Manager snapshot in
+# getOption("repos"). The lockfile was captured against CRAN, and some locked
+# versions postdate that snapshot, so force the recorded CRAN repository for
+# every restore operation.
+options(repos = restore_repositories)
+
+if (!identical(current_r_version, locked_r_version)) {
+  stop(
+    "This lockfile requires R ", locked_r_version,
+    ", but the current R version is ", current_r_version, ".",
+    call. = FALSE
+  )
+}
+
+# ggtext is load-tested immediately after installation by renv. Restore its
+# compiled gridtext dependency first so parallel restore ordering cannot leave
+# ggtext temporarily unloadable.
+renv::restore(
+  project = project_dir,
+  lockfile = lockfile,
+  library = install_library,
+  packages = "gridtext",
+  repos = restore_repositories,
+  clean = FALSE,
+  prompt = FALSE
 )
 
-bioc_packages <- c(
-  "ComplexHeatmap",
-  "Maaslin2",
-  "microbiome",
-  "nloptr",
-  "phyloseq"
+renv::restore(
+  project = project_dir,
+  lockfile = lockfile,
+  library = install_library,
+  repos = restore_repositories,
+  exclude = c("SPRING", "NetCoMi"),
+  clean = FALSE,
+  prompt = FALSE
 )
 
-github_packages <- c(
-  "zdk123/SpiecEasi",
-  "GraceYoon/SPRING@3d641a4b939b1b3cc042c064a05000aa48266af0",
-  "stefpeschel/NetCoMi"
-)
+# NetCoMi 1.2.0 declares SPRING as an unpinned GitHub remote. Resolving that
+# declaration currently selects SPRING HEAD, which requires R >= 4.6. Install
+# both packages directly from the immutable commit archives recorded in
+# renv.lock. Using install.packages() on the downloaded archive is intentional:
+# renv::install() re-resolves the GitHub package's dependencies and can replace
+# already-restored lockfile versions (for example, Rcpp) in the same batch.
+pinned_github_record <- function(package) {
+  record <- lock$Packages[[package]]
+  required_fields <- c("RemoteUsername", "RemoteRepo", "RemoteSha")
+  missing_fields <- required_fields[
+    !vapply(required_fields, function(field) {
+      value <- record[[field]]
+      !is.null(value) && length(value) == 1 && !is.na(value) && nzchar(value)
+    }, logical(1))
+  ]
 
-package_version_or_na <- function(pkg) {
+  if (length(missing_fields)) {
+    stop(
+      "The lockfile does not contain a complete pinned GitHub record for ",
+      package, ": ", paste(missing_fields, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  record
+}
+
+for (package in c("SPRING", "NetCoMi")) {
+  record <- pinned_github_record(package)
+  specification <- paste0(
+    record$RemoteUsername, "/", record$RemoteRepo, "@", record$RemoteSha
+  )
+  archive_url <- paste0(
+    "https://api.github.com/repos/",
+    record$RemoteUsername, "/", record$RemoteRepo,
+    "/tarball/", record$RemoteSha
+  )
+  archive <- tempfile(
+    pattern = paste0(package, "-", substr(record$RemoteSha, 1, 8), "-"),
+    fileext = ".tar.gz"
+  )
+
+  message("Installing pinned GitHub package: ", specification)
+  utils::download.file(
+    url = archive_url,
+    destfile = archive,
+    method = "libcurl",
+    mode = "wb",
+    quiet = FALSE
+  )
+  utils::install.packages(
+    pkgs = archive,
+    lib = install_library,
+    repos = NULL,
+    type = "source",
+    dependencies = FALSE,
+    INSTALL_opts = "--no-multiarch"
+  )
+  unlink(archive)
+
+  installed_version <- tryCatch(
+    as.character(utils::packageVersion(package, lib.loc = install_library)),
+    error = function(error) NA_character_
+  )
+  expected_version <- lock$Packages[[package]]$Version
+  if (!identical(installed_version, expected_version)) {
+    stop(
+      package, " version verification failed: expected ", expected_version,
+      ", installed ", installed_version,
+      call. = FALSE
+    )
+  }
   tryCatch(
-    as.character(utils::packageVersion(pkg)),
-    error = function(e) NA_character_
+    loadNamespace(package),
+    error = function(error) {
+      stop(
+        "Failed to load pinned ", package, ": ", conditionMessage(error),
+        call. = FALSE
+      )
+    }
   )
 }
 
-is_installed <- function(pkg) {
-  !is.na(package_version_or_na(pkg))
-}
+required_packages <- c(
+  "ANCOMBC",
+  "CVXR",
+  "ggpattern",
+  "ggtext",
+  "gridtext",
+  "NetCoMi",
+  "phyloseq",
+  "shiny",
+  "SPRING",
+  "SpiecEasi"
+)
 
-install_missing_cran <- function(pkgs) {
-  missing <- pkgs[!vapply(pkgs, is_installed, logical(1))]
-  if (length(missing) == 0) {
-    message("CRAN packages: all installed.")
-    return(invisible(character(0)))
-  }
-
-  message("CRAN packages to install: ", paste(missing, collapse = ", "))
-  install.packages(missing, dependencies = runtime_dependencies, repos = cran_repo)
-  missing[!vapply(missing, is_installed, logical(1))]
-}
-
-ensure_bioc_manager <- function() {
-  if (!is_installed("BiocManager")) {
-    message("Installing BiocManager...")
-    install.packages("BiocManager", repos = cran_repo)
-  }
-}
-
-ensure_remotes <- function() {
-  if (!is_installed("remotes")) {
-    message("Installing remotes...")
-    install.packages("remotes", repos = cran_repo)
-  }
-}
-
-install_pinned_rcpparmadillo <- function() {
-  # Match the tested Docker environment used by the public app.
-  install_version <- "15.0.2-2"
-  check_version <- "15.0.2.2"
-
-  current_version <- package_version_or_na("RcppArmadillo")
-
-  if (identical(current_version, check_version)) {
-    message("RcppArmadillo already pinned at version ", check_version, ".")
-    return(invisible(character(0)))
-  }
-
-  ensure_remotes()
-  if (is_installed("RcppArmadillo")) {
-    message("Removing existing RcppArmadillo version: ", current_version)
-    remove.packages("RcppArmadillo")
-  }
-
-  message("Installing pinned RcppArmadillo version: ", install_version)
-  remotes::install_version(
-    "RcppArmadillo",
-    version = install_version,
-    upgrade = "never",
-    dependencies = c("Depends", "Imports", "LinkingTo"),
-    repos = cran_repo
+for (package in required_packages) {
+  message("Verifying R package: ", package)
+  tryCatch(
+    loadNamespace(package),
+    error = function(error) {
+      stop(
+        "Failed to load ", package, ": ", conditionMessage(error),
+        call. = FALSE
+      )
+    }
   )
-
-  if (is_installed("RcppArmadillo") &&
-      identical(package_version_or_na("RcppArmadillo"), check_version)) {
-    character(0)
-  } else {
-    "RcppArmadillo"
-  }
 }
 
-install_pinned_rbiom <- function() {
-  # NetCoMi 1.2.0 expects the older rbiom API that exports unifrac().
-  install_version <- "2.2.1"
-  check_version <- "2.2.1"
-  current_version <- package_version_or_na("rbiom")
-
-  if (identical(current_version, check_version)) {
-    message("rbiom already pinned at version ", check_version, ".")
-    return(invisible(character(0)))
-  }
-
-  ensure_remotes()
-  if (is_installed("rbiom")) {
-    message("Removing existing rbiom version: ", current_version)
-    remove.packages("rbiom")
-  }
-
-  message("Installing pinned rbiom version: ", install_version)
-  remotes::install_version(
-    "rbiom",
-    version = install_version,
-    upgrade = "never",
-    dependencies = runtime_dependencies,
-    repos = cran_repo
-  )
-
-  if (is_installed("rbiom") &&
-      identical(package_version_or_na("rbiom"), check_version)) {
-    character(0)
-  } else {
-    "rbiom"
-  }
-}
-
-install_missing_bioc <- function(pkgs) {
-  missing <- pkgs[!vapply(pkgs, is_installed, logical(1))]
-  if (length(missing) == 0) {
-    message("Bioconductor packages: all installed.")
-    return(invisible(character(0)))
-  }
-
-  ensure_bioc_manager()
-  message("Bioconductor packages to install: ", paste(missing, collapse = ", "))
-  BiocManager::install(missing, ask = FALSE, update = FALSE, dependencies = runtime_dependencies)
-  missing[!vapply(missing, is_installed, logical(1))]
-}
-
-install_ancombc <- function() {
-  ensure_bioc_manager()
-
-  if (!is_installed("CVXR")) {
-    return("CVXR")
-  }
-
-  message("Installing ANCOMBC with the available CVXR version...")
-  BiocManager::install("ANCOMBC", ask = FALSE, update = FALSE, force = TRUE)
-
-  if (is_installed("ANCOMBC")) character(0) else "ANCOMBC"
-}
-
-install_github_if_missing <- function(spec) {
-  repo_part <- sub("@.*$", "", spec)
-  pkg_name <- sub(".*/", "", repo_part)
-  if (is_installed(pkg_name)) {
-    message("GitHub package already installed: ", pkg_name)
-    return(invisible(character(0)))
-  }
-
-  ensure_bioc_manager()
-  ensure_remotes()
-  message("Installing GitHub package: ", spec)
-
-  remotes::install_github(
-    spec,
-    upgrade = "never",
-    dependencies = runtime_dependencies,
-    repos = c(c(CRAN = cran_repo), BiocManager::repositories())
-  )
-
-  if (is_installed(pkg_name)) character(0) else pkg_name
-}
-
-failed <- character(0)
-failed <- c(failed, install_pinned_rcpparmadillo())
-failed <- c(failed, install_missing_cran(cran_packages))
-failed <- c(failed, install_ancombc())
-failed <- c(failed, install_missing_bioc(bioc_packages))
-failed <- c(failed, install_pinned_rbiom())
-if (!is_installed("bluster")) {
-  ensure_bioc_manager()
-  BiocManager::install("bluster", ask = FALSE, update = FALSE, type = "source")
-}
-if (!is_installed("bluster")) failed <- c(failed, "bluster")
-failed <- c(failed, unlist(lapply(github_packages, install_github_if_missing), use.names = FALSE))
-failed <- unique(failed)
-
-if (length(failed) > 0) {
-  message("")
-  message("Some packages are still missing:")
-  message("  - ", paste(failed, collapse = "\n  - "))
-  message("")
-  message("Please check system prerequisites (compilers, external libraries) and retry.")
-} else {
-  message("")
-  message("All required packages are installed.")
-  message("Next step: shiny::runApp(\"app.R\")")
-}
+message("")
+message("All packages recorded in renv.lock were restored successfully.")
+message("Next step: shiny::runApp(\"app.R\")")

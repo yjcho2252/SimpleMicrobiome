@@ -130,6 +130,25 @@ mod_barplot_ui <- function(id) {
 ## Server
 mod_barplot_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
+    supported_taxonomic_ranks <- c("Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")
+
+    observeEvent(ps_obj(), {
+      ps <- ps_obj()
+      available_ranks <- tryCatch(phyloseq::rank_names(ps), error = function(e) character(0))
+      rank_choices <- supported_taxonomic_ranks[supported_taxonomic_ranks %in% available_ranks]
+      current_rank <- isolate(input$tax_level)
+      selected_rank <- if (!is.null(current_rank) && current_rank %in% rank_choices) {
+        current_rank
+      } else if ("Genus" %in% rank_choices) {
+        "Genus"
+      } else if (length(rank_choices) > 0) {
+        tail(rank_choices, 1)
+      } else {
+        NULL
+      }
+      updateSelectInput(session, "tax_level", choices = rank_choices, selected = selected_rank)
+    }, ignoreInit = FALSE)
+
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
         return(requested)
@@ -407,6 +426,12 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         total <- sum(x, na.rm = TRUE)
         if (!is.finite(total) || total <= 0) x else x / total
       })
+      validate(
+        need(
+          current_rank %in% phyloseq::rank_names(ps_rel),
+          paste0("Taxonomic rank '", current_rank, "' is not available in the loaded dataset.")
+        )
+      )
       ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
       ps_glom <- phyloseq::tax_glom(ps_rel, taxrank = current_rank)
 
@@ -571,6 +596,12 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         total <- sum(x, na.rm = TRUE)
         if (!is.finite(total) || total <= 0) x else x / total
       })
+      validate(
+        need(
+          current_rank %in% phyloseq::rank_names(ps_rel),
+          paste0("Taxonomic rank '", current_rank, "' is not available in the loaded dataset.")
+        )
+      )
       ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
       ps_glom <- phyloseq::tax_glom(ps_rel, taxrank = current_rank)
       
@@ -1095,6 +1126,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         )
       )
     })
+
   })
 }
 

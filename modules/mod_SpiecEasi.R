@@ -220,6 +220,23 @@ mod_spieceasi_ui <- function(id) {
 ## Server
 mod_spieceasi_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
+    supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
+
+    observeEvent(ps_obj(), {
+      ps <- ps_obj()
+      available_ranks <- tryCatch(phyloseq::rank_names(ps), error = function(e) character(0))
+      rank_choices <- c("ASV", supported_taxonomic_ranks[supported_taxonomic_ranks %in% available_ranks])
+      current_rank <- isolate(input$tax_level)
+      selected_rank <- if (!is.null(current_rank) && current_rank %in% rank_choices) {
+        current_rank
+      } else if ("Genus" %in% rank_choices) {
+        "Genus"
+      } else {
+        "ASV"
+      }
+      updateSelectInput(session, "tax_level", choices = rank_choices, selected = selected_rank)
+    }, ignoreInit = FALSE)
+
     draw_wait_message <- function(message_text) {
       old_par <- graphics::par(no.readonly = TRUE)
       on.exit(graphics::par(old_par), add = TRUE)
@@ -482,6 +499,69 @@ mod_spieceasi_server <- function(id, ps_obj) {
 
     network_run_nonce <- reactiveVal(0L)
     network_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+    last_run_settings <- reactiveVal(NULL)
+
+    normalize_setting <- function(x) {
+      if (is.null(x)) return(character(0))
+      sort(unique(as.character(x)))
+    }
+
+    current_analysis_settings <- reactive({
+      ps <- ps_obj()
+      req(ps)
+      otu_signature_matrix <- as.matrix(phyloseq::otu_table(ps))
+      otu_signature_values <- as.numeric(otu_signature_matrix)
+      otu_signature_values[!is.finite(otu_signature_values)] <- 0
+      taxonomy_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      taxonomy_signature <- if (is.null(taxonomy_obj)) {
+        character(0)
+      } else {
+        taxonomy_matrix <- as.matrix(taxonomy_obj)
+        c(colnames(taxonomy_matrix), as.character(taxonomy_matrix))
+      }
+      metadata_values <- list()
+      sample_data_obj <- phyloseq::sample_data(ps, errorIfNULL = FALSE)
+      if (!is.null(sample_data_obj)) {
+        metadata_df <- as.data.frame(sample_data_obj, stringsAsFactors = FALSE)
+        selected_metadata <- setdiff(
+          unique(c(as.character(input$group_var), as.character(input$secondary_var))),
+          c(NA_character_, "", "None", "All")
+        )
+        for (column_name in intersect(selected_metadata, colnames(metadata_df))) {
+          metadata_values[[column_name]] <- as.character(metadata_df[[column_name]])
+        }
+      }
+      list(
+        dataset = list(
+          sample_names = sort(phyloseq::sample_names(ps)),
+          taxa_names = sort(phyloseq::taxa_names(ps)),
+          rank_names = tryCatch(phyloseq::rank_names(ps), error = function(e) character(0)),
+          taxonomy_signature = taxonomy_signature,
+          otu_signature = c(
+            dim(otu_signature_matrix),
+            sum(otu_signature_values),
+            sum(otu_signature_values^2),
+            sum(otu_signature_values * ((seq_along(otu_signature_values) %% 1009L) + 1L))
+          ),
+          metadata_values = metadata_values
+        ),
+        tax_level = normalize_setting(input$tax_level),
+        group_var = normalize_setting(input$group_var),
+        primary_level = normalize_setting(input$primary_level),
+        secondary_var = normalize_setting(input$secondary_var),
+        group_levels = normalize_setting(input$group_levels),
+        analysis_mode = normalize_setting(input$analysis_mode),
+        prevalence_filter_pct = suppressWarnings(as.numeric(input$prevalence_filter_pct)),
+        max_taxa = suppressWarnings(as.integer(input$max_taxa)),
+        seed = suppressWarnings(as.integer(input$seed))
+      )
+    })
+
+    results_stale <- reactive({
+      previous <- last_run_settings()
+      if (is.null(previous)) return(FALSE)
+      !identical(previous, current_analysis_settings())
+    })
 
     observeEvent(input$run_network_btn, {
       now_ts <- Sys.time()
@@ -507,6 +587,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
         need(requireNamespace("igraph", quietly = TRUE), "igraph package is not installed. Please install 'igraph'.")
       )
       network_running(TRUE)
+      run_settings <- isolate(current_analysis_settings())
 
       session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, running = TRUE, label = "Running..."))
       on.exit({
@@ -650,10 +731,10 @@ mod_spieceasi_server <- function(id, ps_obj) {
               edge_df$weight <- as.numeric(edge_df$weight)
               edge_df$sign <- ifelse(edge_df$weight > 0, "Positive", ifelse(edge_df$weight < 0, "Negative", "Zero"))
             } else {
-              edge_df$weight <- NA_real_
-              edge_df$sign <- NA_character_
+              edge_df$weight <- numeric(0)
+              edge_df$sign <- character(0)
             }
-            edge_df$group <- group_name
+            edge_df$group <- rep(group_name, nrow(edge_df))
             sample_totals <- colSums(sub_otu, na.rm = TRUE)
             sample_totals[sample_totals <= 0 | is.na(sample_totals)] <- 1
             sub_otu_rel <- sweep(sub_otu, 2, sample_totals, "/")
@@ -728,7 +809,20 @@ mod_spieceasi_server <- function(id, ps_obj) {
       })
 
       validate(need(!is.null(result), "Network analysis failed. Check the error message above."))
+      result$run_settings <- run_settings
+      last_run_settings(run_settings)
       result
+    })
+
+    display_network_result <- reactive({
+      res <- network_result()
+      validate(
+        need(
+          !results_stale(),
+          "Analysis settings changed after the last run. Click 'Run SpiecEasi' to update all result tabs."
+        )
+      )
+      res
     })
 
     get_connected_graph <- function(g) {
@@ -771,6 +865,9 @@ mod_spieceasi_server <- function(id, ps_obj) {
     }
 
     output$comparison_status <- renderText({
+      if (isTRUE(results_stale())) {
+        return("Status: Analysis settings changed after the last run. Click 'Run SpiecEasi' to update all result tabs.")
+      }
       selected_group_var <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
         input$secondary_var
       } else if (is.null(input$group_var)) {
@@ -854,132 +951,101 @@ mod_spieceasi_server <- function(id, ps_obj) {
       top_n <- 5
       g <- net_res$graph
       if (is.null(g) || igraph::vcount(g) == 0) {
-        return(list(hub_taxa = character(0), hub_scores = numeric(0), modularity_netanalyze = NA_real_))
-      }
-
-      extract_hubs <- function(obj) {
-        if (is.null(obj)) return(character(0))
-        if (is.character(obj)) return(obj[nzchar(obj)])
-        if (is.factor(obj)) return(as.character(obj))
-        if (is.list(obj)) {
-          nms <- names(obj)
-          if (!is.null(nms)) {
-            idx <- which(grepl("hub", tolower(nms)))
-            for (i in idx) {
-              v <- extract_hubs(obj[[i]])
-              if (length(v) > 0) return(v)
-            }
-          }
-          for (el in obj) {
-            v <- extract_hubs(el)
-            if (length(v) > 0) return(v)
-          }
-        }
-        character(0)
+        return(list(
+          hub_taxa = character(0),
+          hub_scores = numeric(0),
+          modularity_netanalyze = NA_real_,
+          modularity_source = "Unavailable",
+          netanalyze_error = NULL
+        ))
       }
 
       extract_modularity <- function(obj) {
-        if (is.null(obj)) return(NA_real_)
-        if (is.numeric(obj) && length(obj) == 1 && is.finite(obj)) return(as.numeric(obj))
-        if (is.list(obj)) {
-          nms <- names(obj)
-          if (!is.null(nms)) {
-            idx <- which(grepl("mod", tolower(nms)))
-            for (i in idx) {
-              v <- extract_modularity(obj[[i]])
-              if (is.finite(v)) return(v)
-            }
+        candidates <- numeric(0)
+        walk_obj <- function(x, path = "") {
+          if (is.null(x)) return(invisible(NULL))
+          if (is.numeric(x) && length(x) == 1 && is.finite(x) && grepl("mod", tolower(path))) {
+            candidates <<- c(candidates, as.numeric(x))
+            return(invisible(NULL))
           }
-          for (el in obj) {
-            v <- extract_modularity(el)
-            if (is.finite(v)) return(v)
-          }
-        }
-        NA_real_
-      }
-
-      extract_named_numeric <- function(obj, key_pattern = NULL) {
-        out <- list()
-        walk_obj <- function(x, nm = "") {
-          if (is.null(x)) return()
-          if (is.numeric(x) && !is.null(names(x))) {
-            if (is.null(key_pattern) || grepl(key_pattern, tolower(nm))) {
-              out[[length(out) + 1]] <<- x
-            }
-            return()
-          }
-          if (is.list(x)) {
-            nms <- names(x)
-            if (is.null(nms)) nms <- rep("", length(x))
-            for (i in seq_along(x)) walk_obj(x[[i]], nms[[i]])
+          if (!is.list(x)) return(invisible(NULL))
+          nms <- names(x)
+          if (is.null(nms)) nms <- rep("", length(x))
+          for (i in seq_along(x)) {
+            child_path <- paste(c(path, nms[[i]]), collapse = "/")
+            walk_obj(x[[i]], child_path)
           }
         }
         walk_obj(obj)
-        out
+        if (length(candidates) == 0) NA_real_ else candidates[[1]]
       }
 
       mod_netanalyze <- NA_real_
+      modularity_source <- "Unavailable"
+      netanalyze_error <- NULL
       hub_taxa <- character(0)
       hub_scores <- numeric(0)
       if (!is.null(net_res$net_obj)) {
         ana <- tryCatch(
           suppressWarnings(NetCoMi::netAnalyze(net_res$net_obj, verbose = 0)),
-          error = function(e) NULL
-        )
-        hub_taxa <- extract_hubs(ana)
-        mod_netanalyze <- extract_modularity(ana)
-
-        if (!is.null(ana)) {
-          vertex_names <- igraph::V(g)$name
-          deg_cands <- extract_named_numeric(ana, "degree")
-          btw_cands <- extract_named_numeric(ana, "betwe")
-          eig_cands <- extract_named_numeric(ana, "eigen")
-          pick_vec <- function(cands) {
-            if (length(cands) == 0) return(NULL)
-            for (v in cands) {
-              nm <- names(v)
-              if (!is.null(nm) && all(vertex_names %in% nm)) return(as.numeric(v[vertex_names]))
-            }
+          error = function(e) {
+            netanalyze_error <<- conditionMessage(e)
             NULL
           }
-          deg_v <- pick_vec(deg_cands)
-          btw_v <- pick_vec(btw_cands)
-          eig_v <- pick_vec(eig_cands)
-          if (!is.null(deg_v) && !is.null(btw_v) && !is.null(eig_v)) {
-            safe_z <- function(x) {
-              sx <- stats::sd(x, na.rm = TRUE)
-              if (!is.finite(sx) || sx == 0) return(rep(0, length(x)))
-              as.numeric((x - mean(x, na.rm = TRUE)) / sx)
-            }
-            score <- 0.4 * safe_z(deg_v) + 0.3 * safe_z(btw_v) + 0.3 * safe_z(eig_v)
-            names(score) <- vertex_names
-            hub_scores <- sort(score, decreasing = TRUE)
-          }
+        )
+        mod_netanalyze <- extract_modularity(ana)
+        if (is.finite(mod_netanalyze)) modularity_source <- "NetCoMi::netAnalyze"
+      }
+
+      if (igraph::ecount(g) > 0) {
+        vertex_names <- igraph::V(g)$name
+        edge_strength <- abs(as.numeric(igraph::E(g)$weight))
+        edge_strength[!is.finite(edge_strength)] <- 0
+        eigen_weights <- if (length(edge_strength) > 0 && any(edge_strength > 0)) edge_strength else NULL
+
+        degree_values <- as.numeric(igraph::degree(g))
+        betweenness_values <- as.numeric(igraph::betweenness(g, directed = FALSE, weights = NA, normalized = TRUE))
+        eigen_values <- tryCatch(
+          as.numeric(igraph::eigen_centrality(g, directed = FALSE, weights = eigen_weights, scale = TRUE)$vector),
+          error = function(e) rep(0, length(vertex_names))
+        )
+        safe_z <- function(x) {
+          sx <- stats::sd(x, na.rm = TRUE)
+          if (!is.finite(sx) || sx == 0) return(rep(0, length(x)))
+          as.numeric((x - mean(x, na.rm = TRUE)) / sx)
+        }
+        score <- 0.4 * safe_z(degree_values) + 0.3 * safe_z(betweenness_values) + 0.3 * safe_z(eigen_values)
+        names(score) <- vertex_names
+        hub_scores <- sort(score, decreasing = TRUE)
+        hub_taxa <- head(names(hub_scores), top_n)
+        hub_scores <- hub_scores[hub_taxa]
+
+        if (!is.finite(mod_netanalyze)) {
+          mod_netanalyze <- tryCatch({
+            community <- igraph::cluster_louvain(g, weights = eigen_weights)
+            as.numeric(igraph::modularity(community, weights = eigen_weights))
+          }, error = function(e) NA_real_)
+          if (is.finite(mod_netanalyze)) modularity_source <- "igraph fallback"
         }
       }
 
-      if (length(hub_taxa) == 0) {
-        deg <- igraph::degree(g)
-        hub_taxa <- names(sort(as.numeric(deg), decreasing = TRUE))
-      }
-      hub_taxa <- unique(as.character(hub_taxa))
-      hub_taxa <- hub_taxa[nzchar(hub_taxa)]
-      hub_taxa <- hub_taxa[hub_taxa %in% igraph::V(g)$name]
-      if (length(hub_scores) > 0) {
-        hub_taxa <- names(hub_scores)
-      }
-      if (length(hub_taxa) > top_n) hub_taxa <- hub_taxa[seq_len(top_n)]
-      if (length(hub_scores) > 0) {
-        hub_scores <- hub_scores[hub_taxa]
-      }
-
-      list(hub_taxa = hub_taxa, hub_scores = hub_scores, modularity_netanalyze = mod_netanalyze)
+      list(
+        hub_taxa = hub_taxa,
+        hub_scores = hub_scores,
+        modularity_netanalyze = mod_netanalyze,
+        modularity_source = modularity_source,
+        netanalyze_error = netanalyze_error
+      )
     }
 
+    network_topology <- reactive({
+      res <- display_network_result()
+      lapply(res$networks, summarize_network_structure)
+    })
+
     comparison_metrics <- reactive({
-      req(network_result())
-      res <- network_result()
-      if (!identical(input$analysis_mode, "Compare two groups")) return(NULL)
+      res <- display_network_result()
+      if (!identical(res$run_settings$analysis_mode, "Compare two groups")) return(NULL)
       if (length(res$networks) != 2) return(NULL)
       groups <- names(res$networks)
       min_edge_weight <- current_min_edge_weight()
@@ -1008,9 +1074,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
     })
 
     comparison_edge_table <- reactive({
-      req(network_result())
-      res <- network_result()
-      if (!identical(input$analysis_mode, "Compare two groups")) return(data.frame())
+      res <- display_network_result()
+      if (!identical(res$run_settings$analysis_mode, "Compare two groups")) return(data.frame())
       if (length(res$networks) != 2) return(data.frame())
       groups <- names(res$networks)
       g1_name <- groups[1]
@@ -1054,9 +1119,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
     })
 
     output$comparison_summary <- renderText({
-      req(network_result())
-      res <- network_result()
-      if (!identical(input$analysis_mode, "Compare two groups")) {
+      res <- display_network_result()
+      if (!identical(res$run_settings$analysis_mode, "Compare two groups")) {
         return("Comparison mode is disabled. Select 'Compare two groups' to view results.")
       }
       if (length(res$networks) != 2) {
@@ -1064,8 +1128,9 @@ mod_spieceasi_server <- function(id, ps_obj) {
       }
       groups <- names(res$networks)
       metrics <- comparison_metrics()
-      s1 <- summarize_network_structure(res$networks[[groups[1]]])
-      s2 <- summarize_network_structure(res$networks[[groups[2]]])
+      topology <- network_topology()
+      s1 <- topology[[groups[1]]]
+      s2 <- topology[[groups[2]]]
       delta_modularity_netanalyze <- s1$modularity_netanalyze - s2$modularity_netanalyze
       score_text <- function(s) {
         if (length(s$hub_scores) == 0) return("NA")
@@ -1101,19 +1166,19 @@ mod_spieceasi_server <- function(id, ps_obj) {
         paste0("- Hub taxa (", groups[2], "): ", if (length(s2$hub_taxa) > 0) paste(s2$hub_taxa, collapse = ", ") else "NA"),
         paste0("- Hub score (", groups[1], "): ", score_text(s1)),
         paste0("- Hub score (", groups[2], "): ", score_text(s2)),
-        paste0("- Modularity (netAnalyze, ", groups[1], "): ", if (is.finite(s1$modularity_netanalyze)) sprintf("%.3f", s1$modularity_netanalyze) else "NA"),
-        paste0("- Modularity (netAnalyze, ", groups[2], "): ", if (is.finite(s2$modularity_netanalyze)) sprintf("%.3f", s2$modularity_netanalyze) else "NA"),
-        paste0("- Delta modularity (netAnalyze, ", groups[1], " - ", groups[2], "): ", if (is.finite(delta_modularity_netanalyze)) sprintf("%.3f", delta_modularity_netanalyze) else "NA")
+        paste0("- Modularity (", s1$modularity_source, ", ", groups[1], "): ", if (is.finite(s1$modularity_netanalyze)) sprintf("%.3f", s1$modularity_netanalyze) else "NA"),
+        paste0("- Modularity (", s2$modularity_source, ", ", groups[2], "): ", if (is.finite(s2$modularity_netanalyze)) sprintf("%.3f", s2$modularity_netanalyze) else "NA"),
+        paste0("- Delta modularity (", groups[1], " - ", groups[2], "): ", if (is.finite(delta_modularity_netanalyze)) sprintf("%.3f", delta_modularity_netanalyze) else "NA")
       )
       paste(lines, collapse = "\n")
     })
 
     hub_table <- reactive({
-      req(network_result())
-      res <- network_result()
+      res <- display_network_result()
+      topology <- network_topology()
       rows <- list()
       for (gname in names(res$networks)) {
-        s <- summarize_network_structure(res$networks[[gname]])
+        s <- topology[[gname]]
         taxa <- s$hub_taxa
         if (length(taxa) == 0) next
         scores <- s$hub_scores
@@ -1143,7 +1208,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       )
     })
 
-    draw_comparison_network_plot <- function(edge_tbl, edge_palette) {
+    draw_comparison_network_plot <- function(edge_tbl, edge_palette, run_settings) {
       validate(
         need(requireNamespace("ggplot2", quietly = TRUE), "ggplot2 package is required for network plotting."),
         need(requireNamespace("igraph", quietly = TRUE), "igraph package is required for network plotting."),
@@ -1193,7 +1258,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
           ggplot2::aes(x = x, y = y, label = name),
           size = 2.8,
           max.overlaps = Inf,
-          seed = as.integer(input$seed)
+          seed = as.integer(run_settings$seed)
         ) +
         ggplot2::scale_color_manual(
           values = edge_palette,
@@ -1210,7 +1275,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
           legend.title = ggplot2::element_text(size = 9),
           legend.text = ggplot2::element_text(size = 8)
         ) +
-        ggplot2::ggtitle(paste0(input$tax_level, "-Level SpiecEasi Differential Network (Two-Group Comparison)"))
+        ggplot2::ggtitle(paste0(run_settings$tax_level, "-Level SPIEC-EASI Differential Network (Two-Group Comparison)"))
     }
 
     output$comparison_network_plot <- renderPlot({
@@ -1222,8 +1287,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
         draw_wait_message("SpiecEasi analysis is running. Please wait...")
         return(invisible(NULL))
       }
-      req(network_result())
-      validate(need(identical(input$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to view differential network."))
+      res <- display_network_result()
+      validate(need(identical(res$run_settings$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to view differential network."))
       edge_tbl <- comparison_edge_table()
       validate(need(nrow(edge_tbl) > 0, "No differential edge is available for comparison plotting."))
       status_vals <- unique(edge_tbl$status)
@@ -1231,7 +1296,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       palette <- c("Shared" = "#7F8C8D")
       if (length(only_status) >= 1) palette[only_status[1]] <- "#1F78B4"
       if (length(only_status) >= 2) palette[only_status[2]] <- "#E31A1C"
-      p <- draw_comparison_network_plot(edge_tbl, palette)
+      p <- draw_comparison_network_plot(edge_tbl, palette, res$run_settings)
       print(p)
     },
     height = function() {
@@ -1250,8 +1315,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
     output$download_comparison_network_plot <- downloadHandler(
       filename = function() paste0("spieceasi_differential_network_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       content = function(file) {
-        req(network_result())
-        validate(need(identical(input$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to download differential network."))
+        res <- display_network_result()
+        validate(need(identical(res$run_settings$analysis_mode, "Compare two groups"), "Enable 'Compare two groups' to download differential network."))
         edge_tbl <- comparison_edge_table()
         validate(need(nrow(edge_tbl) > 0, "No differential edge is available for download."))
         status_vals <- unique(edge_tbl$status)
@@ -1274,16 +1339,20 @@ mod_spieceasi_server <- function(id, ps_obj) {
           res = dpi_val
         )
         on.exit(grDevices::dev.off(), add = TRUE)
-        p <- draw_comparison_network_plot(edge_tbl, palette)
+        p <- draw_comparison_network_plot(edge_tbl, palette, res$run_settings)
         print(p)
       }
     )
 
     output$network_summary <- renderText({
-      req(network_result())
-      res <- network_result()
+      res <- display_network_result()
       lines <- c(
         "SpiecEasi Network Summary",
+        paste0("Taxonomic level: ", res$run_settings$tax_level),
+        paste0("Analysis mode: ", res$run_settings$analysis_mode),
+        paste0("Prevalence cutoff: ", res$run_settings$prevalence_filter_pct, "%"),
+        paste0("Maximum taxa: ", res$run_settings$max_taxa),
+        paste0("Seed: ", res$run_settings$seed),
         paste0("Samples used: ", res$n_samples),
         paste0("Taxa used: ", res$n_taxa),
         paste0("Group variable: ", res$group_var),
@@ -1399,7 +1468,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
           ggplot2::aes(x = x, y = y, label = name),
           size = 2.8,
           max.overlaps = Inf,
-          seed = as.integer(input$seed)
+          seed = as.integer(res$run_settings$seed)
         ) +
         ggplot2::facet_wrap(~group, scales = "free") +
         ggplot2::scale_color_manual(values = c("Positive" = "#4575B4", "Negative" = "#D73027", "Zero" = "#999999"), drop = FALSE, name = "Edge sign") +
@@ -1417,9 +1486,9 @@ mod_spieceasi_server <- function(id, ps_obj) {
         ) +
         ggplot2::ggtitle(
           if (connected_only) {
-            paste0("NetCoMi SpiecEasi ", input$tax_level, "-Level Network (Connected)")
+            paste0("NetCoMi SPIEC-EASI ", res$run_settings$tax_level, "-Level Network (Connected)")
           } else {
-            paste0("NetCoMi SpiecEasi ", input$tax_level, "-Level Network (All)")
+            paste0("NetCoMi SPIEC-EASI ", res$run_settings$tax_level, "-Level Network (All)")
           }
         )
 
@@ -1439,8 +1508,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     }
 
     edge_table_all <- reactive({
-      req(network_result())
-      edge_tbl <- network_result()$edge_table
+      edge_tbl <- display_network_result()$edge_table
       min_edge_weight <- suppressWarnings(as.numeric(input$min_edge_weight))
       if (is.na(min_edge_weight) || min_edge_weight < 0) min_edge_weight <- 0.1
       if (!"weight" %in% colnames(edge_tbl)) return(edge_tbl)
@@ -1457,8 +1525,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
         draw_wait_message("SpiecEasi analysis is running. Please wait...")
         return(invisible(NULL))
       }
-      req(network_result())
-      draw_network_plot(network_result(), connected_only = FALSE)
+      res <- display_network_result()
+      draw_network_plot(res, connected_only = FALSE)
     },
     height = function() {
       if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
@@ -1482,8 +1550,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
         draw_wait_message("SpiecEasi analysis is running. Please wait...")
         return(invisible(NULL))
       }
-      req(network_result())
-      draw_network_plot(network_result(), connected_only = TRUE)
+      res <- display_network_result()
+      draw_network_plot(res, connected_only = TRUE)
     },
     height = function() {
       if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
@@ -1505,7 +1573,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     output$download_network_plot_all <- downloadHandler(
       filename = function() paste0("spieceasi_network_all_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       content = function(file) {
-        req(network_result())
+        res <- display_network_result()
         plot_width <- as.integer(input$plot_width)
         plot_height <- as.integer(input$plot_height)
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
@@ -1520,14 +1588,14 @@ mod_spieceasi_server <- function(id, ps_obj) {
           res = dpi_val
         )
         on.exit(grDevices::dev.off(), add = TRUE)
-        draw_network_plot(network_result(), connected_only = FALSE)
+        draw_network_plot(res, connected_only = FALSE)
       }
     )
 
     output$download_network_plot_connected <- downloadHandler(
       filename = function() paste0("spieceasi_network_connected_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       content = function(file) {
-        req(network_result())
+        res <- display_network_result()
         plot_width <- as.integer(input$plot_width)
         plot_height <- as.integer(input$plot_height)
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
@@ -1542,7 +1610,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
           res = dpi_val
         )
         on.exit(grDevices::dev.off(), add = TRUE)
-        draw_network_plot(network_result(), connected_only = TRUE)
+        draw_network_plot(res, connected_only = TRUE)
       }
     )
 
@@ -1608,7 +1676,8 @@ mod_spieceasi_server <- function(id, ps_obj) {
     })
 
     output$spieceasi_figure_legend <- renderUI({
-      req(input$tax_level, input$analysis_mode)
+      res <- display_network_result()
+      run_settings <- res$run_settings
       active_tab <- if (is.null(input$spieceasi_active_tab) || !nzchar(input$spieceasi_active_tab)) "Network Plot (All)" else input$spieceasi_active_tab
       title_text <- paste0("SpiecEasi ", active_tab)
       body_text <- if (identical(active_tab, "Network Plot (All)")) {
@@ -1635,11 +1704,11 @@ mod_spieceasi_server <- function(id, ps_obj) {
           paste0(
             body_text,
             " Settings: taxonomic level = ",
-            input$tax_level,
+            run_settings$tax_level,
             ", analysis mode = ",
-            input$analysis_mode,
+            run_settings$analysis_mode,
             ", prevalence cutoff = ",
-            input$prevalence_filter_pct,
+            run_settings$prevalence_filter_pct,
             "%, minimum |edge weight| = ",
             input$min_edge_weight,
             "."
@@ -1647,5 +1716,6 @@ mod_spieceasi_server <- function(id, ps_obj) {
         )
       )
     })
+
   })
 }

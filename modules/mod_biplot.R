@@ -190,6 +190,23 @@ mod_biplot_ui <- function(id) {
 ## Server
 mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
+    supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
+
+    observeEvent(ps_obj(), {
+      ps <- ps_obj()
+      available_ranks <- tryCatch(phyloseq::rank_names(ps), error = function(e) character(0))
+      rank_choices <- c("ASV", supported_taxonomic_ranks[supported_taxonomic_ranks %in% available_ranks])
+      current_rank <- isolate(input$tax_level)
+      selected_rank <- if (!is.null(current_rank) && current_rank %in% rank_choices) {
+        current_rank
+      } else if ("Genus" %in% rank_choices) {
+        "Genus"
+      } else {
+        "ASV"
+      }
+      updateSelectInput(session, "tax_level", choices = rank_choices, selected = selected_rank)
+    }, ignoreInit = FALSE)
+
     sanitize_taxa_names <- function(ps_data, rank_name) {
       tt <- phyloseq::tax_table(ps_data, errorIfNULL = FALSE)
       if (is.null(tt) || !rank_name %in% colnames(tt)) {
@@ -247,6 +264,43 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     biplot_running <- reactiveVal(FALSE)
     biplot_run_nonce <- reactiveVal(0L)
     biplot_next_allowed_at <- reactiveVal(as.POSIXct(NA))
+
+    phyloseq_signature <- function(ps) {
+      otu <- as(phyloseq::otu_table(ps), "matrix")
+      if (!phyloseq::taxa_are_rows(ps)) otu <- t(otu)
+      values <- as.numeric(otu)
+      metadata <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      metadata[] <- lapply(metadata, as.character)
+      tax_obj <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      taxonomy <- if (is.null(tax_obj)) NULL else as.data.frame(tax_obj, stringsAsFactors = FALSE)
+      if (!is.null(taxonomy)) taxonomy[] <- lapply(taxonomy, as.character)
+      list(
+        samples = sort(phyloseq::sample_names(ps)),
+        taxa = sort(phyloseq::taxa_names(ps)),
+        ranks = phyloseq::rank_names(ps),
+        abundance = c(
+          total = sum(values, na.rm = TRUE),
+          squares = sum(values^2, na.rm = TRUE),
+          weighted = sum(values * seq_along(values), na.rm = TRUE)
+        ),
+        metadata = metadata,
+        taxonomy = taxonomy
+      )
+    }
+
+    current_analysis_settings <- reactive({
+      req(ps_obj())
+      list(
+        data = phyloseq_signature(ps_obj()),
+        group_var = input$group_var,
+        tax_level = input$tax_level,
+        analysis_method = input$analysis_method,
+        distance_metric = input$distance_metric,
+        prevalence_filter_pct = as.numeric(input$prevalence_filter_pct),
+        max_taxa = as.integer(input$max_taxa),
+        top_taxa_vectors = as.integer(input$top_taxa_vectors)
+      )
+    })
 
     observeEvent(input$run_biplot, {
       now_ts <- Sys.time()
@@ -368,6 +422,15 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       permanova_p <- NA_real_
       permanova_r2 <- NA_real_
       metric_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis"
+      transformation_label <- if (
+        identical(model_type, "dbrda") &&
+          identical(input$distance_metric, "aitchison")
+      ) {
+        "CLR (log(count + 1), centered within each sample)"
+      } else {
+        "TSS (relative abundance)"
+      }
+      set.seed(42L)
       if (identical(model_type, "dbrda")) {
         dist_method <- if (identical(input$distance_metric, "aitchison")) "euclidean" else "bray"
         dist_obj <- tryCatch(
@@ -483,15 +546,31 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         model_label = if (identical(model_type, "cca")) "CCA" else "dbRDA",
         model_type = model_type,
         metric_label = metric_label,
+        transformation_label = transformation_label,
+        permutation_count = 999L,
+        permutation_seed = 42L,
         axis1_var = axis1_var,
         axis2_var = axis2_var,
         model_p = as.numeric(p_all),
         permanova_p = permanova_p,
         permanova_r2 = permanova_r2,
         n_samples = nrow(site_df),
-        n_taxa = nrow(otu_model)
+        n_taxa = nrow(otu_model),
+        run_settings = isolate(current_analysis_settings())
       )
     }, ignoreNULL = FALSE)
+
+    display_biplot_payload <- reactive({
+      req(!is.null(input$run_biplot) && input$run_biplot > 0)
+      payload <- biplot_payload()
+      validate(
+        need(
+          identical(payload$run_settings, current_analysis_settings()),
+          "Analysis settings changed after the last run. Click 'Run Biplot' to update all result tabs."
+        )
+      )
+      payload
+    })
 
     observeEvent(biplot_payload(), {
       payload <- biplot_payload()
@@ -502,8 +581,8 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     }, ignoreInit = FALSE)
 
     biplot_plot <- reactive({
-      req(biplot_payload())
-      payload <- biplot_payload()
+      req(display_biplot_payload())
+      payload <- display_biplot_payload()
       base_size <- input$base_size
       if (is.null(base_size) || !is.finite(base_size)) {
         base_size <- 11
@@ -687,8 +766,8 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     )
 
     output$biplot_status <- renderText({
-      req(biplot_payload())
-      payload <- biplot_payload()
+      req(display_biplot_payload())
+      payload <- display_biplot_payload()
       pval_txt <- if (is.finite(payload$model_p)) format(payload$model_p, digits = 3) else "NA"
       permanova_p_txt <- if (is.finite(payload$permanova_p)) format(payload$permanova_p, digits = 3) else "NA"
       permanova_r2_txt <- if (is.finite(payload$permanova_r2)) format(payload$permanova_r2, digits = 3) else "NA"
@@ -701,10 +780,18 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         c(
           paste0("Model: ", payload$model_label),
           paste0("Distance metric: ", payload$metric_label),
+          paste0("Transformation: ", payload$transformation_label),
           paste0("Group variable: ", input$group_var),
           paste0("Samples used: ", payload$n_samples),
           paste0("Taxa used: ", payload$n_taxa),
           paste0("Taxa vectors shown: ", taxa_vectors_shown),
+          paste0(
+            "Permutation setup: ",
+            payload$permutation_count,
+            " permutations (initial seed ",
+            payload$permutation_seed,
+            ")"
+          ),
           paste0(payload$model_label, " model p-value (perm): ", pval_txt),
           if (identical(payload$model_type, "dbrda")) paste0("PERMANOVA p-value (adonis2): ", permanova_p_txt) else NULL,
           if (identical(payload$model_type, "dbrda")) paste0("PERMANOVA R2 (adonis2): ", permanova_r2_txt) else NULL
@@ -760,13 +847,16 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     output$biplot_figure_legend <- renderUI({
+      payload <- display_biplot_payload()
       req(input$group_var, input$tax_level, input$analysis_method, input$distance_metric)
       distance_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis"
       body_text <- if (identical(input$analysis_method, "cca")) {
         paste0(
           "The CCA association biplot projects sample relationships on CCA1 and CCA2 at ",
           tolower(input$tax_level),
-          " level. Distance metric is not used in CCA. Points are samples colored by ",
+          " level. Distance metric is not used in CCA. Input abundances are transformed using ",
+          payload$transformation_label,
+          ". Points are samples colored by ",
           input$group_var,
           ". ",
           if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
@@ -780,7 +870,9 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           distance_label,
           " distance at ",
           tolower(input$tax_level),
-          " level. Points are samples colored by ",
+          " level. Input abundances are transformed using ",
+          payload$transformation_label,
+          ". Points are samples colored by ",
           input$group_var,
           ". ",
           if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
@@ -789,6 +881,14 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
         )
       }
+      body_text <- paste0(
+        body_text,
+        " Permutation-based tests use ",
+        payload$permutation_count,
+        " permutations with initial seed ",
+        payload$permutation_seed,
+        "."
+      )
       tags$div(
         tags$div(style = "font-weight: 600; margin-bottom: 4px;", "Association biplot"),
         tags$div(body_text)
@@ -800,7 +900,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       contentType = "image/png",
       content = function(file) {
         req(!is.null(input$run_biplot) && input$run_biplot > 0)
-        req(biplot_payload())
+        req(display_biplot_payload())
         dpi_val <- 300
         plot_width <- suppressWarnings(as.numeric(input$plot_width))
         plot_height <- suppressWarnings(as.numeric(input$plot_height))
@@ -816,8 +916,8 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     output$download_biplot_scores <- downloadHandler(
       filename = function() paste0("association_biplot_scores_", Sys.Date(), ".tsv"),
       content = function(file) {
-        req(biplot_payload())
-        payload <- biplot_payload()
+        req(display_biplot_payload())
+        payload <- display_biplot_payload()
         site_out <- payload$site_df %>% dplyr::mutate(Type = "Sample", Label = SampleID) %>% dplyr::select(Type, Label, Axis1, Axis2, Group)
         taxa_out <- if (nrow(payload$species_df) > 0) {
           payload$species_df %>% dplyr::mutate(Type = "Taxa", Label = Taxon, Group = NA_character_) %>% dplyr::select(Type, Label, Axis1, Axis2, Group)
@@ -828,5 +928,6 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         utils::write.table(out_df, file = file, sep = "\t", quote = FALSE, row.names = FALSE)
       }
     )
+
   })
 }

@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-07-28]
+
+### Added
+
+- Added a root-level Docker build for R 4.5.1 and a tested `renv.lock` dependency set.
+
+### Changed
+
+- Made taxonomic-level selectors dataset-aware across Taxa Bar Plot, ANCOM-BC2, MaAsLin2, Random Forest, SparCC, SPIEC-EASI, Correlation Heatmap, and Association Biplot.
+- Made run-triggered result tabs detect changed data or analysis settings and request a rerun instead of combining stale results with updated labels or legends.
+- Improved SparCC and SPIEC-EASI hub scoring, modularity reporting, and valid zero-edge network handling.
+- Added Association Biplot transformation and permutation details to the GUI, figure legend, and manual.
+- Updated `install.R` and README installation guidance for the pinned R 4.5.1 environment.
+- Removed the SprockettTH subset's all-`Unclassified` `Strain` column.
+
+### Notes
+
+- Detailed release notes: `docs/releases/2026-07-28.md`
+
 ## [2026-07-08]
 
 ### Changed
