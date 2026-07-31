@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ARG R_VERSION=4.5.1
 FROM rocker/shiny-verse:${R_VERSION}
 
@@ -8,6 +9,8 @@ LABEL org.opencontainers.image.source="https://github.com/yjcho2252/SimpleMicrob
 ENV DEBIAN_FRONTEND=noninteractive
 ENV R_DEFAULT_INTERNET_TIMEOUT=600
 ENV SIMPLEMICROBIOME_R_LIBRARY=/usr/local/lib/R/site-library
+ENV RENV_PATHS_CACHE=/renv/cache
+ENV RENV_CONFIG_CACHE_SYMLINKS=FALSE
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
 build-essential \
@@ -50,11 +53,26 @@ WORKDIR /tmp/simplemicrobiome-dependencies
 
 COPY install.R renv.lock ./
 
-# Restore exactly the package versions and GitHub commits recorded from the
-# tested image. install.R also verifies the critical runtime packages.
-RUN Rscript install.R \
-&& cd / \
-&& rm -rf /tmp/simplemicrobiome-dependencies
+# Reuse downloaded/built packages across Docker builds and retry transient
+# repository failures without discarding packages installed earlier in the run.
+RUN --mount=type=cache,id=simplemicrobiome-renv-r451,target=/renv/cache,sharing=locked \
+    set -eu; \
+    attempt=1; \
+    while true; do \
+      if Rscript --vanilla install.R; then \
+        break; \
+      fi; \
+      if [ "$attempt" -ge 5 ]; then \
+        echo "install.R failed after ${attempt} attempts"; \
+        exit 1; \
+      fi; \
+      delay=$((attempt * 15)); \
+      echo "install.R failed; retrying in ${delay} seconds"; \
+      sleep "$delay"; \
+      attempt=$((attempt + 1)); \
+    done
+
+RUN cd / && rm -rf /tmp/simplemicrobiome-dependencies
 
 RUN rm -rf /srv/shiny-server/*
 

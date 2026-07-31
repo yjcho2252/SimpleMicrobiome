@@ -11,6 +11,7 @@
 # installation, the first writable default R library is used.
 
 options(timeout = max(1200, getOption("timeout", 60)))
+options(renv.consent = TRUE)
 
 find_lockfile <- function() {
   script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)

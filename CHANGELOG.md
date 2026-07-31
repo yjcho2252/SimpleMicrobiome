@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-07-31]
+
+### Changed
+
+- Added a persistent BuildKit cache for the R 4.5.1 `renv` package environment during Docker builds.
+- Added up to five automatic dependency-restoration attempts with incremental delays for transient repository or download failures.
+- Enabled non-interactive `renv` consent in `install.R` for unattended Docker and scripted installations.
+
+### Notes
+
+- These changes improve installation reliability and do not alter analytical calculations.
+- Detailed release notes: `docs/releases/2026-07-31.md`
+
 ## [2026-07-28]
 
 ### Added
