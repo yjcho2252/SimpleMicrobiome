@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-20] v1.0
+
+### Added
+
+- Added a SimpleMicrobiome publication citation and journal link to the first screen and the Citation tab.
+- Added optional read subsampling without replacement in Preprocessing, with a default depth of 10,000 reads per sample when enabled.
+
+### Documentation
+
+- Updated the manual and added [release notes](docs/releases/2026-11-20.md).
+
 ## [2026-07-31]
 
 ### Changed

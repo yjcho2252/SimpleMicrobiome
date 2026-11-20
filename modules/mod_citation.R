@@ -1,9 +1,38 @@
 ## UI
+simplemicrobiome_citation_ui <- function() {
+  tagList(
+    h4(icon("book"), "Cite SimpleMicrobiome"),
+    p("If you use SimpleMicrobiome in your research, please cite the following article."),
+    p(
+      paste0(
+        "Na, S.-I., Kim, J., Kim, S.-Y., Park, J., & Cho, Y.-J. (2026). ",
+        "SimpleMicrobiome: An integrated web-based platform for streamlined ",
+        "microbiome data analysis and visualization. "
+      ),
+      tags$em("Journal of Microbiology, 64"),
+      "(9), e2606011.",
+      tags$a(
+        "View article (doi:10.71150/jm.2606011)",
+        href = "https://www.jmicrobiol.or.kr/journal/view.php?number=3102",
+        target = "_blank",
+        rel = "noopener noreferrer"
+      )
+    )
+  )
+}
+
 mod_citation_ui <- function(id) {
   ns <- NS(id)
   tagList(
     fluidPage(
-      h4(icon("book"), "Citation"),
+      simplemicrobiome_citation_ui(),
+      p(
+        "For each analysis module you used, see ",
+        strong("Method References"),
+        " below and cite the relevant references."
+      ),
+      hr(),
+      h4("Method References"),
       p("References are grouped by module (APA style)."),
       tags$style(HTML("
         .citation-section-title {

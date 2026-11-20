@@ -144,6 +144,17 @@ mod_top_ui <- function(id) {
         ),
         
       ),
+      div(
+        class = "top-card top-card-readable",
+        simplemicrobiome_citation_ui(),
+        p(
+          "For each analysis module you used, see ",
+          strong("Method References"),
+          " in the ",
+          strong("Citation"),
+          " tab and cite the relevant references."
+        )
+      ),
       fluidRow(
         class = "top-grid",
         column(
@@ -168,6 +179,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("261120: v1.0 - Publication citation and optional read subsampling in Preprocessing."),
             tags$li("260731: v0.4.6 - More reliable Docker dependency restoration with renv caching and retry support."),
             tags$li("260728: v0.4.5 - Reproducible R 4.5.1 setup, dataset-aware taxonomic ranks, and run-consistent analysis outputs."),
             tags$li("260708: v0.4.4 - Beta diversity NMDS run details and Docker-based local usage documentation."),

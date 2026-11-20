@@ -29,3 +29,11 @@
 ## Notes
 - Settings and default values may evolve with UI updates.
 - When reporting results, include key parameter settings from each module.
+
+## Cite SimpleMicrobiome
+
+If you use SimpleMicrobiome in your research, please cite the following article.
+
+Na, S.-I., Kim, J., Kim, S.-Y., Park, J., & Cho, Y.-J. (2026). SimpleMicrobiome: An integrated web-based platform for streamlined microbiome data analysis and visualization. *Journal of Microbiology, 64*(9), e2606011. [View article (DOI: 10.71150/jm.2606011)](https://www.jmicrobiol.or.kr/journal/view.php?number=3102)
+
+The app's first screen and Citation tab both display this citation. The Citation tab also lists references for individual analysis methods under **Method References**.

@@ -52,7 +52,24 @@
     </div>
   </div>
   <script>
-    fetch('/docs/manual/README.md').then(r=>{if(!r.ok) throw new Error('HTTP '+r.status); return r.text();}).then(md=>{document.getElementById('content').innerHTML=marked.parse(md);}).catch(()=>{document.getElementById('content').textContent='Failed to load guide content.';});
+    fetch('/docs/manual/README.md')
+      .then(response => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.text();
+      })
+      .then(markdown => {
+        const content = document.getElementById('content');
+        content.innerHTML = marked.parse(markdown);
+        const citationHeading = Array.from(content.querySelectorAll('h2'))
+          .find(heading => heading.textContent === 'Cite SimpleMicrobiome');
+        if (citationHeading) {
+          citationHeading.id = 'cite-simplemicrobiome';
+          if (location.hash === '#cite-simplemicrobiome') citationHeading.scrollIntoView();
+        }
+      })
+      .catch(() => {
+        document.getElementById('content').textContent = 'Failed to load guide content.';
+      });
   </script>
 </body>
 </html>
