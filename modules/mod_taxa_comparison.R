@@ -1,3 +1,8 @@
+taxa_comparison_plot_types <- c(
+  "Box plot" = "boxplot", "Violin plot" = "violin", "Jitter plot" = "jitter",
+  "Bar plot" = "barplot", "Scatter plot" = "scatter"
+)
+
 ## UI
 mod_taxa_comparison_ui <- function(id) {
   ns <- NS(id)
@@ -133,18 +138,13 @@ mod_taxa_comparison_ui <- function(id) {
         selectInput(
           ns("plot_type"),
           "Plot Type:",
-          choices = c("Box plot" = "boxplot", "Bar plot" = "barplot", "Scatter plot" = "scatter"),
-          selected = "boxplot"
+          choices = taxa_comparison_plot_types,
+          selected = "violin"
         ),
         selectInput(
           ns("color_palette"),
           "Color Palette:",
-          choices = c(
-            "Set2" = "set2",
-            "Dark2" = "dark2",
-            "Paired" = "paired",
-            "Grayscale" = "gray"
-          ),
+          choices = group_plot_palettes,
           selected = "set2"
         ),
         checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
@@ -187,7 +187,11 @@ mod_taxa_comparison_ui <- function(id) {
         ),
         numericInput(ns("plot_width"), "Plot Width (px):", value = 400, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height (px):", value = 500, min = 300, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
+        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
+        selectInput(ns("x_label_angle"), "X-axis label angle:",
+                    choices = c("0° Horizontal" = "0", "45° Diagonal" = "45", "90° Vertical" = "90"),
+                    selected = "0"),
         hr(),
         h5(icon("download"), "Download Plot"),
         div(
@@ -437,17 +441,24 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       )
     })
 
+    previous_plot_type <- reactiveVal("violin")
+    current_plot_type <- reactive({
+      if (isTRUE(input$show_trend_line)) return("scatter")
+      if (isTruthy(input$plot_type) && input$plot_type %in% taxa_comparison_plot_types) {
+        return(input$plot_type)
+      }
+      "violin"
+    })
+
     observeEvent(input$show_trend_line, {
-      if (isTRUE(input$show_trend_line) && isTRUE(input$show_p_val)) {
-        updateCheckboxInput(session, "show_p_val", value = FALSE)
-      }
-      if (isTRUE(input$show_trend_line) && !identical(input$plot_type, "scatter")) {
-        updateSelectInput(session, "plot_type", selected = "scatter")
-      }
-      if (!isTRUE(input$show_trend_line)) {
-        if (!identical(input$plot_type, "barplot")) {
-          updateSelectInput(session, "plot_type", selected = "barplot")
+      if (isTRUE(input$show_trend_line)) {
+        if (isTruthy(input$plot_type) && input$plot_type %in% taxa_comparison_plot_types) {
+          previous_plot_type(input$plot_type)
         }
+        updateSelectInput(session, "plot_type", choices = taxa_comparison_plot_types["Scatter plot"], selected = "scatter")
+        if (isTRUE(input$show_p_val)) updateCheckboxInput(session, "show_p_val", value = FALSE)
+      } else {
+        updateSelectInput(session, "plot_type", choices = taxa_comparison_plot_types, selected = previous_plot_type())
         if (!isTRUE(input$show_p_val)) {
           updateCheckboxInput(session, "show_p_val", value = TRUE)
         }
@@ -888,29 +899,20 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       )
       base_size <- input$base_size
       if (is.null(base_size) || !is.finite(base_size)) {
-        base_size <- 11
+        base_size <- 14
       }
       group_levels <- levels(factor(df$Group))
       num_groups <- length(group_levels)
-      plot_type <- input$plot_type
-      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot", "scatter")) {
-        plot_type <- "boxplot"
+      plot_type <- current_plot_type()
+      dot_size <- input$dot_size
+      if (length(dot_size) != 1L || !is.finite(dot_size) || dot_size < 0.5 || dot_size > 10) {
+        dot_size <- 4
       }
       plot_title <- paste0(input$tax_level, "-Level Taxa Comparison")
-      palette_key <- input$color_palette
-      if (is.null(palette_key) || !palette_key %in% c("set2", "dark2", "paired", "gray")) {
-        palette_key <- "set2"
-      }
       use_pattern_requested <- isTRUE(input$use_ggpattern)
       use_pattern <- plot_type == "barplot" && use_pattern_requested && requireNamespace("ggpattern", quietly = TRUE)
       n_groups <- max(1, length(group_levels))
-      fill_values <- switch(
-        palette_key,
-        "dark2" = grDevices::hcl.colors(n_groups, palette = "Dark 3"),
-        "paired" = grDevices::hcl.colors(n_groups, palette = "Set 3"),
-        "gray" = grDevices::gray.colors(n_groups, start = 0.2, end = 0.85),
-        grDevices::hcl.colors(n_groups, palette = "Set 2")
-      )
+      fill_values <- group_plot_colors(n_groups, input$color_palette)
       names(fill_values) <- group_levels
       pattern_values <- rep(c("stripe", "stripe", "crosshatch", "none"), length.out = n_groups)
       names(pattern_values) <- group_levels
@@ -944,8 +946,12 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5, size = max(6, base_size - 1)),
           legend.position = "none",
           strip.background = ggplot2::element_rect(fill = "grey85", color = "grey20"),
+          strip.text = ggplot2::element_text(face = "bold"),
           plot.margin = ggplot2::margin(t = 8, r = 8, b = 8, l = 8)
         )
+      if (!use_continuous_x && isTRUE(input$x_label_angle %in% c("45", "90"))) {
+        p <- p + ggplot2::guides(x = ggplot2::guide_axis(angle = as.numeric(input$x_label_angle)))
+      }
 
       if (plot_type == "barplot") {
         facet_group_cols <- c("Taxa")
@@ -1040,32 +1046,41 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
               linewidth = 0.4
             )
         }
-        if (has_subject) {
-          p <- p + ggplot2::geom_point(alpha = 0.6, size = 1.4)
-        } else {
-          p <- p + ggplot2::geom_point(
-            position = ggplot2::position_jitter(width = 0.12, height = 0),
-            alpha = 0.55,
-            size = 1.4
-          )
-        }
       } else if (plot_type == "boxplot") {
-        p <- p + ggplot2::geom_boxplot(alpha = 0.6, width = 0.65)
-        if (has_subject) {
-          p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.5)
-        } else {
-          p <- p + ggplot2::geom_jitter(width = 0.15, alpha = 0.6, size = 1.5)
-        }
+        p <- p + ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7, box.linewidth = 0.45)
+      } else if (plot_type == "violin") {
+        violin_data <- df %>%
+          dplyr::group_by(Taxa, PrimaryGroup, Group) %>%
+          dplyr::filter(dplyr::n_distinct(AbundancePlot) >= 2L) %>%
+          dplyr::ungroup()
+        p <- p +
+          ggplot2::geom_violin(data = violin_data, color = NA, alpha = 0.65, trim = TRUE, scale = "width") +
+          ggplot2::geom_boxplot(width = 0.18, outlier.shape = NA, alpha = 0.35, box.linewidth = 0.45)
+      }
+      if (plot_type != "scatter") {
+        p <- p + ggplot2::geom_point(
+          mapping = ggplot2::aes(
+            fill = ggplot2::stage(start = Group, after_scale = colorspace::darken(fill, amount = 0.25))
+          ),
+          position = if (has_subject) "identity" else ggplot2::position_jitter(
+            width = if (plot_type == "jitter") 0.18 else 0.1, height = 0
+          ),
+          shape = 21, colour = "white", stroke = 0.25, alpha = 0.8, size = dot_size
+        )
       } else {
         if (has_subject) {
-          p <- p + ggplot2::geom_point(alpha = 0.7, size = 1.6)
+          p <- p + ggplot2::geom_point(alpha = 0.7, size = dot_size)
         } else {
           jitter_width <- if (isTRUE(use_continuous_x)) 0 else 0.15
-          p <- p + ggplot2::geom_jitter(width = jitter_width, alpha = 0.65, size = 1.6)
+          p <- p + ggplot2::geom_jitter(width = jitter_width, height = 0, alpha = 0.65, size = dot_size)
         }
       }
 
-      if (is_secondary) {
+      if (is_secondary && plot_type == "violin") {
+        p <- p + ggplot2::facet_wrap(
+          ggplot2::vars(PrimaryGroup, Taxa), scales = "free_y", ncol = dplyr::n_distinct(df$Taxa)
+        )
+      } else if (is_secondary) {
         p <- p + ggplot2::facet_grid(PrimaryGroup + SecondaryGroup ~ Taxa, scales = "free_y")
       } else {
         n_taxa <- dplyr::n_distinct(df$Taxa)
@@ -1226,7 +1241,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           p <- p + ggplot2::geom_line(
             data = line_df,
             mapping = ggplot2::aes(
-              x = Group,
+              x = .data[[x_var]],
               y = .data[[y_plot_col]],
               group = !!line_group_aes
             ),
@@ -1342,9 +1357,10 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           if (sig_only) valid_idx <- valid_idx[adj_p[valid_idx] < 0.05]
           if (length(valid_idx) == 0) next
 
-          y_max <- suppressWarnings(max(sub_data[[y_plot_col]], na.rm = TRUE))
-          if (!is.finite(y_max) || y_max <= 0) y_max <- 1
-          base_mult <- if (sig_as_marks) 1.12 else 1.20
+          y_range <- range(sub_data[[y_plot_col]], finite = TRUE)
+          if (!all(is.finite(y_range)) || diff(y_range) <= 0) next
+          y_span <- diff(y_range)
+          base_gap <- if (sig_as_marks) 0.12 else 0.20
           step_mult <- if (sig_as_marks) 0.08 else 0.12
 
           ann_df <- data.frame(
@@ -1355,7 +1371,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           )
           ann_df$p.signif <- vapply(ann_df$p.adj, signif_mark, character(1))
           ann_df$p.format <- vapply(ann_df$p.adj, format_p_value, character(1))
-          ann_df$y.position <- y_max * (base_mult + step_mult * (seq_len(nrow(ann_df)) - 1))
+          ann_df$y.position <- y_range[2L] +
+            y_span * (base_gap + step_mult * (seq_len(nrow(ann_df)) - 1))
           for (fv in facet_vars) {
             ann_df[[fv]] <- sub_data[[fv]][1]
           }
@@ -1435,10 +1452,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
 
       group_levels <- levels(factor(df$Group))
       n_groups <- length(group_levels)
-      plot_type <- input$plot_type
-      if (is.null(plot_type) || !plot_type %in% c("boxplot", "barplot", "scatter")) {
-        plot_type <- "boxplot"
-      }
+      plot_type <- current_plot_type()
       p_adjust_method <- input$p_adjust_method
       if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
         p_adjust_method <- "none"
@@ -1479,7 +1493,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         c(
           paste0("Primary grouping variable: ", input$group_var),
           paste0("Secondary grouping variable: ", if (is_secondary) secondary_col else "(None)"),
-          paste0("Plot type: ", if (plot_type == "barplot") "Bar plot" else if (plot_type == "scatter") "Scatter plot" else "Box plot"),
+          paste0("Plot type: ", names(taxa_comparison_plot_types)[match(plot_type, taxa_comparison_plot_types)]),
           paste0("ggpattern: ", pattern_status),
           paste0("Pairing condition axis: ", if (is_secondary) "Secondary group" else "Primary group"),
           paste0("Selected taxa count: ", dplyr::n_distinct(df$Taxa)),
@@ -1610,13 +1624,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       req(input$tax_level, input$plot_type, input$abundance_mode)
       tax_level_label <- tolower(input$tax_level)
       figure_title <- paste0(input$tax_level, "-Level Taxa Comparison")
-      plot_type_label <- if (identical(input$plot_type, "barplot")) {
-        "bar plots summarize group means with standard error bars"
-      } else if (identical(input$plot_type, "scatter")) {
-        "scatter plots show individual sample points by group"
-      } else {
+      plot_type_label <- switch(
+        current_plot_type(),
+        barplot = "bar plots summarize group means with standard error bars",
+        violin = "violin plots show distribution shape with overlaid sample points",
+        jitter = "jitter plots show individual sample values with horizontal displacement",
+        scatter = "scatter plots show individual sample points by group",
         "box plots summarize group distributions with overlaid sample points"
-      }
+      )
       abundance_label <- if (identical(input$abundance_mode, "relative")) {
         "relative abundance"
       } else if (identical(input$abundance_mode, "log_tss")) {

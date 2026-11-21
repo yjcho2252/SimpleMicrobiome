@@ -77,6 +77,7 @@ The module supports group contrasts and continuous primary predictors, with opti
 
 ### 3.4 Table and Association Detail
 - The table reports coefficient estimates, significance values, and taxonomy fields. Group results also include contrast labels and transformed effect sizes.
+- Numeric values in the table are displayed to two decimal places.
 - Select a row to see sample-level values below the table. Categorical contrasts show a boxplot with sample points for the reference and comparison groups. Continuous predictors show a scatter plot.
 - The graph uses sample values on the model input scale. The displayed coefficient and q-value come from the fitted model. The graph follows the left-panel width, height, and base font size.
 

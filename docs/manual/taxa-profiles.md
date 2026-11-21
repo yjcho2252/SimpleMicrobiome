@@ -18,6 +18,7 @@ This document explains what each left-panel parameter does and how different set
   - Group with 2-3 levels -> clearer side-by-side interpretation.
 - **Current selector behavior**:
   - `SampleID` is selectable.
+  - `None` displays all samples in a single panel.
   - If variables other than `SampleID` exist, a non-`SampleID` variable is used as the default.
 - **Recommendation**:
   - Use biologically primary factor (e.g., treatment, disease status).
@@ -80,7 +81,7 @@ This document explains what each left-panel parameter does and how different set
   - `Abundance Threshold`
 - **What it controls**: Which taxa are shown explicitly instead of being aggregated into `Others`.
 - **Interpretation impact**:
-  - `Top N Taxa`: fixed-width overview that is easy to compare across plots.
+  - `Top N Taxa`: displays the highest-ranked taxa across all selected samples or within each group.
   - `Abundance Threshold`: adaptive view that keeps all taxa above a chosen mean-abundance cutoff.
 - **Practical range**:
   - `Top N Taxa`: 10-20 for exploration, 20-30 for denser summaries.
@@ -92,6 +93,9 @@ This document explains what each left-panel parameter does and how different set
   - `Abundance Threshold` mode uses the selected mean-abundance percentage.
 - **Interpretation note**:
   - Mean abundance is computed on the relative-abundance scale after sample normalization.
+  - Under `Select top taxa from`, `All selected samples` ranks taxa by their mean relative abundance across all selected samples. `Each group` ranks taxa by their mean relative abundance within each group. The common legend includes taxa selected in any group and can contain more than N taxa.
+  - Under `Threshold applied to`, `Mean in at least one group` displays a taxon if its mean relative abundance meets the threshold in any group. `Mean across selected samples` uses the overall mean.
+  - With a secondary grouping variable, each primary and secondary group combination is evaluated separately for group-based selection.
 
 ### 2.9 Taxa Rank to Display
 - **Options**:
@@ -103,6 +107,7 @@ This document explains what each left-panel parameter does and how different set
 
 ### 2.10 Color Palette
 - **What it controls**: Taxa color mapping.
+- Additional choices include Okabe–Ito, Pastel, Dynamic, Warm, and Cool.
 - **Interpretation impact**:
   - High-contrast palette improves multi-taxa discrimination.
   - Poor contrast can create false visual grouping.
@@ -111,6 +116,9 @@ This document explains what each left-panel parameter does and how different set
 
 ### 2.11 Plot Width / Height / Base Font Size
 - **What it controls**: Figure readability.
+- `Fit plot to screen` adjusts the width to the available space. Turn it off to set the width manually.
+- Hover over a bar segment to see its taxon and relative abundance. Click a legend item to highlight it across panels.
+- Taxa Barplot rarefies to 3,000 reads per sample or the lowest selected read count, whichever is smaller.
 - **Guideline**:
   - Many taxa or facets -> increase width/height.
   - Long taxon names -> increase width and/or reduce displayed taxa.
@@ -160,7 +168,7 @@ This document explains what each left-panel parameter does and how different set
   - `Spearman` (default): uses a loess smoothing line for visualization.
   - `Pearson`: uses linear-model smoothing.
 - **When disabled**:
-  - Plot type returns to `Bar plot`.
+  - The previously selected plot type is restored.
   - `Show p-value bars` is re-enabled.
   - When pairing is enabled, the repeated-measures logic follows the same x-axis grouping used by the plot, and the overall test switches to `Friedman test` when there are 3 or more x-axis groups.
 
@@ -201,7 +209,8 @@ This document explains what each left-panel parameter does and how different set
   - Communication figure: `Relative` or `Log TSS` as supplementary.
 
 ### 3.10 Plot Type
-- **Options**: `Box plot`, `Bar plot`, `Scatter plot`.
+- **Options**: `Violin plot` (default), `Box plot`, `Jitter plot`, `Bar plot`, and `Scatter plot`.
+- Dot Size defaults to 4, Base Font Size defaults to 14, and categorical X-axis labels can be rotated to 45° or 90°.
 - **Interpretation impact**:
   - `Box plot`: shows distribution/spread/outliers.
   - `Bar plot`: emphasizes mean-level differences.

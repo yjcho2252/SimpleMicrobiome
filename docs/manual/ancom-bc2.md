@@ -73,6 +73,11 @@ This module compares selected metadata levels and reports taxon-level log2 fold-
 
 ### 3.3 Table
 - Reports selected ANCOM-BC2 coefficient estimates, standard errors, W statistics, p-values, q-values, differential flags, contrast labels, and taxonomy fields.
+- Select a row to see observed relative abundance for its reference and comparison groups. Numeric values in the table are displayed to two decimal places.
+
+### 3.4 Forest plot and Contrast heatmap
+- The forest plot shows log fold-change estimates and one standard error on each side, with up to 10 taxa per contrast.
+- The heatmap compares log fold changes for up to 20 taxa across contrasts. An asterisk marks an ANCOM-BC2 differential call. Both plots can be downloaded as PNG.
 
 ## 4. Result Columns
 

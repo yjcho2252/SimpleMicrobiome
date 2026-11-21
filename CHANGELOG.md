@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-22] v1.1.1
+
+- Preprocessing now uses the lowest selected read count as its optional rarefaction depth.
+- Taxa Barplot adds interactive tooltips, legend highlighting, screen-fit sizing, and group-based taxon selection. It reuses plot and export calculations.
+- Alpha Diversity and Taxa Comparison default to violin plots and offer dot sizing and X-axis label rotation. Added palettes across taxa and diversity plots.
+- ANCOM-BC2 adds row-linked abundance plots, a forest plot, and a contrast heatmap. MaAsLin3 adds a volcano plot and a status panel.
+- SparCC keeps group panels visible when no edges meet the display cutoff. Differential abundance and network result tables display numeric values to two decimal places.
+- Added the publication citation to the project README and updated the manuals. See the [release notes](docs/releases/2026-11-22.md).
+
 ## [2026-11-21] v1.1
 
 ### Added

@@ -72,9 +72,13 @@ mod_maaslin3_ui <- function(id) {
     mainPanel(
       width = 10,
       h4("MaAsLin3"),
-      textOutput(ns("status")),
       tabsetPanel(
         tabPanel("Summary Plot", uiOutput(ns("summary"))),
+        tabPanel("Volcano Plot",
+          checkboxInput(ns("volcano_primary_only"), "Show only the primary variable", TRUE),
+          downloadButton(ns("volcano_download"), "Download volcano PNG"),
+          div(style = "overflow-x: auto;", plotOutput(ns("volcano"), height = "auto"))
+        ),
         tabPanel("Results Table",
           div(
             style = "width: 700px; max-width: 100%; margin-top: 12px; margin-bottom: 18px;",
@@ -95,6 +99,12 @@ mod_maaslin3_ui <- function(id) {
           ),
           uiOutput(ns("association_detail"))
         )
+      ),
+      div(
+        style = "clear: both; margin-top: 16px;",
+        hr(),
+        h5(icon("circle-info"), "MaAsLin3 Status"),
+        div(class = "simple-result-card", verbatimTextOutput(ns("status")))
       )
     )
   )
@@ -475,10 +485,23 @@ mod_maaslin3_server <- function(id, ps_obj) {
 
     output$status <- renderText({
       run <- result()
+      message <- status()
+      if (startsWith(message, "MaAsLin3:")) return(message)
       if (!is.null(run) && !identical(run$settings, settings())) {
         return("Data or model settings changed. Run MaAsLin3 again to see updated results.")
       }
-      status()
+      if (is.null(run)) {
+        return(if (nzchar(message)) message else "Ready to run MaAsLin3.")
+      }
+      rank <- run$settings$rank
+      if (identical(rank, "__feature_level__")) rank <- "Feature level"
+      paste(
+        message,
+        paste("Samples used:", nrow(run$model$metadata)),
+        paste("Taxonomic level:", rank),
+        sprintf("Prevalence filter: %g%%", run$settings$prevalence),
+        sep = "\n"
+      )
     })
 
     styled_summary <- reactive({
@@ -563,6 +586,67 @@ mod_maaslin3_server <- function(id, ps_obj) {
       writeBin(current()$tsv, file)
     }, contentType = "text/tab-separated-values")
 
+    volcano_plot <- reactive({
+      run <- current()
+      tab <- run$table
+      if (isTRUE(input$volcano_primary_only)) {
+        tab <- tab[tab$metadata %in% run$model$primary, , drop = FALSE]
+      }
+      models <- c(abundance = "Abundance", prevalence = "Prevalence")
+      tab$model_label <- factor(unname(models[tolower(tab$model)]), levels = unname(models))
+      tab$effect <- tab$coef - tab$null_hypothesis
+      q <- tab$qval_individual
+      valid <- !is.na(tab$model_label) & !tab$metadata %in% run$model$group &
+        is.finite(tab$effect) & is.finite(q) & q >= 0 & q <= 1
+      tab <- tab[valid, , drop = FALSE]
+      validate(need(nrow(tab) > 0L, "No results with finite effects and individual q-values to plot."))
+
+      threshold <- run$settings$q
+      q <- tab$qval_individual
+      q_floor <- max(.Machine$double.xmin, min(c(q[q > 0], threshold)) / 10)
+      tab$log_q <- -log10(ifelse(q == 0, q_floor, q))
+      tab$significance <- factor(
+        ifelse(q > threshold, "Above q cutoff",
+               ifelse(tab$effect >= 0, "Positive effect", "Negative effect")),
+        levels = c("Positive effect", "Negative effect", "Above q cutoff")
+      )
+      labels <- tab[which(q <= threshold), , drop = FALSE] %>%
+        dplyr::group_by(model_label) %>%
+        dplyr::arrange(qval_individual, dplyr::desc(abs(effect)), .by_group = TRUE) %>%
+        dplyr::slice_head(n = 5) %>%
+        dplyr::ungroup()
+      ggplot2::ggplot(tab, ggplot2::aes(effect, log_q, colour = significance)) +
+        ggplot2::geom_vline(xintercept = 0, colour = "grey55", linetype = "dotted") +
+        ggplot2::geom_hline(yintercept = -log10(threshold), colour = "grey55", linetype = "dashed") +
+        ggplot2::geom_point(alpha = 0.75, size = 2) +
+        ggrepel::geom_text_repel(data = labels, ggplot2::aes(label = feature),
+                                size = 3, seed = 42, show.legend = FALSE) +
+        ggplot2::facet_wrap(~ model_label, scales = "free_x", drop = FALSE) +
+        ggplot2::scale_colour_manual(values = c("Positive effect" = "#B54443",
+                                               "Negative effect" = "#3568A7",
+                                               "Above q cutoff" = "#808080")) +
+        ggplot2::labs(
+          x = "Model coefficient minus the tested null value",
+          y = expression(-log[10]("individual q-value")),
+          colour = NULL,
+          caption = paste0(
+            sprintf("Dashed line marks the run's q-value cutoff (%g).", threshold),
+            if (any(q == 0)) " Zero q-values are shown above the smallest positive q-value or the cutoff."
+          )
+        ) +
+        ggplot2::theme_bw(base_size = req(input$summary_font)) +
+        ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"), legend.position = "bottom")
+    })
+
+    output$volcano <- renderPlot(volcano_plot(),
+                                 width = function() detail_dimensions()$width,
+                                 height = function() detail_dimensions()$height)
+    output$volcano_download <- downloadHandler("maaslin3-volcano.png", function(file) {
+      size <- detail_dimensions()
+      ggplot2::ggsave(file, plot = volcano_plot(), device = ragg::agg_png, units = "px",
+                      width = size$width, height = size$height, dpi = summary_dpi, bg = "white")
+    }, contentType = "image/png")
+
     visible_results <- reactive({
       run <- current()
       tab <- run$table
@@ -596,6 +680,8 @@ mod_maaslin3_server <- function(id, ps_obj) {
         class = "compact stripe hover cell-border", style = "bootstrap",
         options = list(scrollX = TRUE, pageLength = 10, ordering = TRUE, order = list())
       )
+      numeric_columns <- names(table_data)[vapply(table_data, is.numeric, logical(1))]
+      widget <- DT::formatRound(widget, columns = numeric_columns, digits = 2)
       DT::formatStyle(widget, columns = names(table_data), fontSize = "11px", padding = "4px")
     })
 
@@ -701,7 +787,7 @@ mod_maaslin3_server <- function(id, ps_obj) {
       if (is.factor(data$predictor)) {
         plot <- plot +
           ggplot2::geom_boxplot(ggplot2::aes(fill = predictor), width = 0.48, alpha = 0.6,
-                                colour = "#264653", outlier.shape = NA, show.legend = FALSE) +
+                                colour = "#264653", outlier.shape = NA, box.linewidth = 0.45, show.legend = FALSE) +
           ggplot2::geom_point(position = ggplot2::position_jitter(width = 0.14, height = 0, seed = 42),
                               colour = "#264653", alpha = 0.55, size = 1.8) +
           ggplot2::scale_fill_viridis_d(begin = 0.25, end = 0.85) +
@@ -740,7 +826,7 @@ mod_maaslin3_server <- function(id, ps_obj) {
         data$presence <- factor(data$detected, levels = c(FALSE, TRUE), labels = c("Not detected", "Detected"))
         plot <- ggplot2::ggplot(data, ggplot2::aes(presence, predictor)) +
           ggplot2::geom_boxplot(ggplot2::aes(fill = presence), width = 0.48, alpha = 0.55,
-                                colour = "#264653", outlier.shape = NA, show.legend = FALSE) +
+                                colour = "#264653", outlier.shape = NA, box.linewidth = 0.45, show.legend = FALSE) +
           ggplot2::geom_point(position = ggplot2::position_jitter(width = 0.14, height = 0, seed = 42),
                               colour = "#264653", alpha = 0.55, size = 1.8) +
           ggplot2::scale_fill_manual(values = c("#a7b2bc", "#64b6ac")) +

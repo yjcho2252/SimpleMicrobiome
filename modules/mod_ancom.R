@@ -194,12 +194,20 @@ mod_ancom_ui <- function(id) {
                        style = "margin-top: 8px;",
                        plotOutput(ns("ancom_barplot"), height = "auto")
                      )),
+            tabPanel("Forest plot",
+                     downloadButton(ns("download_forest"), "Download plot (PNG)"),
+                     plotOutput(ns("ancom_forest"), height = "auto")),
+            tabPanel("Contrast heatmap",
+                     downloadButton(ns("download_contrast_heatmap"), "Download plot (PNG)"),
+                     plotOutput(ns("ancom_contrast_heatmap"), height = "auto")),
             tabPanel("Table",
                      downloadButton(ns("download_ancom_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
                      tags$div(
                        style = "position: relative; z-index: 1; margin-bottom: 18px;",
+                       p("Select a result row to see the observed relative abundance."),
                        DTOutput(ns("ancom_table"))
-                     ))
+                     ),
+                     uiOutput(ns("ancom_taxon_detail")))
           )
         ),
         uiOutput(ns("ancom_legend_box")),
@@ -970,7 +978,10 @@ mod_ancom_server <- function(id, ps_obj) {
           rownames(res) <- make.unique(as.character(res$feature_id))
           list(
             res = res,
-            trend = out$res_trend
+            trend = out$res_trend,
+            model_input = ps_current,
+            model_group = current_group_var,
+            reference = input$reference_level
           )
         })
       }, error = function(e) {
@@ -1187,6 +1198,7 @@ mod_ancom_server <- function(id, ps_obj) {
         base_df <- data.frame(
           contrast = as.character(level_name),
           feature_id = res$feature_id,
+          .taxon_id = as.character(res$taxon),
           lfc = lfc_values,
           se = se_values,
           W = w_values,
@@ -1223,18 +1235,19 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$ancom_table <- renderDT({
       req(ancom_processed())
-      res <- ancom_processed()
+      res <- dplyr::select(ancom_processed(), -.taxon_id)
       leading_cols <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "contrast", "feature_id")
       existing_leading <- intersect(leading_cols, colnames(res))
       remaining_cols <- setdiff(colnames(res), existing_leading)
       res <- res[, c(existing_leading, remaining_cols), drop = FALSE]
-      res <- round_numeric_columns(res, digits = 2)
       datatable(
         res,
         options = list(scrollX = TRUE),
+        selection = "single",
         class = "compact stripe hover cell-border",
         style = "bootstrap"
       ) %>%
+        DT::formatRound(columns = names(res)[vapply(res, is.numeric, logical(1))], digits = 2) %>%
         formatStyle(
           columns = colnames(res),
           `font-size` = "11px",
@@ -1254,10 +1267,148 @@ mod_ancom_server <- function(id, ps_obj) {
       },
       content = function(file) {
         req(ancom_processed())
-        rounded_res <- round_numeric_columns(ancom_processed(), digits = 2)
+        rounded_res <- round_numeric_columns(dplyr::select(ancom_processed(), -.taxon_id), digits = 2)
         readr::write_tsv(rounded_res, file)
       }
     )
+
+    ancom_effect_data <- reactive({
+      res <- ancom_processed()
+      original <- display_ancom_res()$res
+      labels <- make.unique(as.character(original$feature_id))
+      res$taxon_label <- labels[match(res$.taxon_id, original$taxon)]
+      res
+    })
+
+    selected_taxon_detail <- reactive({
+      res <- ancom_effect_data()
+      index <- input$ancom_table_rows_selected
+      req(length(index) == 1L, index %in% seq_len(nrow(res)))
+      row <- res[index, , drop = FALSE]
+      run <- display_ancom_res()
+      ps <- run$model_input
+      levels <- c(run$reference, as.character(row$contrast))
+      validate(need(row$.taxon_id %in% phyloseq::taxa_names(ps),
+                    "Observed abundances are unavailable for this taxon."))
+      metadata <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
+      totals <- phyloseq::sample_sums(ps)
+      groups <- as.character(metadata[[run$model_group]][match(names(totals), rownames(metadata))])
+      keep <- groups %in% levels & is.finite(totals) & totals > 0
+      ids <- names(totals)[keep]
+      validate(need(length(ids) > 0, "No samples with positive library sizes are available for this contrast."))
+      counts <- as(phyloseq::otu_table(ps), "matrix")
+      observed <- if (phyloseq::taxa_are_rows(ps)) counts[row$.taxon_id, ids] else counts[ids, row$.taxon_id]
+      data <- data.frame(
+        group = factor(groups[keep], levels = levels),
+        abundance = 100 * unname(observed) / unname(totals[ids])
+      )
+      list(row = row, data = data, reference = run$reference)
+    })
+
+    output$ancom_taxon_detail <- renderUI({
+      detail <- selected_taxon_detail()
+      req(input$plot_width, input$plot_height)
+      row <- detail$row
+      format_stat <- function(x) if (is.finite(x)) format(signif(x, 3), trim = TRUE) else "NA"
+      tagList(
+        hr(),
+        h5("Association Detail"),
+        p(strong(paste(row$taxon_label, "—", row$contrast, "vs", detail$reference))),
+        p(sprintf(
+          "Adjusted log fold change (natural log) %s · SE %s · q-value %s",
+          format_stat(row$lfc), format_stat(row$se), format_stat(row$q_val)
+        )),
+        p("Points show observed relative abundance in the samples supplied to ANCOM-BC2."),
+        div(
+          style = sprintf("width: %gpx; max-width: 100%%;", input$plot_width),
+          plotOutput(session$ns("ancom_taxon_distribution"), height = paste0(input$plot_height, "px"))
+        )
+      )
+    })
+
+    output$ancom_taxon_distribution <- renderPlot({
+      detail <- selected_taxon_detail()
+      ggplot2::ggplot(detail$data, ggplot2::aes(group, abundance, fill = group)) +
+        ggplot2::geom_boxplot(width = 0.45, alpha = 0.55, outlier.shape = NA, box.linewidth = 0.45) +
+        ggplot2::geom_point(
+          position = ggplot2::position_jitter(width = 0.10, height = 0, seed = 42),
+          shape = 21, colour = "white", stroke = 0.25, size = 2.5, alpha = 0.85
+        ) +
+        ggplot2::labs(x = NULL, y = "Observed relative abundance (%)") +
+        ggplot2::theme_bw(base_size = req(input$base_size)) +
+        ggplot2::theme(legend.position = "none")
+    })
+
+    forest_plot_reactive <- reactive({
+      res <- ancom_effect_data() %>%
+        dplyr::filter(is.finite(lfc), is.finite(se), se >= 0) %>%
+        dplyr::group_by(contrast) %>%
+        dplyr::arrange(dplyr::desc(diff), dplyr::desc(abs(lfc)), .taxon_id, .by_group = TRUE) %>%
+        dplyr::slice_head(n = 10) %>%
+        dplyr::ungroup()
+      validate(need(nrow(res) > 0, "No estimates with finite standard errors are available."))
+      res$plot_row <- factor(res$feature_id, levels = rev(res$feature_id))
+      labels <- stats::setNames(res$taxon_label, res$feature_id)
+      ggplot2::ggplot(res, ggplot2::aes(lfc, plot_row, colour = diff)) +
+        ggplot2::geom_vline(xintercept = 0, colour = "grey55", linetype = "dotted") +
+        ggplot2::geom_segment(ggplot2::aes(x = lfc - se, xend = lfc + se, yend = plot_row), linewidth = 0.55) +
+        ggplot2::geom_point(size = 2.5) +
+        ggplot2::facet_wrap(~ contrast, scales = "free_y") +
+        ggplot2::scale_y_discrete(labels = labels) +
+        ggplot2::scale_colour_manual(values = c("TRUE" = "#007782", "FALSE" = "#767676"),
+                                     labels = c("TRUE" = "Differential", "FALSE" = "Other")) +
+        ggplot2::labs(x = "Adjusted log fold change (natural log)", y = NULL, colour = NULL,
+                      subtitle = paste("Reference group", input$reference_level),
+                      caption = "Up to 10 estimates per contrast. Lines show ±1 SE.") +
+        ggplot2::theme_bw(base_size = req(input$base_size))
+    })
+
+    contrast_heatmap_reactive <- reactive({
+      res <- ancom_effect_data()
+      top_taxa <- res %>%
+        dplyr::filter(is.finite(lfc)) %>%
+        dplyr::group_by(.taxon_id, taxon_label) %>%
+        dplyr::summarise(differential = any(diff), effect = max(abs(lfc)), .groups = "drop") %>%
+        dplyr::arrange(dplyr::desc(differential), dplyr::desc(effect), .taxon_id) %>%
+        dplyr::slice_head(n = 20)
+      validate(need(nrow(top_taxa) > 0, "No finite log fold changes are available."))
+      res <- res[res$.taxon_id %in% top_taxa$.taxon_id, , drop = FALSE]
+      res$taxon_label <- factor(res$taxon_label, levels = rev(top_taxa$taxon_label))
+      res$lfc[!is.finite(res$lfc)] <- NA_real_
+      limit <- max(abs(res$lfc), na.rm = TRUE)
+      if (limit == 0) limit <- 1
+      ggplot2::ggplot(res, ggplot2::aes(contrast, taxon_label, fill = lfc)) +
+        ggplot2::geom_tile(colour = "white") +
+        ggplot2::geom_text(data = res[res$diff & is.finite(res$lfc), , drop = FALSE],
+                           label = "*", colour = "#202020", size = 4) +
+        ggplot2::scale_fill_gradient2(
+          low = "#3568A7", mid = "white", high = "#C64B3C",
+          limits = c(-limit, limit), na.value = "grey88"
+        ) +
+        ggplot2::labs(x = NULL, y = NULL, fill = "Adjusted log fold change\n(natural log)",
+                      subtitle = paste("Reference group", input$reference_level),
+                      caption = "* ANCOM-BC2 differential call. Grey indicates an unavailable estimate.") +
+        ggplot2::theme_bw(base_size = req(input$base_size)) +
+        ggplot2::theme(panel.grid = ggplot2::element_blank())
+    })
+
+    output$ancom_forest <- renderPlot(forest_plot_reactive(),
+                                     width = function() req(input$plot_width),
+                                     height = function() req(input$plot_height))
+    output$ancom_contrast_heatmap <- renderPlot(contrast_heatmap_reactive(),
+                                               width = function() req(input$plot_width),
+                                               height = function() req(input$plot_height))
+    download_effect_plot <- function(name, plot) {
+      downloadHandler(
+        filename = function() paste0("ancombc2_", name, ".png"),
+        content = function(file) {
+          ggplot2::ggsave(file, plot = plot(), device = "png",
+                          width = req(input$plot_width) / 100, height = req(input$plot_height) / 100)
+        }
+      )
+    }
+    output$download_forest <- download_effect_plot("forest", forest_plot_reactive)
+    output$download_contrast_heatmap <- download_effect_plot("contrast_heatmap", contrast_heatmap_reactive)
 
     resolve_current_taxa_labels <- function(df, tax_level) {
       is_unassigned_taxa <- function(x) {
@@ -1631,7 +1782,7 @@ mod_ancom_server <- function(id, ps_obj) {
     output$ancom_legend_box <- renderUI({
       req(input$plot_width)
       active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano plot" else input$ancom_active_tab
-      if (identical(active_tab, "Table")) {
+      if (!active_tab %in% c("Volcano plot", "Bar plot")) {
         return(NULL)
       }
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width

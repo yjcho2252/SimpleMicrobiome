@@ -1431,8 +1431,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       metric_cols <- intersect(core_cols, colnames(res))
       used_cols <- unique(c(taxonomy_cols, id_cols, metric_cols))
       remaining_cols <- setdiff(colnames(res), c(used_cols, "feature"))
-      res <- res[, c(used_cols, remaining_cols), drop = FALSE]
-      round_numeric_columns(res, digits = 2)
+      res[, c(used_cols, remaining_cols), drop = FALSE]
     })
 
     maaslin2_processed <- reactive({
@@ -1498,6 +1497,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
         class = "compact stripe hover cell-border",
         style = "bootstrap"
       ) %>%
+        DT::formatRound(columns = names(res)[vapply(res, is.numeric, logical(1))], digits = 2) %>%
         formatStyle(
           columns = colnames(res),
           `font-size` = "11px",
@@ -1554,7 +1554,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       if (is.factor(detail$data$predictor)) {
         plot <- plot +
           ggplot2::geom_boxplot(ggplot2::aes(fill = predictor), width = 0.48, alpha = 0.55,
-                                colour = "#264653", outlier.shape = NA, show.legend = FALSE) +
+                                colour = "#264653", outlier.shape = NA, box.linewidth = 0.45, show.legend = FALSE) +
           ggplot2::geom_point(position = ggplot2::position_jitter(width = 0.14, height = 0, seed = 42),
                               colour = "#264653", alpha = 0.55, size = 1.8) +
           ggplot2::scale_fill_manual(values = c("#8ab7c8", "#e9a47e")) +
@@ -1577,7 +1577,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       },
       content = function(file) {
         req(maaslin2_table_data())
-        readr::write_tsv(maaslin2_table_data(), file)
+        readr::write_tsv(round_numeric_columns(maaslin2_table_data(), digits = 2), file)
       }
     )
 

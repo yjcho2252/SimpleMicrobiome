@@ -16,6 +16,12 @@ Public app: https://simplemicrobiome.mglab.org/
 
 SimpleMicrobiome is developed and maintained by the Microbial Genomics Laboratory at Kangwon National University, Korea.
 
+## Cite SimpleMicrobiome
+
+If you use SimpleMicrobiome in your research, please cite the following article.
+
+Na, S.-I., Kim, J., Kim, S.-Y., Park, J., & Cho, Y.-J. (2026). SimpleMicrobiome: An integrated web-based platform for streamlined microbiome data analysis and visualization. *Journal of Microbiology, 64*(9), e2606011. [DOI 10.71150/jm.2606011](https://doi.org/10.71150/jm.2606011)
+
 ## Current App Modules
 
 - **Top**
@@ -43,7 +49,7 @@ SimpleMicrobiome is developed and maintained by the Microbial Genomics Laborator
   - Correlation Heatmap
   - Association Biplot (dbRDA/CCA)
 - **Citation**
-  - Method/package references
+  - SimpleMicrobiome publication and method/package references
 
 ## How to Use
 

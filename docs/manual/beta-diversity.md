@@ -32,6 +32,7 @@ The distance choice is the most important modeling decision in this module.
 
 ### 2.2 Primary Variable (Color)
 - **What it controls**: Main group color mapping and interpretation axis.
+- The primary group palette applies to PCoA and NMDS. Individual group colors can be customized.
 - **Effect of setting**:
   - Defines the primary visual separation narrative.
   - Too many levels reduce readability.

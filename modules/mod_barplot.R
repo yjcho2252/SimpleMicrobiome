@@ -12,7 +12,8 @@ mod_barplot_ui <- function(id) {
     "Dark2" = "Dark2",
     "Accent" = "Accent",
     "Pastel1" = "Pastel1",
-    "Pastel2" = "Pastel2"
+    "Pastel2" = "Pastel2",
+    additional_plot_palettes
   )
   
   tagList(
@@ -23,7 +24,20 @@ mod_barplot_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
+      .taxa-barplot-loading {
+        display: none;
+        margin: 12px 0;
+        color: #475569;
+      }
+      .taxa-barplot-view:has(.plotly.html-widget-output:not(.shiny-output-error):not([data-taxa-ready])) > .taxa-barplot-loading,
+      .taxa-barplot-view:has(.plotly.html-widget-output.recalculating:not(.shiny-output-error)) > .taxa-barplot-loading {
+        display: block;
+      }
     ")),
+    tags$style(HTML(sprintf(
+      "#%s .shiny-options-group label, #%s .shiny-options-group label { font-size: 12px; }",
+      ns("top_n_basis"), ns("abundance_threshold_basis")
+    ))),
     sidebarLayout(
       sidebarPanel(
         width = 2,
@@ -77,12 +91,19 @@ mod_barplot_ui <- function(id) {
         conditionalPanel(
           condition = paste0("input['", ns("taxa_display_mode"), "'] == 'top_n'"),
           numericInput(ns("top_n_taxa"), "Taxa Numbers to Display:",
-                       value = 15, min = 1, max = 50, step = 1)
+                       value = 15, min = 1, max = 50, step = 1),
+          radioButtons(ns("top_n_basis"), "Select top taxa from",
+                       choices = c("All selected samples" = "overall", "Each group" = "each_group"),
+                       selected = "overall")
         ),
         conditionalPanel(
           condition = paste0("input['", ns("taxa_display_mode"), "'] == 'abundance_threshold'"),
-          numericInput(ns("min_taxa_abundance_pct"), "Display taxa with mean abundance >= (%):",
-                       value = 1, min = 0, max = 100, step = 0.1)
+          numericInput(ns("min_taxa_abundance_pct"), "Abundance Threshold (%):",
+                       value = 1, min = 0, max = 100, step = 0.1),
+          radioButtons(ns("abundance_threshold_basis"), "Threshold applied to",
+                       choices = c("Mean across selected samples" = "mean",
+                                   "Mean in at least one group" = "any_group"),
+                       selected = "mean")
         ),
         selectInput(ns("name_display_mode"), "Taxa Rank to Display:",
                     choices = c("Full Hierarchy" = "full",
@@ -93,12 +114,16 @@ mod_barplot_ui <- function(id) {
                     selected = "Paired"),
         hr(),
         h4(icon("sliders"), "Plot Dimensions"),
-        numericInput(ns("plot_width"), "Plot Width (px):",
-                     value = 1000, min = 300, step = 50),
+        checkboxInput(ns("auto_plot_width"), "Fit plot to screen", value = TRUE),
+        conditionalPanel(
+          condition = sprintf("!input['%s']", ns("auto_plot_width")),
+          numericInput(ns("plot_width"), "Plot Width (px):",
+                       value = 1000, min = 200, step = 50)
+        ),
         numericInput(ns("plot_height"), "Plot Height (px):",
-                     value = 600, min = 300, step = 50),
+                     value = 400, min = 300, step = 50),
         numericInput(ns("base_size"), "Base Font Size:",
-                     value = 11, min = 6, max = 30, step = 1),
+                     value = 9, min = 6, max = 30, step = 1),
 
         
         hr(),
@@ -120,7 +145,21 @@ mod_barplot_ui <- function(id) {
       mainPanel(
         width = 9,
         h4("Taxa Bar plot"),
-        plotOutput(ns("barplot_out"), height = "auto"),
+        div(
+          class = "taxa-barplot-view",
+          style = "width: max-content;",
+          uiOutput(ns("barplot_title")),
+          div(class = "taxa-barplot-loading", role = "status",
+              "Preparing the Taxa Bar Plot. Please wait..."),
+          div(
+            style = "display: flex; align-items: flex-start; gap: 12px;",
+            plotly::plotlyOutput(ns("barplot_out"), width = "auto", height = "auto"),
+            div(
+              id = ns("barplot_taxa_legend"),
+              style = "flex: 0 0 auto; align-self: center; min-width: 220px; margin: 4px 0; white-space: nowrap;"
+            )
+          )
+        ),
         uiOutput(ns("barplot_legend_box"))
       )
     )
@@ -131,6 +170,40 @@ mod_barplot_ui <- function(id) {
 mod_barplot_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
     supported_taxonomic_ranks <- c("Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")
+    ps_barplot <- reactive({
+      ps <- ps_obj()
+      if (is.null(ps) || phyloseq::nsamples(ps) == 0L) {
+        return(ps)
+      }
+      sample_depths <- phyloseq::sample_sums(ps)
+      rarefaction_depth <- min(3000L, sample_depths)
+      validate(need(rarefaction_depth > 0, "Deselect samples with zero reads in Preprocessing."))
+      counts <- as(phyloseq::otu_table(ps), "matrix")
+      if (!phyloseq::taxa_are_rows(ps)) counts <- t(counts)
+      sample_depths <- sample_depths[colnames(counts)]
+
+      counts <- withr::with_seed(42, {
+        for (sample_index in which(sample_depths > rarefaction_depth)) {
+          remaining_reads <- sample_depths[sample_index]
+          remaining_draws <- rarefaction_depth
+          observed_taxa <- which(counts[, sample_index] > 0)
+          sampled_counts <- integer(length(observed_taxa))
+          for (i in seq_along(observed_taxa)) {
+            # Draw the current taxon's share of the remaining sample without replacement.
+            taxon_reads <- counts[observed_taxa[i], sample_index]
+            remaining_reads <- remaining_reads - taxon_reads
+            drawn <- stats::rhyper(1L, taxon_reads, remaining_reads, remaining_draws)
+            sampled_counts[i] <- drawn
+            remaining_draws <- remaining_draws - drawn
+            if (remaining_draws == 0L) break
+          }
+          counts[observed_taxa, sample_index] <- sampled_counts
+        }
+        counts
+      })
+      phyloseq::otu_table(ps) <- phyloseq::otu_table(counts, taxa_are_rows = TRUE)
+      phyloseq::prune_taxa(phyloseq::taxa_sums(ps) > 0, ps)
+    })
 
     observeEvent(ps_obj(), {
       ps <- ps_obj()
@@ -163,33 +236,10 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       requested
     }
 
-    size_update_in_progress <- reactiveVal(FALSE)
-
-    compute_auto_plot_dims <- function(n_bars) {
+    auto_plot_width <- function(n_bars) {
       n_bars <- max(1, as.numeric(n_bars))
       per_bar_px <- min(26, max(6, 89.44 / sqrt(n_bars)))
-      width <- ceiling(min(max(300, 220 + n_bars * per_bar_px), 2200))
-      height <- 400
-      list(width = width, height = height)
-    }
-
-    maybe_auto_adjust_plot_size <- function(width, height) {
-      if (size_update_in_progress()) {
-        return()
-      }
-      current_width <- suppressWarnings(as.numeric(input$plot_width))
-      current_height <- suppressWarnings(as.numeric(input$plot_height))
-      if (is.finite(current_width) && is.finite(current_height) &&
-          as.integer(current_width) == as.integer(width) &&
-          as.integer(current_height) == as.integer(height)) {
-        return()
-      }
-      size_update_in_progress(TRUE)
-      updateNumericInput(session, "plot_width", value = width)
-      updateNumericInput(session, "plot_height", value = height)
-      session$onFlushed(function() {
-        size_update_in_progress(FALSE)
-      }, once = TRUE)
+      ceiling(min(max(300, 220 + n_bars * per_bar_px), 2200))
     }
 
     apply_disambiguated_taxrank <- function(ps, tax_level) {
@@ -245,22 +295,23 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       non_sampleid_choices <- setdiff(group_choices, "SampleID")
       selected_col <- if (length(non_sampleid_choices) > 0) non_sampleid_choices[1] else group_choices[1]
       selectInput(session$ns("group_var"), "Primary Group (Facet):",
-                  choices = group_choices, selected = selected_col)
+                  choices = c("None" = "__no_facet__", group_choices), selected = selected_col)
     })
     
     output$secondary_group_selector <- renderUI({
       req(meta_cols(), input$group_var)
       resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
       group_choices <- setdiff(meta_cols(), c(input$group_var, resolved_primary))
-      non_sampleid_choices <- setdiff(group_choices, "SampleID")
-      selected_col <- if (length(non_sampleid_choices) > 0) non_sampleid_choices[1] else if (length(group_choices) > 0) group_choices[1] else NULL
+      current <- isolate(input$secondary_var)
+      selected <- if (!is.null(current) && current %in% group_choices) current else "None"
       selectInput(session$ns("secondary_var"), "Secondary Group (Optional):",
                   choices = c("None" = "None", group_choices), 
-                  selected = "None")
+                  selected = selected)
     })
     
     group_var <- reactive({
       req(input$group_var)
+      if (identical(input$group_var, "__no_facet__")) return(NULL)
       resolve_meta_colname(input$group_var, meta_cols())
     })
     
@@ -279,7 +330,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     })
     
     output$sort_by_metadata_ui <- renderUI({
-      req(meta_cols(), group_var())
+      req(meta_cols(), input$group_var)
       selectInput(session$ns("sort_metadata_var"), "Metadata Variable for Primary Sort:",
                   choices = meta_cols(),
                   selected = group_var())
@@ -383,21 +434,36 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       out
     }
 
-    resolve_taxa_selection <- function(ps_glom, tax_labels, display_mode, top_n_taxa, min_taxa_abundance_pct) {
+    resolve_taxa_selection <- function(ps_glom, display_mode, top_n_taxa, min_taxa_abundance_pct,
+                                       threshold_basis, top_n_basis, sample_data, group_columns) {
       taxa_ids <- names(sort(phyloseq::taxa_sums(ps_glom), decreasing = TRUE))
       if (is.null(taxa_ids) || length(taxa_ids) == 0) {
         return(character(0))
       }
 
       display_mode <- if (is.null(display_mode)) "top_n" else display_mode
+      by_group <- if (identical(display_mode, "abundance_threshold")) {
+        identical(threshold_basis, "any_group")
+      } else {
+        identical(top_n_basis, "each_group")
+      }
+      if (by_group) {
+        group_means <- sample_data %>%
+          dplyr::group_by(OTU, dplyr::across(dplyr::all_of(group_columns))) %>%
+          dplyr::summarise(mean_abundance = mean(Abundance), .groups = "drop")
+      }
       if (identical(display_mode, "abundance_threshold")) {
         threshold <- suppressWarnings(as.numeric(min_taxa_abundance_pct))
-        if (!is.finite(threshold) || threshold < 0) {
+        if (length(threshold) != 1L || !is.finite(threshold) || threshold < 0) {
           threshold <- 0
         }
         threshold <- threshold / 100
-        mean_abundance <- phyloseq::taxa_sums(ps_glom) / max(1, phyloseq::nsamples(ps_glom))
-        selected_ids <- names(mean_abundance)[mean_abundance >= threshold]
+        selected_ids <- if (by_group) {
+          unique(group_means$OTU[group_means$mean_abundance >= threshold])
+        } else {
+          abundance <- phyloseq::taxa_sums(ps_glom) / phyloseq::nsamples(ps_glom)
+          names(abundance)[abundance >= threshold]
+        }
         if (length(selected_ids) == 0) {
           selected_ids <- taxa_ids[1]
         }
@@ -405,24 +471,25 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }
 
       top_n <- suppressWarnings(as.integer(top_n_taxa))
-      if (!is.finite(top_n) || top_n < 1) {
+      if (length(top_n) != 1L || !is.finite(top_n) || top_n < 1) {
         top_n <- 1L
+      }
+      if (by_group) {
+        return(group_means %>%
+          dplyr::filter(mean_abundance > 0) %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(group_columns))) %>%
+          dplyr::slice_max(mean_abundance, n = top_n, with_ties = FALSE) %>%
+          dplyr::ungroup() %>%
+          dplyr::distinct(OTU) %>%
+          dplyr::pull(OTU))
       }
       taxa_ids[seq_len(min(top_n, length(taxa_ids)))]
     }
 
-    barplot_matrix_reactive <- reactive({
-      req(ps_obj(), group_var(), input$tax_level, input$name_display_mode,
-          input$plot_mode, input$taxa_display_mode)
-
+    barplot_rank_data <- reactive({
       current_rank <- input$tax_level
-      primary_var <- group_var()
-      secondary_var_val <- secondary_var()
-      plot_mode <- input$plot_mode
-      taxa_display_mode <- input$taxa_display_mode
-      min_taxa_abundance_pct <- input$min_taxa_abundance_pct
-
-      ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) {
+      req(current_rank, ps_barplot())
+      ps_rel <- phyloseq::transform_sample_counts(ps_barplot(), function(x) {
         total <- sum(x, na.rm = TRUE)
         if (!is.finite(total) || total <= 0) x else x / total
       })
@@ -476,16 +543,49 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           names(df_sample)[names(df_sample) == syntactic_col] <- meta_col
         }
       }
+      list(df_sample = df_sample, metadata = meta_df_base, ps_glom = ps_glom, tax_ranks = tax_ranks)
+    })
+
+    barplot_data <- reactive({
+      req(ps_obj(), input$group_var, input$tax_level, input$name_display_mode,
+          input$plot_mode, input$taxa_display_mode)
+
+      current_rank <- input$tax_level
+      primary_var <- group_var()
+      secondary_var_val <- secondary_var()
+      plot_mode <- input$plot_mode
+      taxa_display_mode <- input$taxa_display_mode
+      min_taxa_abundance_pct <- input$min_taxa_abundance_pct
+
+      ranked <- barplot_rank_data()
+      df_sample <- ranked$df_sample
+      meta_df_base <- ranked$metadata
+      ps_glom <- ranked$ps_glom
+      tax_ranks <- ranked$tax_ranks
       primary_var <- resolve_meta_colname(primary_var, names(df_sample))
       secondary_var_val <- resolve_meta_colname(secondary_var_val, names(df_sample))
+      has_primary <- !identical(input$group_var, "__no_facet__")
+      if (!has_primary) {
+        primary_var <- tail(make.unique(c(union(names(df_sample), names(meta_df_base)), ".barplot_group")), 1L)
+        df_sample[[primary_var]] <- "All samples"
+        meta_df_base[[primary_var]] <- "All samples"
+      }
 
-      if (!primary_var %in% names(df_sample)) {
+      if (is.null(primary_var) || !primary_var %in% names(df_sample)) {
+        showNotification(
+          paste0("Error: Primary grouping variable '", primary_var, "' was not found in melted data."),
+          type = "error"
+        )
         return(NULL)
       }
       df_sample[[primary_var]] <- factor(df_sample[[primary_var]])
 
       if (!is.null(secondary_var_val)) {
         if (!secondary_var_val %in% names(df_sample)) {
+          showNotification(
+            paste0("Error: Secondary grouping variable '", secondary_var_val, "' was not found in melted data."),
+            type = "error"
+          )
           return(NULL)
         }
         df_sample[[secondary_var_val]] <- factor(df_sample[[secondary_var_val]])
@@ -503,10 +603,13 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
 
       selected_otu_ids <- resolve_taxa_selection(
         ps_glom = ps_glom,
-        tax_labels = df_sample,
         display_mode = taxa_display_mode,
         top_n_taxa = input$top_n_taxa,
-        min_taxa_abundance_pct = min_taxa_abundance_pct
+        min_taxa_abundance_pct = min_taxa_abundance_pct,
+        threshold_basis = input$abundance_threshold_basis,
+        top_n_basis = input$top_n_basis,
+        sample_data = df_sample,
+        group_columns = c(primary_var, secondary_var_val)
       )
 
       df_sample$Taxa_Group <- ifelse(df_sample$OTU %in% selected_otu_ids,
@@ -524,6 +627,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }
       df_sample$Taxa_Group <- factor(df_sample$Taxa_Group, levels = ordered_taxa_levels)
 
+      sample_metadata <- meta_df_base
       if (!is.null(secondary_var_val)) {
         meta_df_base[[primary_var]] <- factor(meta_df_base[[primary_var]])
         meta_df_base[[secondary_var_val]] <- factor(meta_df_base[[secondary_var_val]])
@@ -532,15 +636,19 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         df_sample[[secondary_var_val]] <- factor(df_sample[[secondary_var_val]])
 
         meta_df_tibble <- tibble::as_tibble(meta_df_base)
-        unique_groups <- meta_df_tibble %>%
-          dplyr::arrange(.data[[primary_var]], .data[[secondary_var_val]]) %>%
-          dplyr::mutate(Combined_Group = paste(.data[[primary_var]], .data[[secondary_var_val]], sep = "_")) %>%
-          dplyr::select(Combined_Group) %>%
-          unique() %>%
-          dplyr::pull(Combined_Group)
+        if (has_primary) {
+          unique_groups <- meta_df_tibble %>%
+            dplyr::arrange(.data[[primary_var]], .data[[secondary_var_val]]) %>%
+            dplyr::mutate(Combined_Group = paste(.data[[primary_var]], .data[[secondary_var_val]], sep = "_")) %>%
+            dplyr::select(Combined_Group) %>%
+            unique() %>%
+            dplyr::pull(Combined_Group)
 
-        df_sample$Combined_Group <- paste(df_sample[[primary_var]], df_sample[[secondary_var_val]], sep = "_")
-        df_sample$Combined_Group <- factor(df_sample$Combined_Group, levels = unique_groups)
+          df_sample$Combined_Group <- paste(df_sample[[primary_var]], df_sample[[secondary_var_val]], sep = "_")
+          df_sample$Combined_Group <- factor(df_sample$Combined_Group, levels = unique_groups)
+        } else {
+          df_sample$Combined_Group <- df_sample[[secondary_var_val]]
+        }
       } else {
         df_sample$Combined_Group <- df_sample[[primary_var]]
       }
@@ -557,6 +665,18 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         df_plot <- df_sample
       }
 
+      list(
+        df_plot = df_plot, metadata = sample_metadata, primary_var = primary_var,
+        secondary_var = secondary_var_val, taxa_levels = ordered_taxa_levels, has_primary = has_primary
+      )
+    })
+
+    barplot_matrix_reactive <- reactive({
+      data <- barplot_data()
+      req(data)
+      df_plot <- data$df_plot
+      primary_var <- if (data$has_primary) data$primary_var
+      secondary_var_val <- data$secondary_var
       if (!is.null(secondary_var_val) && secondary_var_val %in% names(df_plot)) {
         df_plot %>%
           dplyr::select(any_of(c("Sample", "Combined_Group", primary_var, secondary_var_val, "Taxa_Group", "Abundance")))
@@ -566,191 +686,47 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }
     })
 
-    observeEvent(list(barplot_matrix_reactive(), input$plot_mode), {
-      req(barplot_matrix_reactive())
-      df_plot <- barplot_matrix_reactive()
+    effective_plot_width <- reactive({
+      if (identical(input$auto_plot_width, FALSE)) return(req(input$plot_width))
+      data <- barplot_data()
+      req(data)
+      df_plot <- data$df_plot
       x_var <- if (identical(input$plot_mode, "Group_Mean")) "Combined_Group" else "Sample"
-      if (!x_var %in% names(df_plot) || nrow(df_plot) == 0) {
-        return()
-      }
       n_bars <- length(unique(as.character(df_plot[[x_var]])))
-      dims <- compute_auto_plot_dims(n_bars)
-      maybe_auto_adjust_plot_size(dims$width, dims$height)
-    }, ignoreInit = FALSE)
+      width <- auto_plot_width(n_bars)
+      available_width <- input$available_plot_width
+      if (length(available_width) == 1L && is.finite(available_width)) {
+        width <- min(width, max(150, floor(available_width)))
+      }
+      width
+    })
     
-    barplot_reactive <- reactive({
-      req(ps_obj(), group_var(), input$tax_level, input$name_display_mode, 
-          input$plot_mode, input$taxa_display_mode, input$color_palette, input$base_size)
-      
+    build_barplot <- function(interactive = FALSE) {
+      data <- barplot_data()
+      req(data, input$color_palette, input$base_size)
       current_rank <- input$tax_level
-      primary_var <- group_var()
-      secondary_var_val <- secondary_var()
-      
-      facet_var <- primary_var 
+      primary_var <- data$primary_var
+      secondary_var_val <- data$secondary_var
+      ordered_taxa_levels <- data$taxa_levels
+      df_plot <- data$df_plot
       plot_mode <- input$plot_mode
       base_size <- input$base_size
-      taxa_display_mode <- input$taxa_display_mode
-      min_taxa_abundance_pct <- input$min_taxa_abundance_pct
-      
-      ps_rel <- phyloseq::transform_sample_counts(ps_obj(), function(x) {
-        total <- sum(x, na.rm = TRUE)
-        if (!is.finite(total) || total <= 0) x else x / total
-      })
-      validate(
-        need(
-          current_rank %in% phyloseq::rank_names(ps_rel),
-          paste0("Taxonomic rank '", current_rank, "' is not available in the loaded dataset.")
-        )
-      )
-      ps_rel <- apply_disambiguated_taxrank(ps_rel, current_rank)
-      ps_glom <- phyloseq::tax_glom(ps_rel, taxrank = current_rank)
-      
-      tax_df <- as.data.frame(phyloseq::tax_table(ps_glom))
-      tax_ranks <- phyloseq::rank_names(ps_glom)
-      rank_prefix_map <- c(
-        Kingdom = "k__",
-        Phylum = "p__",
-        Class = "c__",
-        Order = "o__",
-        Family = "f__",
-        Genus = "g__",
-        Species = "s__",
-        Strain = "t__"
-      )
-      tax_df$Full_Taxa_Name <- apply(tax_df, 1, function(taxa) {
-        valid_ranks <- taxa[tax_ranks[tax_ranks %in% names(taxa)]]
-        full_name_parts <- c()
-        for (i in 1:length(valid_ranks)) {
-          part <- valid_ranks[i]
-          if (is.na(part) || part == "") {
-            rk <- names(valid_ranks)[i]
-            prefix <- rank_prefix_map[[rk]]
-            if (is.null(prefix) || !nzchar(prefix)) {
-              prefix <- paste0(substr(tolower(rk), 1, 1), "__")
-            }
-            part <- paste0(prefix, "Unassigned")
-          }
-          full_name_parts <- c(full_name_parts, part)
-        }
-        return(paste(full_name_parts, collapse = ";"))
-      })
-      phyloseq::tax_table(ps_glom) <- phyloseq::tax_table(as.matrix(tax_df))
-      
-      df_sample <- phyloseq::psmelt(ps_glom)
-      meta_df_base <- as.data.frame(phyloseq::sample_data(ps_rel), stringsAsFactors = FALSE)
-      meta_cols <- colnames(meta_df_base)
-      
-      for (meta_col in meta_cols) {
-        syntactic_col <- make.names(meta_col)
-        if (!meta_col %in% names(df_sample) && syntactic_col %in% names(df_sample)) {
-          names(df_sample)[names(df_sample) == syntactic_col] <- meta_col
-        }
-      }
-      primary_var <- resolve_meta_colname(primary_var, names(df_sample))
-      secondary_var_val <- resolve_meta_colname(secondary_var_val, names(df_sample))
-      
-      if (!primary_var %in% names(df_sample)) {
-        showNotification(
-          paste0("Error: Primary grouping variable '", primary_var, "' was not found in melted data."),
-          type = "error"
-        )
-        return(NULL)
-      }
-      df_sample[[primary_var]] <- factor(df_sample[[primary_var]])
-      
-      if (!is.null(secondary_var_val)) {
-        if (!secondary_var_val %in% names(df_sample)) {
-          showNotification(
-            paste0("Error: Secondary grouping variable '", secondary_var_val, "' was not found in melted data."),
-            type = "error"
-          )
-          return(NULL)
-        }
-        df_sample[[secondary_var_val]] <- factor(df_sample[[secondary_var_val]])
-      }
-      
-      if (input$name_display_mode == "full") {
-        df_sample$Taxa_Name_Display <- df_sample$Full_Taxa_Name
-        fill_label <- paste(current_rank, "Taxa (Full Hierarchy)")
+      subgroup_label_size <- base_size / 3.6
+      subgroup_headroom <- 0
+      fill_label <- if (input$name_display_mode == "full") {
+        paste(current_rank, "Taxa (Full Hierarchy)")
       } else {
-        df_sample$Taxa_Name_Display <- build_disambiguated_rank_labels(
-          df_taxa = df_sample,
-          current_rank = current_rank,
-          rank_order = tax_ranks
-        )
-        fill_label <- current_rank
+        current_rank
       }
-      
-      selected_otu_ids <- resolve_taxa_selection(
-        ps_glom = ps_glom,
-        tax_labels = df_sample,
-        display_mode = taxa_display_mode,
-        top_n_taxa = input$top_n_taxa,
-        min_taxa_abundance_pct = min_taxa_abundance_pct
-      )
-
-      df_sample$Taxa_Group <- ifelse(df_sample$OTU %in% selected_otu_ids,
-                                     as.character(df_sample$Taxa_Name_Display),
-                                     "Others")
-      
-      taxa_mean_abundance <- df_sample %>%
-        dplyr::group_by(Taxa_Group) %>%
-        dplyr::summarise(Mean_Abundance = mean(Abundance, na.rm = TRUE), .groups = 'drop') %>%
-        dplyr::arrange(desc(Mean_Abundance))
-      
-      ordered_taxa_levels <- taxa_mean_abundance$Taxa_Group
-      if ("Others" %in% ordered_taxa_levels) {
-        ordered_taxa_levels <- c(setdiff(ordered_taxa_levels, "Others"), "Others")
-      }
-      df_sample$Taxa_Group <- factor(df_sample$Taxa_Group, levels = ordered_taxa_levels)
-      
-      if (!is.null(secondary_var_val)) {
-        
-        meta_df_base[[primary_var]] <- factor(meta_df_base[[primary_var]])
-        meta_df_base[[secondary_var_val]] <- factor(meta_df_base[[secondary_var_val]])
-        
-        df_sample[[primary_var]] <- factor(df_sample[[primary_var]])
-        df_sample[[secondary_var_val]] <- factor(df_sample[[secondary_var_val]])
-        
-        
-        meta_df_tibble <- tibble::as_tibble(meta_df_base)
-        
-        unique_groups <- meta_df_tibble %>%
-          dplyr::arrange(.data[[primary_var]], .data[[secondary_var_val]]) %>%
-          dplyr::mutate(Combined_Group = paste(.data[[primary_var]], .data[[secondary_var_val]], sep = "_")) %>%
-          dplyr::select(Combined_Group) %>% 
-          unique() %>%
-          dplyr::pull(Combined_Group)
-        
-        df_sample$Combined_Group <- paste(df_sample[[primary_var]], df_sample[[secondary_var_val]], sep = "_")
-        df_sample$Combined_Group <- factor(df_sample$Combined_Group, levels = unique_groups)
-        
-        combined_title_suffix <- paste0(" by ", primary_var, " & ", secondary_var_val)    
-      } else {
-        df_sample$Combined_Group <- df_sample[[primary_var]]
-        combined_title_suffix <- paste0(" by ", primary_var)
-      }      
-      
       if (plot_mode == "Group_Mean") {
-        df_sample_grouped <- df_sample %>%
-          dplyr::group_by(Sample, Combined_Group, .data[[primary_var]], Taxa_Group) %>%
-          dplyr::summarise(Abundance = sum(Abundance, na.rm = TRUE), .groups = "drop")
-
-        df_plot <- df_sample_grouped %>%
-          dplyr::group_by(Combined_Group, .data[[primary_var]], Taxa_Group) %>% 
-          dplyr::summarise(Abundance = mean(Abundance, na.rm = TRUE), .groups = 'drop')
-        
         x_var <- "Combined_Group"
         x_label <- paste(primary_var, if (!is.null(secondary_var_val)) secondary_var_val else "")
-        plot_title <- paste0(current_rank, "-Level Microbial Community Composition")
         
         df_plot[[x_var]] <- factor(df_plot[[x_var]])
         
       } else {
-        df_plot <- df_sample
         x_var <- "Sample"
         x_label <- ""
-        plot_title <- paste0(current_rank, "-Level Microbial Community Composition")
         subgroup_rect_df <- NULL
         subgroup_boundary_df <- NULL
         subgroup_label_df <- NULL
@@ -758,7 +734,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         req(input$sort_method)
         sort_method <- input$sort_method
         ordered_sample_levels <- c()
-        meta_df_base <- as.data.frame(phyloseq::sample_data(ps_rel), stringsAsFactors = FALSE)
+        meta_df_base <- data$metadata
         if (!"Sample" %in% names(meta_df_base)) { meta_df_base$Sample <- rownames(meta_df_base) }
         
         sorting_vars <- c("Sample", primary_var)
@@ -869,10 +845,14 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
             dplyr::filter(dplyr::row_number() < dplyr::n()) %>%
             dplyr::ungroup()
 
+          label_height_px <- subgroup_label_size * 96 / 25.4
+          label_band_px <- 1.4 * label_height_px + 6
+          panel_height_px <- max(100, input$plot_height - 120)
+          subgroup_headroom <- label_band_px / (panel_height_px - label_band_px)
           subgroup_label_df <- subgroup_blocks %>%
             dplyr::mutate(
               xmid = (xmin + xmax) / 2,
-              y = 1.005
+              y = 1 + subgroup_headroom / 2
             )
         }
       }
@@ -881,7 +861,9 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       num_top_taxa <- length(setdiff(ordered_taxa_levels, "Others"))
       top_taxa_names <- setdiff(ordered_taxa_levels, "Others")
       
-      if (palette_choice == "Custom_HCL") {
+      if (palette_choice %in% additional_plot_palettes) {
+        taxa_base_colors <- group_plot_colors(num_top_taxa, palette_choice)
+      } else if (palette_choice == "Custom_HCL") {
         taxa_base_colors <- generate_taxa_colors(num_top_taxa)
       } else {
         tryCatch({
@@ -906,6 +888,25 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       }
       
       fill_var <- "Taxa_Group"
+      bar_mapping <- NULL
+      if (interactive) {
+        bar_columns <- unique(c(x_var, primary_var))
+        df_plot <- df_plot %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(c(bar_columns, fill_var)))) %>%
+          dplyr::summarise(Abundance = sum(Abundance, na.rm = TRUE), .groups = "drop") %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(bar_columns))) %>%
+          dplyr::mutate(Displayed_Abundance = Abundance / sum(Abundance)) %>%
+          dplyr::ungroup() %>%
+          dplyr::filter(Abundance > 0)
+        df_plot$Tooltip <- sprintf(
+          "%s: %s<br>Taxon: %s<br>Relative abundance: %.2f%%",
+          if (plot_mode == "Sample") "Sample" else "Group",
+          htmltools::htmlEscape(as.character(df_plot[[x_var]])),
+          htmltools::htmlEscape(as.character(df_plot[[fill_var]])),
+          100 * df_plot$Displayed_Abundance
+        )
+        bar_mapping <- ggplot2::aes(text = Tooltip, group = Taxa_Group)
+      }
       
       p <- ggplot2::ggplot(df_plot, ggplot2::aes_string(x = x_var, y = "Abundance", fill = fill_var))
       
@@ -919,11 +920,21 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         )
       }
       
+      legend_key_size <- grid::unit(6, "pt")
+      draw_bar_key <- function(data, params, size) {
+        grid::grobTree(
+          ggplot2::draw_key_rect(data, params, size),
+          vp = grid::viewport(width = legend_key_size, height = legend_key_size)
+        )
+      }
       p <- p +
-        ggplot2::geom_bar(stat = "identity", position = "fill") +
+        ggplot2::geom_bar(
+          mapping = bar_mapping, stat = "identity", position = "fill",
+          key_glyph = if (interactive) ggplot2::draw_key_rect else draw_bar_key
+        ) +
         ggplot2::scale_fill_manual(values = taxa_colors) + 
         
-        if (plot_mode == "Sample" || !is.null(secondary_var_val)) {
+        if (data$has_primary && (plot_mode == "Sample" || !is.null(secondary_var_val))) {
           ggplot2::facet_grid(
             cols = ggplot2::vars(.data[[primary_var]]),
             scales = "free_x",
@@ -938,8 +949,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           data = subgroup_boundary_df,
           ggplot2::aes(xintercept = xintercept),
           inherit.aes = FALSE,
-          linetype = "dashed",
-          linewidth = 0.3,
+          linetype = "dotted",
+          linewidth = 0.24,
           color = "grey30"
         )
       }
@@ -949,19 +960,24 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           data = subgroup_label_df,
           ggplot2::aes(x = xmid, y = y, label = subgroup_label),
           inherit.aes = FALSE,
-          size = max(2.2, base_size / 3.6),
+          size = subgroup_label_size,
           fontface = "bold",
           color = "grey20",
-          vjust = 0
+          vjust = 0.5
         )
       }
       
       p <- p +
         ggplot2::theme_bw(base_size = base_size) +
-        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.03))) +
+        ggplot2::scale_y_continuous(
+          expand = if (subgroup_headroom > 0) {
+            ggplot2::expansion(add = c(0, subgroup_headroom / 2))
+          } else {
+            ggplot2::expansion(mult = c(0, 0.03))
+          }
+        ) +
         ggplot2::coord_cartesian(clip = "off") +
         ggplot2::theme(
-          plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
           axis.text.x = ggplot2::element_text(
             angle = 90,
             hjust = 1,
@@ -969,6 +985,9 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
             size = if (plot_mode == "Group_Mean") base_size else max(6, base_size - 2)
           ),
           axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
+          panel.border = ggplot2::element_rect(colour = "#595959", fill = NA, linewidth = 0.5),
+          strip.background = ggplot2::element_rect(colour = "#595959", fill = "grey85", linewidth = 0.5),
+          strip.text = ggplot2::element_text(face = "bold"),
           panel.grid.major = ggplot2::element_line(color = "white", linewidth = 0.1),
           panel.grid.minor = ggplot2::element_line(color = "white", linewidth = 0.1),
           axis.title.x = ggplot2::element_blank(),
@@ -976,62 +995,251 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           plot.margin = ggplot2::margin(6, 10, 4, 5.5)
         ) +
         ggplot2::labs(
-          title = plot_title,
           y = "Relative Abundance",
           fill = fill_label
         )
+      if (interactive) {
+        p <- p + ggplot2::scale_x_discrete(expand = ggplot2::expansion(add = 0.5))
+      } else {
+        p <- p + ggplot2::theme(
+          legend.key.size = legend_key_size,
+          legend.key.spacing.y = grid::unit(0, "pt"),
+          legend.text = ggplot2::element_text(margin = ggplot2::margin(l = 3))
+        )
+      }
       
       return(p)
-    })
-    
-    output$barplot_out <- renderPlot({
-      ps_now <- ps_obj()
-      if (is.null(ps_now)) {
-        graphics::plot.new()
-        graphics::text(
-          0.5, 0.5,
-          "Applying selected samples and preparing bar plot.\nPlease wait...",
-          cex = 0.85
-        )
-        return(invisible(NULL))
-      }
-      if (phyloseq::nsamples(ps_now) == 0) {
-        graphics::plot.new()
-        graphics::text(
-          0.5, 0.5,
-          "No samples are currently selected.\nPlease select at least one sample in Preprocessing.",
-          cex = 0.85
-        )
-        return(invisible(NULL))
-      }
-      tryCatch(
-        barplot_reactive(),
-        error = function(e) {
-          graphics::plot.new()
-          graphics::text(
-            0.5, 0.5,
-            paste0("Bar plot is not ready yet. Please wait...\n", conditionMessage(e)),
-            cex = 0.85
-          )
-        }
+    }
+
+    barplot_reactive <- reactive(build_barplot())
+    barplot_title <- reactive(paste0(req(input$tax_level), "-Level Microbial Community Composition"))
+
+    output$barplot_title <- renderUI({
+      req(barplot_data(), input$base_size)
+      tags$h5(
+        style = sprintf("font: bold %gpt sans-serif; margin: 4px 0 12px 6px; white-space: nowrap;", input$base_size + 3),
+        barplot_title()
       )
-    },
-    height = function() { input$plot_height },
-    width = function() { input$plot_width }
-    )
+    })
+
+    output$barplot_out <- plotly::renderPlotly({
+      req(input$plot_height)
+      ps_now <- ps_obj()
+      validate(
+        need(!is.null(ps_now), "Applying selected samples and preparing bar plot."),
+        need(phyloseq::nsamples(ps_now) > 0, "Select at least one sample in Preprocessing.")
+      )
+      plot <- build_barplot(interactive = TRUE)
+      plot_width <- effective_plot_width()
+      widget <- plotly::ggplotly(
+        plot, tooltip = "text", dynamicTicks = FALSE,
+        width = plot_width, height = input$plot_height
+      )
+      layout <- widget$x$layout
+      axis_names <- grep("^xaxis[0-9]*$", names(layout), value = TRUE)
+      if (length(axis_names) > 1L) {
+        # ggplotly gives free-width facets equal domains. Match domain width to the discrete axis span.
+        axis_names <- axis_names[order(vapply(layout[axis_names], function(axis) axis$domain[1L], numeric(1)))]
+        old_domains <- do.call(rbind, lapply(layout[axis_names], function(axis) axis$domain))
+        spans <- vapply(layout[axis_names], function(axis) diff(axis$range), numeric(1))
+        widths <- sum(old_domains[, 2L] - old_domains[, 1L]) * spans / sum(spans)
+        gaps <- old_domains[-1L, 1L] - old_domains[-nrow(old_domains), 2L]
+        starts <- old_domains[1L, 1L] + c(0, cumsum(head(widths, -1L) + gaps))
+        new_domains <- cbind(starts, starts + widths)
+        map_x <- stats::approxfun(c(t(old_domains)), c(t(new_domains)), ties = "ordered", rule = 2)
+        for (i in seq_along(axis_names)) layout[[axis_names[i]]]$domain <- unname(new_domains[i, ])
+        layout$shapes <- lapply(layout$shapes, function(shape) {
+          if (identical(shape$xref, "paper")) {
+            shape$x0 <- map_x(shape$x0)
+            shape$x1 <- map_x(shape$x1)
+          }
+          shape
+        })
+        layout$annotations <- lapply(layout$annotations, function(annotation) {
+          if (identical(annotation$xref, "paper") && !identical(annotation$annotationType, "axis")) {
+            annotation$x <- map_x(annotation$x)
+          }
+          annotation
+        })
+      }
+      if (inherits(plot$facet, "FacetGrid") || identical(input$group_var, "__no_facet__")) {
+        # ggplotly keeps the strip background but drops its border width.
+        strip_indices <- which(vapply(layout$shapes, function(shape) {
+          identical(shape$type, "rect") && identical(shape$xref, "paper") &&
+            identical(shape$yref, "paper") && identical(shape$ysizemode, "pixel")
+        }, logical(1)))
+        for (i in strip_indices) {
+          strip <- layout$shapes[[i]]
+          layout$shapes[[i]]$line <- list(color = "#595959", width = 1)
+          label_indices <- which(vapply(layout$annotations, function(annotation) {
+            identical(annotation$xref, "paper") && identical(annotation$yref, "paper") &&
+              !identical(annotation$annotationType, "axis") &&
+              identical(annotation$yanchor, "bottom") &&
+              isTRUE(all.equal(annotation$y, strip$yanchor)) &&
+              isTRUE(all.equal(annotation$x, mean(c(strip$x0, strip$x1))))
+          }, logical(1)))
+          for (j in label_indices) {
+            layout$annotations[[j]]$yanchor <- "middle"
+            layout$annotations[[j]]$yshift <- mean(c(strip$y0, strip$y1))
+            if (!startsWith(layout$annotations[[j]]$text, "<b>")) {
+              layout$annotations[[j]]$text <- paste0("<b>", layout$annotations[[j]]$text, "</b>")
+            }
+          }
+        }
+        group_borders <- lapply(axis_names, function(axis_name) {
+          axis <- layout[[axis_name]]
+          y_axis_name <- sub("^y", "yaxis", axis$anchor)
+          y_domain <- layout[[y_axis_name]]$domain
+          list(
+            type = "rect", xref = "paper", yref = "paper",
+            x0 = axis$domain[1L], x1 = axis$domain[2L],
+            y0 = y_domain[1L], y1 = y_domain[2L],
+            line = list(color = "#595959", width = 1), layer = "above"
+          )
+        })
+        layout$shapes <- c(layout$shapes, group_borders)
+      }
+      layout$hovermode <- "closest"
+      layout$showlegend <- FALSE
+      layout$autosize <- FALSE
+      if (input$plot_mode == "Sample" && !is.null(secondary_var())) {
+        widget$x$data <- lapply(widget$x$data, function(trace) {
+          if (identical(trace$mode, "text")) {
+            plain <- !startsWith(trace$text, "<b>")
+            trace$text[plain] <- paste0("<b>", trace$text[plain], "</b>")
+          }
+          trace
+        })
+      }
+      if (!identical(input$auto_plot_width, FALSE)) {
+        panel_width <- max(1, plot_width - layout$margin$l - layout$margin$r)
+        widget$x$data <- lapply(widget$x$data, function(trace) {
+          if (!identical(trace$type, "bar")) return(trace)
+          axis_name <- sub("^x", "xaxis", trace$xaxis)
+          axis <- layout[[axis_name]]
+          pixels_per_unit <- panel_width * diff(axis$domain) / diff(axis$range)
+          trace$width <- pmin(trace$width, 26 / pixels_per_unit)
+          trace
+        })
+      }
+      font_family <- "sans-serif"
+      layout$font$family <- font_family
+      layout$hoverlabel$font$family <- font_family
+      for (axis_name in grep("^[xy]axis[0-9]*$", names(layout), value = TRUE)) {
+        layout[[axis_name]]$tickfont$family <- font_family
+      }
+      layout$annotations <- lapply(layout$annotations, function(annotation) {
+        annotation$font$family <- font_family
+        annotation
+      })
+      widget$x$layout <- layout
+      htmlwidgets::onRender(widget, "function(el, x, config) {
+        el.setAttribute('data-taxa-ready', 'true');
+        el.style.width = x.layout.width + 'px';
+        el.style.flex = '0 0 auto';
+        const legend = document.getElementById(config.id);
+        if (!legend) return;
+        legend.replaceChildren();
+        legend.style.fontFamily = config.fontFamily;
+        const title = document.createElement('strong');
+        title.textContent = config.title;
+        legend.appendChild(title);
+        const items = document.createElement('div');
+        items.style.cssText = 'display:flex;flex-direction:column;gap:1px;align-items:flex-start;';
+        legend.appendChild(items);
+        const buttons = new Map();
+        let selected = null;
+        function toggleTaxon(taxon) {
+          selected = selected === taxon ? null : taxon;
+          const indices = [];
+          const opacity = [];
+          el.data.forEach(function(item, index) {
+            if (item.type !== 'bar') return;
+            indices.push(index);
+            opacity.push(selected === null || (item.legendgroup || item.name) === selected ? 1 : 0.2);
+          });
+          Plotly.restyle(el, {opacity: opacity}, indices);
+          buttons.forEach(function(button, name) {
+            button.setAttribute('aria-pressed', String(name === selected));
+            button.style.opacity = selected === null || name === selected ? '1' : '0.45';
+          });
+        }
+        el.data.forEach(function(trace) {
+          if (trace.type !== 'bar') return;
+          const taxon = trace.legendgroup || trace.name;
+          if (buttons.has(taxon)) return;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.setAttribute('aria-pressed', 'false');
+          button.style.cssText = 'display:inline-flex;align-items:baseline;gap:3px;padding:0 2px;border:0;background:transparent;color:inherit;font:inherit;font-size:11px;line-height:1.15;text-align:left;white-space:nowrap;';
+          const swatch = document.createElement('span');
+          swatch.setAttribute('aria-hidden', 'true');
+          swatch.style.cssText = 'display:inline-block;flex:0 0 8px;height:8px;';
+          swatch.style.backgroundColor = Array.isArray(trace.marker.color) ? trace.marker.color[0] : trace.marker.color;
+          const label = document.createElement('span');
+          label.textContent = taxon;
+          button.append(swatch, label);
+          button.addEventListener('click', function() { toggleTaxon(taxon); });
+          items.appendChild(button);
+          buttons.set(taxon, button);
+        });
+        if (buttons.size > 1 && legend.getBoundingClientRect().height > x.layout.height) {
+          items.style.cssText = 'display:grid;grid-auto-flow:column;gap:1px 10px;justify-items:start;';
+          items.style.gridTemplateRows = 'repeat(' + Math.ceil(buttons.size / 2) + ', max-content)';
+        }
+        if (el.taxaWidthObserver) el.taxaWidthObserver.disconnect();
+        if (!config.autoWidth) return;
+        const canvas = el.parentElement;
+        const panel = canvas.parentElement.parentElement;
+        function reportWidth() {
+          if (!panel.clientWidth) return;
+          const panelStyle = getComputedStyle(panel);
+          const gap = parseFloat(getComputedStyle(canvas).columnGap) || 0;
+          const width = Math.floor(panel.clientWidth - parseFloat(panelStyle.paddingLeft) -
+            parseFloat(panelStyle.paddingRight) - legend.getBoundingClientRect().width - gap);
+          if (width === el.taxaAvailableWidth) return;
+          el.taxaAvailableWidth = width;
+          Shiny.setInputValue(config.widthInput, width);
+        }
+        el.taxaWidthObserver = new ResizeObserver(reportWidth);
+        el.taxaWidthObserver.observe(panel);
+        el.taxaWidthObserver.observe(legend);
+        reportWidth();
+      }", data = list(id = session$ns("barplot_taxa_legend"), title = plot$labels$fill,
+                      fontFamily = font_family, autoWidth = !identical(input$auto_plot_width, FALSE),
+                      widthInput = session$ns("available_plot_width")))
+    })
     
     output$download_barplot <- downloadHandler(
       filename = function() { paste0("taxa_barplot_", input$tax_level, "_", input$plot_mode, ".png") },
       content = function(file) {
-        plot_width_in <- input$plot_width / 72
+        plot_width_in <- effective_plot_width() / 72
         plot_height_in <- input$plot_height / 72
         
-        ggplot2::ggsave(file,
-                        plot = barplot_reactive(),
-                        device = "png",
-                        width = plot_width_in,
-                        height = plot_height_in,
-                        dpi = 300
+        title_grob <- grid::textGrob(
+          barplot_title(), x = grid::unit(6, "pt"), just = "left",
+          gp = grid::gpar(fontfamily = "sans", fontface = "bold", fontsize = input$base_size + 3)
+        )
+        grDevices::pdf(NULL)
+        sizes <- tryCatch({
+          plot_grob <- ggplot2::ggplotGrob(barplot_reactive())
+          legend_index <- match("guide-box-right", plot_grob$layout$name)
+          legend_width <- if (!is.na(legend_index)) grid::grobWidth(plot_grob$grobs[[legend_index]]) else grid::unit(0, "in")
+          chart_width <- plot_width_in + grid::convertWidth(legend_width, "in", valueOnly = TRUE)
+          title_width <- grid::convertWidth(grid::grobWidth(title_grob) + grid::unit(16, "pt"), "in", valueOnly = TRUE)
+          title_height <- grid::convertHeight(grid::grobHeight(title_grob) + grid::unit(18, "pt"), "in", valueOnly = TRUE)
+          list(chart_width = chart_width, width = max(chart_width, title_width), title_height = title_height)
+        }, finally = grDevices::dev.off())
+
+        figure <- gtable::gtable(
+          widths = grid::unit(c(sizes$chart_width, sizes$width - sizes$chart_width), "in"),
+          heights = grid::unit(c(sizes$title_height, plot_height_in), "in")
+        )
+        figure <- gtable::gtable_add_grob(figure, title_grob, t = 1, l = 1, r = 2, clip = "off")
+        figure <- gtable::gtable_add_grob(figure, plot_grob, t = 2, l = 1)
+        ggplot2::ggsave(
+          file, plot = figure, device = "png", width = sizes$width,
+          height = plot_height_in + sizes$title_height, dpi = 300, bg = "white"
         )
       }
     )
@@ -1045,8 +1253,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
     )
 
     output$barplot_legend_box <- renderUI({
-      req(input$plot_width)
-      box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1000 else input$plot_width
+      box_width <- effective_plot_width()
       tags$div(
         style = paste(
           "margin-top: 12px;",
@@ -1099,6 +1306,9 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         } else {
           sort_sentence <- "Within each group, sample order is determined by the relative abundance of the dominant taxon at the selected rank. "
         }
+        if (identical(input$group_var, "__no_facet__") && is.null(secondary_group)) {
+          sort_sentence <- sub("^Within each group, sample", "Sample", sort_sentence)
+        }
       }
       tags$div(
         tags$div(
@@ -1110,11 +1320,21 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
             first_sentence,
             " at ",
             tax_level_label,
-            " level. Colors denote taxa, and taxa outside the top ",
+            " level. Colors denote taxa. ",
             if (identical(input$taxa_display_mode, "top_n")) {
-              paste0(input$top_n_taxa, " most abundant taxa in the full displayed dataset are aggregated as others")
+              if (identical(input$top_n_basis, "each_group")) {
+                paste0("The top ", input$top_n_taxa,
+                       " taxa by mean abundance in each group share a common legend. Remaining taxa are grouped as Others")
+              } else {
+                paste0("Taxa outside the top ", input$top_n_taxa,
+                       " most abundant taxa across selected samples are grouped as Others")
+              }
+            } else if (identical(input$abundance_threshold_basis, "any_group")) {
+              paste0("Taxa with mean abundance below ", input$min_taxa_abundance_pct,
+                     "% in every group are grouped as Others")
             } else {
-              paste0("taxa with mean abundance below ", input$min_taxa_abundance_pct, "% in the full displayed dataset are aggregated as others")
+              paste0("Taxa with mean abundance below ", input$min_taxa_abundance_pct,
+                     "% across selected samples are grouped as Others")
             },
             if (!identical(secondary_label, "None")) paste0(" and sub-grouped by ", secondary_label) else "",
             ". ",

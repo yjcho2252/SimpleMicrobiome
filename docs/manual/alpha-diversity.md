@@ -66,16 +66,18 @@ If `Within-Subject Pairing` is enabled and the selected subject ID has repeated 
   - Enable only for longitudinal or matched-sample designs.
 
 ### 2.5 Plot Type
-- **Options**: `Box plot`, `Bar plot`
+- **Options**: `Violin plot` (default), `Box plot`, `Jitter plot`, and `Bar plot`.
 - **Effect of setting**:
   - `Box plot`: shows distribution, spread, and outliers per group.
   - `Bar plot`: emphasizes group summary (mean-like view), less detail on dispersion.
+  - `Violin plot` shows the estimated distribution, and `Jitter plot` shows individual sample values.
 - **Recommendation**:
   - Statistical interpretation: `Box plot`
   - Presentation summary: `Bar plot`
 
 ### 2.6 Color Palette
 - **What it controls**: Group color mapping.
+- Additional choices include Okabe–Ito, Pastel, Dynamic, Warm, and Cool.
 - **Effect of setting**:
   - High-contrast palettes improve multi-group readability.
 - **Recommendation**:
@@ -126,6 +128,7 @@ If `Within-Subject Pairing` is enabled and the selected subject ID has repeated 
 
 ### 2.13 Plot Width / Plot Height / Base Font Size
 - **What it controls**: readability of multi-group/multi-index output.
+- Base Font Size defaults to 14, Dot Size defaults to 4, and X-axis labels can be displayed at 0°, 45°, or 90°.
 - **Practical guidance**:
   - Many groups or long labels -> increase width.
   - Many selected indices -> increase height.

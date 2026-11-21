@@ -1201,11 +1201,13 @@ mod_spieceasi_server <- function(id, ps_obj) {
     })
 
     output$hub_table <- renderDT({
+      table <- hub_table()
       DT::datatable(
-        hub_table(),
+        table,
         rownames = FALSE,
         options = list(pageLength = 10, scrollX = TRUE)
-      )
+      ) %>%
+        DT::formatRound(names(table)[vapply(table, is.numeric, logical(1))], digits = 2)
     })
 
     draw_comparison_network_plot <- function(edge_tbl, edge_palette, run_settings) {
@@ -1565,9 +1567,15 @@ mod_spieceasi_server <- function(id, ps_obj) {
       w <- suppressWarnings(as.numeric(input$plot_width))
       if (!is.finite(w) || is.na(w) || w <= 0) 800 else w
     })
-    output$edge_table_all <- renderDT({ datatable(edge_table_all(), options = list(scrollX = TRUE)) })
+    output$edge_table_all <- renderDT({
+      table <- edge_table_all()
+      datatable(table, options = list(scrollX = TRUE)) %>%
+        DT::formatRound(names(table)[vapply(table, is.numeric, logical(1))], digits = 2)
+    })
     output$comparison_edge_table <- renderDT({
-      datatable(comparison_edge_table(), options = list(scrollX = TRUE, pageLength = 10))
+      table <- comparison_edge_table()
+      datatable(table, options = list(scrollX = TRUE, pageLength = 10)) %>%
+        DT::formatRound(names(table)[vapply(table, is.numeric, logical(1))], digits = 2)
     })
 
     output$download_network_plot_all <- downloadHandler(

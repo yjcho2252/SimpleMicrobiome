@@ -47,17 +47,12 @@ mod_alpha_ui <- function(id) {
             "Jitter plot" = "jitter",
             "Bar plot" = "barplot"
           ),
-          selected = "boxplot"
+          selected = "violin"
         ),
         selectInput(
           ns("color_palette"),
           "Color Palette:",
-          choices = c(
-            "Set2" = "set2",
-            "Dark2" = "dark2",
-            "Paired" = "paired",
-            "Grayscale" = "gray"
-          ),
+          choices = group_plot_palettes,
           selected = "set2"
         ),
         checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
@@ -97,7 +92,11 @@ mod_alpha_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
         numericInput(ns("plot_width"), "Plot Width:", value = 600, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height:", value = 500, min = 300, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1)
+        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
+        selectInput(ns("x_label_angle"), "X-axis label angle:",
+                    choices = c("0° Horizontal" = "0", "45° Diagonal" = "45", "90° Vertical" = "90"),
+                    selected = "0")
       ),
       mainPanel(
         h4("Alpha Diversity"),
@@ -345,24 +344,18 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       num_groups <- length(group_levels)
       plot_type <- input$plot_type
       if (is.null(plot_type) || !plot_type %in% c("boxplot", "violin", "jitter", "barplot")) {
-        plot_type <- "boxplot"
+        plot_type <- "violin"
       }
-      palette_key <- input$color_palette
-      if (is.null(palette_key) || !palette_key %in% c("set2", "dark2", "paired", "gray")) {
-        palette_key <- "set2"
+      dot_size <- input$dot_size
+      if (length(dot_size) != 1L || !is.finite(dot_size) || dot_size < 0.5 || dot_size > 10) {
+        dot_size <- 4
       }
       base_size <- input$base_size
       if (is.null(base_size) || !is.finite(base_size)) {
-        base_size <- 11
+        base_size <- 14
       }
       n_groups <- max(1, length(group_levels))
-      fill_values <- switch(
-        palette_key,
-        "dark2" = grDevices::hcl.colors(n_groups, palette = "Dark 3"),
-        "paired" = grDevices::hcl.colors(n_groups, palette = "Set 3"),
-        "gray" = grDevices::gray.colors(n_groups, start = 0.2, end = 0.85),
-        grDevices::hcl.colors(n_groups, palette = "Set 2")
-      )
+      fill_values <- group_plot_colors(n_groups, input$color_palette)
       names(fill_values) <- group_levels
       use_pattern <- plot_type == "barplot" && isTRUE(input$use_ggpattern) && requireNamespace("ggpattern", quietly = TRUE)
       pattern_values <- rep(c("stripe", "stripe", "crosshatch", "none"), length.out = n_groups)
@@ -383,8 +376,12 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
           plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
           axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
           axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
+          strip.text = ggplot2::element_text(face = "bold"),
           plot.margin = ggplot2::margin(t = 26, r = 8, b = 8, l = 8)
         )
+      if (isTRUE(input$x_label_angle %in% c("45", "90"))) {
+        p <- p + ggplot2::guides(x = ggplot2::guide_axis(angle = as.numeric(input$x_label_angle)))
+      }
 
       if (plot_type == "barplot") {
         facet_group_cols <- c("Alpha_Index")
@@ -506,28 +503,25 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
               linewidth = 0.4
             )
         }
-        p <- p + ggplot2::geom_point(
-          position = ggplot2::position_jitter(width = 0.1, height = 0),
-          alpha = 0.5,
-          size = 1.5
-        )
       } else if (plot_type == "boxplot") {
         p <- p +
-          ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7) +
-          ggplot2::geom_jitter(width = 0.1, alpha = 0.5, size = 1.5)
+          ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7, box.linewidth = 0.45)
       } else if (plot_type == "violin") {
         p <- p +
-          ggplot2::geom_violin(color = "black", alpha = 0.65, trim = TRUE) +
-          ggplot2::geom_boxplot(width = 0.12, outlier.shape = NA, alpha = 0.35)
-        if (is_secondary) {
-          p <- p + ggplot2::geom_jitter(width = 0.1, alpha = 0.45, size = 1.2)
-        } else {
-          p <- p + ggplot2::geom_jitter(width = 0.1, alpha = 0.45, size = 1.2)
-        }
-      } else if (plot_type == "jitter") {
-        p <- p +
-          ggplot2::geom_jitter(width = 0.18, alpha = 0.65, size = 1.6)
+          ggplot2::geom_violin(color = NA, alpha = 0.65, trim = TRUE) +
+          ggplot2::geom_boxplot(width = 0.18, outlier.shape = NA, alpha = 0.35, box.linewidth = 0.45)
       }
+      p <- p + ggplot2::geom_point(
+        mapping = ggplot2::aes(
+          fill = ggplot2::stage(start = .data[[x_axis_col]],
+                               after_scale = colorspace::darken(fill, amount = 0.25))
+        ),
+        position = ggplot2::position_jitter(
+          width = if (plot_type == "jitter") 0.18 else 0.1,
+          height = if (plot_type == "barplot") 0 else NULL
+        ),
+        shape = 21, colour = "white", stroke = 0.25, alpha = 0.8, size = dot_size
+      )
 
       if (isTRUE(paired_ready())) {
         line_df <- alpha_long %>%

@@ -39,6 +39,8 @@ The package-generated summary shows coefficient plots for up to two leading comp
 
 Switch among **Abundance**, **Prevalence**, and **All results**. Filter by the primary variable or by significance using individual or joint q-values. Individual q-values apply to a specific model, while joint q-values combine evidence across both models. The full package result is available as a TSV download.
 
+The status panel is below the result tabs. Numeric table values are displayed to two decimal places.
+
 Abundance effect sizes are relative abundance fold changes, and prevalence effect sizes are detection odds ratios. For standardized continuous predictors, effects are per standard deviation. Review model fitting warnings before interpreting an estimate.
 
 ### Association Detail
@@ -51,5 +53,9 @@ Select a table row for an ordinary main effect to see observed sample values alo
 | Continuous | Scatter plot for detected samples | Predictor distribution for detected and undetected samples |
 
 Interaction estimates, group tests, and ordered contrasts are available in the results table. Changing input data or model options requires a new run.
+
+### Volcano Plot
+
+Abundance and prevalence are shown in separate panels. The X-axis is the coefficient minus its tested null value, and the Y-axis is the negative base-10 logarithm of the individual q-value. The plot can be downloaded as PNG.
 
 See the [MaAsLin3 1.2.0 documentation](https://bioconductor.posit.co/packages/3.22/bioc/vignettes/maaslin3/inst/doc/maaslin3_manual.html) for additional model and output details.

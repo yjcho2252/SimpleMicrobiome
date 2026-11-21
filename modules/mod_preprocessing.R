@@ -23,23 +23,16 @@ mod_preprocessing_ui <- function(id) {
               verbatimTextOutput(ns("sample_count_info"))
           ),
           hr(),
-          h5(icon("random"), "Subsampling"),
+          h5(icon("random"), "Rarefaction"),
           checkboxInput(
             ns("enable_subsampling"),
-            "Enable subsampling",
+            "Enable rarefaction",
             value = FALSE
           ),
           conditionalPanel(
             condition = sprintf("input['%s']", ns("enable_subsampling")),
-            numericInput(
-              ns("subsampling_depth"),
-              "Reads per sample",
-              value = 10000,
-              min = 1,
-              step = 1000
-            ),
             p(
-              "Each selected sample is randomly subsampled without replacement.",
+              "Reads are drawn without replacement to match the lowest read count among selected samples.",
               style = "color: #4b5563; font-size: 11px; margin-top: -5px;"
             ),
             textOutput(ns("subsampling_info"))
@@ -112,6 +105,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     }
     
     ps_filtered <- reactiveVal(NULL)
+    ps_selected_raw <- reactiveVal(NULL)
     last_applied_settings <- reactiveVal(NULL)
     default_min_reads <- 2000
     subsampling_seed <- 42
@@ -198,6 +192,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     observeEvent(ps_obj_initial(), {
       last_applied_settings(NULL)
       ps_filtered(ps_obj_initial())
+      ps_selected_raw(ps_obj_initial())
     }, ignoreInit = FALSE, ignoreNULL = FALSE)
 
     observeEvent(input$min_read_count, {
@@ -318,75 +313,48 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       }
       
       subsampling_enabled <- isTRUE(input$enable_subsampling)
-      subsampling_depth_raw <- suppressWarnings(as.numeric(input$subsampling_depth))
-      valid_subsampling_depth <- length(subsampling_depth_raw) == 1 &&
-        is.finite(subsampling_depth_raw) &&
-        subsampling_depth_raw >= 1 &&
-        subsampling_depth_raw == floor(subsampling_depth_raw) &&
-        subsampling_depth_raw <= .Machine$integer.max
-      subsampling_depth <- if (valid_subsampling_depth) {
-        as.integer(subsampling_depth_raw)
-      } else {
-        NA_integer_
-      }
       current_settings <- list(
         selected_indices = selected_indices,
-        subsampling_enabled = subsampling_enabled,
-        subsampling_depth = if (subsampling_enabled) subsampling_depth else NULL
+        subsampling_enabled = subsampling_enabled
       )
       if (identical(current_settings, last_applied_settings())) {
         return(invisible(NULL))
       }
 
-      if (subsampling_enabled && !valid_subsampling_depth) {
-        ps_filtered(NULL)
-        showNotification(
-          "Subsampling depth must be a positive whole number.",
-          type = "error",
-          duration = 8
-        )
-        return(invisible(NULL))
-      }
-      
       if (length(selected_indices) == 0) {
         ps_new <- NULL
       } else {
         selected_samples <- meta_df_for_dt()$SampleID[selected_indices]
         ps_new <- phyloseq::prune_samples(selected_samples, ps_obj_initial())
       }
+      ps_selected_raw(ps_new)
 
       if (!is.null(ps_new) && subsampling_enabled) {
         sample_reads <- phyloseq::sample_sums(ps_new)
-        insufficient_samples <- names(sample_reads)[sample_reads < subsampling_depth]
-        if (length(insufficient_samples) > 0) {
+        subsampling_depth <- min(sample_reads)
+        if (!is.finite(subsampling_depth) || subsampling_depth < 1) {
           ps_filtered(NULL)
-          preview <- paste(utils::head(insufficient_samples, 5), collapse = ", ")
-          if (length(insufficient_samples) > 5) {
-            preview <- paste0(preview, sprintf(" and %d more", length(insufficient_samples) - 5))
-          }
+          last_applied_settings(NULL)
           showNotification(
-            sprintf(
-              "Subsampling was not applied: %d selected sample(s) have fewer than %s reads (%s). Lower the depth or deselect these samples.",
-              length(insufficient_samples),
-              format(subsampling_depth, big.mark = ",", scientific = FALSE),
-              preview
-            ),
+            "Deselect samples with zero or invalid read counts to apply rarefaction.",
             type = "error",
             duration = 10
           )
           return(invisible(NULL))
         }
 
-        ps_new <- suppressMessages(
-          phyloseq::rarefy_even_depth(
-            ps_new,
-            sample.size = subsampling_depth,
-            rngseed = subsampling_seed,
-            replace = FALSE,
-            trimOTUs = TRUE,
-            verbose = FALSE
+        if (any(sample_reads > subsampling_depth)) {
+          ps_new <- suppressMessages(
+            phyloseq::rarefy_even_depth(
+              ps_new,
+              sample.size = subsampling_depth,
+              rngseed = subsampling_seed,
+              replace = FALSE,
+              trimOTUs = TRUE,
+              verbose = FALSE
+            )
           )
-        )
+        }
       }
       
       if (!is.null(ps_new) && phyloseq::nsamples(ps_new) > 0) {
@@ -423,36 +391,23 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
 
     output$subsampling_info <- renderText({
       req(meta_df_for_dt())
-      depth_raw <- suppressWarnings(as.numeric(input$subsampling_depth))
-      valid_depth <- length(depth_raw) == 1 &&
-        is.finite(depth_raw) &&
-        depth_raw >= 1 &&
-        depth_raw == floor(depth_raw) &&
-        depth_raw <= .Machine$integer.max
-      if (!valid_depth) {
-        return("Enter a positive whole number.")
-      }
-      depth <- as.integer(depth_raw)
-
       selected_indices <- selected_indices_for_apply()
+      if (length(selected_indices) == 0L) return("Select at least one sample.")
       selected_reads <- meta_df_for_dt()$`Read Count`[selected_indices]
-      insufficient_count <- sum(selected_reads < depth, na.rm = TRUE)
-      if (insufficient_count > 0) {
-        return(sprintf(
-          "%d selected sample(s) are below this depth.",
-          insufficient_count
-        ))
+      depth <- min(selected_reads)
+      if (!is.finite(depth) || depth < 1) {
+        return("Deselect samples with zero or invalid read counts to apply rarefaction.")
       }
 
       sprintf(
-        "All %d selected sample(s) can be subsampled to %s reads.",
-        length(selected_indices),
+        "Rarefaction depth: %s reads per sample.",
         format(depth, big.mark = ",", scientific = FALSE)
       )
     })
     
     return(list(
-      ps_filtered_raw = ps_filtered
+      ps_filtered_raw = ps_filtered,
+      ps_selected_raw = ps_selected_raw
     ))
   })
 }

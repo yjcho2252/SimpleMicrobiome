@@ -1172,11 +1172,13 @@ mod_sparcc_server <- function(id, ps_obj) {
     })
 
     output$hub_table <- renderDT({
+      table <- hub_table()
       DT::datatable(
-        hub_table(),
+        table,
         rownames = FALSE,
         options = list(pageLength = 10, scrollX = TRUE)
-      )
+      ) %>%
+        DT::formatRound(names(table)[vapply(table, is.numeric, logical(1))], digits = 2)
     })
 
     draw_comparison_network_plot <- function(edge_tbl, edge_palette, run_settings) {
@@ -1360,13 +1362,23 @@ mod_sparcc_server <- function(id, ps_obj) {
       if (is.na(min_edge_weight) || min_edge_weight < 0) min_edge_weight <- 0.1
       node_rows <- list()
       edge_rows <- list()
+      group_levels <- unique(c(as.character(res$group_status$group), names(res$networks)))
+      panel_notes <- data.frame(group = group_levels, label = NA_character_)
+      if (!is.null(res$group_status)) {
+        unsuccessful <- res$group_status[res$group_status$status != "Success", , drop = FALSE]
+        panel_notes$label[match(unsuccessful$group, panel_notes$group)] <-
+          paste0(unsuccessful$status, "\nSee SparCC Status.")
+      }
       idx <- 1L
 
       for (gname in names(res$networks)) {
         g <- res$networks[[gname]]$graph
         g <- filter_graph_by_weight(g, min_edge_weight)
         if (connected_only) g <- get_connected_graph(g)
-        if (igraph::vcount(g) == 0 || igraph::ecount(g) == 0) next
+        if (igraph::ecount(g) == 0) {
+          panel_notes$label[panel_notes$group == gname] <- "No edges meet the weight cutoff."
+          next
+        }
 
         edge_weight <- igraph::E(g)$weight
         edge_abs <- abs(edge_weight)
@@ -1395,10 +1407,16 @@ mod_sparcc_server <- function(id, ps_obj) {
         idx <- idx + 1L
       }
 
-      validate(need(length(node_rows) > 0, "No network panels available after filtering."))
-      node_plot_df <- do.call(rbind, node_rows)
-      edge_plot_df <- do.call(rbind, edge_rows)
-      node_plot_df$node_color_group <- "All Nodes"
+      node_plot_df <- dplyr::bind_rows(
+        data.frame(name = character(), x = numeric(), y = numeric(), group = character(), node_size = numeric()),
+        do.call(rbind, node_rows)
+      )
+      edge_plot_df <- dplyr::bind_rows(
+        data.frame(from = character(), to = character(), group = character(),
+                   edge_sign = character(), edge_strength = numeric()),
+        do.call(rbind, edge_rows)
+      )
+      node_plot_df$node_color_group <- rep("All Nodes", nrow(node_plot_df))
       if (!identical(color_var, "None") && !is.null(res$taxa_annotation) && color_var %in% colnames(res$taxa_annotation)) {
         rank_prefix_map <- c(
           Kingdom = "k__",
@@ -1425,8 +1443,10 @@ mod_sparcc_server <- function(id, ps_obj) {
         node_plot_df$node_color_group[is.na(node_plot_df$node_color_group) | !nzchar(node_plot_df$node_color_group)] <- get_rank_unassigned_label(color_var)
       }
 
-      node_plot_df$group <- factor(node_plot_df$group, levels = names(res$networks))
-      edge_plot_df$group <- factor(edge_plot_df$group, levels = names(res$networks))
+      node_plot_df$group <- factor(node_plot_df$group, levels = group_levels)
+      edge_plot_df$group <- factor(edge_plot_df$group, levels = group_levels)
+      panel_notes <- panel_notes[!is.na(panel_notes$label), , drop = FALSE]
+      panel_notes$group <- factor(panel_notes$group, levels = group_levels)
 
       edge_plot_df <- merge(edge_plot_df, node_plot_df[, c("name", "x", "y", "group")], by.x = c("from", "group"), by.y = c("name", "group"), all.x = TRUE, sort = FALSE)
       edge_plot_df <- merge(edge_plot_df, node_plot_df[, c("name", "x", "y", "group")], by.x = c("to", "group"), by.y = c("name", "group"), all.x = TRUE, sort = FALSE, suffixes = c("", "_end"))
@@ -1455,11 +1475,14 @@ mod_sparcc_server <- function(id, ps_obj) {
           max.overlaps = Inf,
           seed = as.integer(res$run_settings$seed)
         ) +
+        ggplot2::geom_text(
+          data = panel_notes, ggplot2::aes(x = 0, y = 0, label = label),
+          colour = "grey35", size = 3.2
+        ) +
         ggplot2::facet_wrap(~group, scales = "free") +
         ggplot2::scale_color_manual(
           values = c("Positive" = "#4575B4", "Negative" = "#D73027", "Zero" = "#999999"),
-          breaks = c("Positive", "Negative", "Zero"),
-          drop = FALSE,
+          limits = c("Positive", "Negative", "Zero"),
           name = "Edge sign"
         ) +
         ggplot2::scale_linewidth(name = "Edge strength (|w|)", range = c(0.2, 1.6)) +
@@ -1482,7 +1505,7 @@ mod_sparcc_server <- function(id, ps_obj) {
           }
         )
 
-      if (identical(color_var, "None")) {
+      if (nrow(node_plot_df) == 0L || identical(color_var, "None")) {
         p <- p + ggplot2::scale_fill_manual(values = c("All Nodes" = "#F1C40F"), guide = "none")
       } else {
         color_levels <- sort(unique(node_plot_df$node_color_group))
@@ -1556,9 +1579,15 @@ mod_sparcc_server <- function(id, ps_obj) {
       w <- suppressWarnings(as.numeric(input$plot_width))
       if (!is.finite(w) || is.na(w) || w <= 0) 800 else w
     })
-    output$edge_table_all <- renderDT({ datatable(edge_table_all(), options = list(scrollX = TRUE)) })
+    output$edge_table_all <- renderDT({
+      table <- edge_table_all()
+      datatable(table, options = list(scrollX = TRUE)) %>%
+        DT::formatRound(names(table)[vapply(table, is.numeric, logical(1))], digits = 2)
+    })
     output$comparison_edge_table <- renderDT({
-      datatable(comparison_edge_table(), options = list(scrollX = TRUE, pageLength = 15))
+      table <- comparison_edge_table()
+      datatable(table, options = list(scrollX = TRUE, pageLength = 15)) %>%
+        DT::formatRound(names(table)[vapply(table, is.numeric, logical(1))], digits = 2)
     })
 
     output$download_network_plot_all <- downloadHandler(

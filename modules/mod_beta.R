@@ -77,6 +77,8 @@ mod_beta_ui <- function(id) {
         checkboxInput(ns("show_centroid_lines"), "Show Sample-to-Centroid Lines", value = FALSE),
         checkboxInput(ns("show_centroids"), "Show Centroids", value = FALSE),
         checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
+        selectInput(ns("primary_color_palette"), "Primary Group Color Palette:",
+                    choices = c("Set2" = "set2", additional_plot_palettes), selected = "set2"),
         uiOutput(ns("primary_color_controls")),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("Axis Limits")),
@@ -434,10 +436,18 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       if (length(level_values) == 0) {
         return(list(levels = character(0), colors = character(0)))
       }
-      default_colors <- grDevices::hcl.colors(length(level_values), palette = "Set 2")
+      default_colors <- group_plot_colors(length(level_values), input$primary_color_palette)
       names(default_colors) <- level_values
       list(levels = level_values, colors = default_colors)
     })
+
+    primary_color_id <- function(index) {
+      palette <- input$primary_color_palette
+      if (length(palette) == 1L && palette %in% additional_plot_palettes) {
+        return(paste0("primary_color_", palette, "_", index))
+      }
+      paste0("primary_color_", index)
+    }
     
     output$primary_color_controls <- renderUI({
       group_info <- default_group_colors()
@@ -446,7 +456,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       
       controls <- lapply(seq_along(group_info$levels), function(i) {
         lvl <- group_info$levels[i]
-        input_id <- paste0("primary_color_", i)
+        input_id <- primary_color_id(i)
         input_id_ns <- ns(input_id)
         shiny_set_value_js <- sprintf(
           "Shiny.setInputValue('%s', this.value, {priority: 'event'})",
@@ -480,7 +490,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       group_info <- default_group_colors()
       req(length(group_info$levels) > 0)
       color_values <- vapply(seq_along(group_info$levels), function(i) {
-        input_val <- input[[paste0("primary_color_", i)]]
+        input_val <- input[[primary_color_id(i)]]
         if (is.null(input_val) || !grepl("^#([A-Fa-f0-9]{6})$", input_val)) {
           group_info$colors[i]
         } else {

@@ -220,7 +220,7 @@ server <- function(input, output, session) {
   
   ps_obj_filtered_raw <- preprocessing_data$ps_filtered_raw
   
-  mod_barplot_server("mod_barplot", ps_obj_filtered_raw, meta_vars)
+  mod_barplot_server("mod_barplot", preprocessing_data$ps_selected_raw, meta_vars)
   mod_taxa_comparison_server("mod_taxa_comparison", ps_obj_filtered_raw, meta_vars, active_tab)
   mod_alpha_server("mod_alpha", ps_obj_filtered_raw, meta_vars, active_tab)
   mod_beta_server("mod_beta", ps_obj_filtered_raw, meta_vars)

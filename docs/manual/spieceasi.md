@@ -71,6 +71,7 @@ The module supports:
 - Lists filtered edges from all estimated group networks.
 - Edge weight sign indicates positive or negative association.
 - The table can be downloaded as a TSV file.
+- Numeric values in result tables are displayed to two decimal places.
 
 ### 3.4 Summary
 - Reports sample count, taxa count, group variable, nodes, edges, and connected components for each estimated group network.
