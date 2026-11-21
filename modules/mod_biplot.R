@@ -51,12 +51,6 @@ mod_biplot_ui <- function(id) {
         to { transform: rotate(360deg); }
       }
     ")),
-    tags$style(HTML(paste0(
-      "#", ns("selected_taxa"), "-selectized::placeholder { font-size: 10px; }",
-      "#", ns("selected_taxa"), "-selectized::-webkit-input-placeholder { font-size: 10px; }",
-      "#", ns("selected_taxa"), "-selectized::-moz-placeholder { font-size: 10px; }",
-      "#", ns("selected_taxa"), "-selectized:-ms-input-placeholder { font-size: 10px; }"
-    ))),
     sidebarLayout(
       sidebarPanel(
         width = 2,

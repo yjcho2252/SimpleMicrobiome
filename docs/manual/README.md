@@ -8,6 +8,7 @@
 - [Beta Diversity](/manual/beta-diversity.html)
 - [ANCOM-BC2](/manual/ancom-bc2.html)
 - [MaAsLin2](/manual/maaslin2.html)
+- [MaAsLin3](/manual/maaslin3.html)
 - [Random Forest](/manual/random-forest.html)
 - [SparCC](/manual/sparcc.html)
 - [SpiecEasi](/manual/spieceasi.html)
@@ -18,7 +19,7 @@
 - **Start-to-finish first analysis**:
   - Data Loading -> Preprocessing -> Taxa Profiles -> Alpha/Beta Diversity
 - **Differential abundance focus**:
-  - ANCOM-BC2 + MaAsLin2
+  - ANCOM-BC2, MaAsLin2, or MaAsLin3
 - **Prediction focus**:
   - Random Forest
 - **Network focus**:

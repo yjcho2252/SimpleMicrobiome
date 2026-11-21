@@ -8,6 +8,7 @@ library(ggplot2)
 library(ggpubr)
 library(shinyWidgets)
 library(Maaslin2)
+library(maaslin3)
 library(microbiome)
 library(cluster)
 library(vegan)
@@ -108,11 +109,14 @@ ui <- page_navbar(
         font-size: 12px;
       }
       .selectize-input,
+      .selectize-input > input,
+      .selectize-input > input::placeholder,
       .selectize-dropdown,
       .selectize-dropdown-content,
       .selectize-dropdown .option,
       .selectize-dropdown .optgroup-header,
       select.form-select,
+      select.form-control,
       .irs-grid-text {
         font-size: 12px !important;
       }
@@ -176,6 +180,7 @@ ui <- page_navbar(
     icon = icon("vial-circle-check"),
     nav_panel("ANCOM-BC2", icon = icon("vial-circle-check"), mod_ancom_ui("mod_ancom")),
     nav_panel("MaAsLin2", icon = icon("flask"), mod_maaslin2_ui("mod_maaslin2")),
+    nav_panel("MaAsLin3", icon = icon("flask"), mod_maaslin3_ui("mod_maaslin3")),
     nav_panel("Random Forest", icon = icon("tree"), mod_randomforest_ui("mod_randomforest"))
   ),
   
@@ -221,6 +226,7 @@ server <- function(input, output, session) {
   mod_beta_server("mod_beta", ps_obj_filtered_raw, meta_vars)
   mod_ancom_server("mod_ancom", ps_obj_filtered_raw)
   mod_maaslin2_server("mod_maaslin2", ps_obj_filtered_raw)
+  mod_maaslin3_server("mod_maaslin3", ps_obj_filtered_raw)
   mod_randomforest_server("mod_randomforest", ps_obj_filtered_raw)
   mod_spieceasi_server("mod_spieceasi", ps_obj_filtered_raw)
   mod_sparcc_server("mod_sparcc", ps_obj_filtered_raw)

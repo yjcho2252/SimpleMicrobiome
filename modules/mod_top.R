@@ -179,6 +179,7 @@ mod_top_ui <- function(id) {
           tags$summary("Show updates"),
           tags$ul(
             class = "top-list",
+            tags$li("261121: v1.1 - MaAsLin3 added, with continuous predictors and expanded result visualizations in MaAsLin2."),
             tags$li("261120: v1.0 - Publication citation and optional read subsampling in Preprocessing."),
             tags$li("260731: v0.4.6 - More reliable Docker dependency restoration with renv caching and retry support."),
             tags$li("260728: v0.4.5 - Reproducible R 4.5.1 setup, dataset-aware taxonomic ranks, and run-consistent analysis outputs."),

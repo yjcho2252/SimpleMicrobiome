@@ -2,13 +2,14 @@
 
 ## 1. What This Module Does
 MaAsLin2 fits multivariable association models between microbial features and metadata variables.
-This module is designed for selected group-level contrasts with optional fixed covariates, interaction terms, and random effects.
+The module supports group contrasts and continuous primary predictors, with optional fixed covariates, interaction terms, and random effects.
 
 ## 2. Left Panel Parameters
 
-### 2.1 Primary grouping variable
-- Defines the main metadata variable used for analysis.
-- If subgroup mode is off, this variable is the comparison variable.
+### 2.1 Primary variable
+- Defines the main metadata variable used for analysis. Selecting a numeric variable opens **Treat as**, with **Continuous** selected by default.
+- **Continuous** estimates the coefficient per one-unit increase. The subgroup, comparison groups, and reference controls are hidden.
+- **Categorical** treats numeric values such as `0` and `5` as group labels. Text variables are treated as categorical.
 
 ### 2.2 Select subgroup / primary level to include
 - Restricts the analysis to a selected primary level before model fitting.
@@ -16,6 +17,7 @@ This module is designed for selected group-level contrasts with optional fixed c
 
 ### 2.3 Comparison groups (levels)
 - Selects levels included in the model.
+- Select at least two levels, including the reference. A warning appears when the comparison variable has more than 10 observed levels. The variable remains selectable.
 - The reference level must be one of the selected levels.
 
 ### 2.4 Reference level
@@ -61,14 +63,22 @@ This module is designed for selected group-level contrasts with optional fixed c
 - x-axis: log2FC for the selected comparison level against the reference level.
 - y-axis: `-log10(q-value)` or `-log10(p-value)`, depending on the selected statistical metric.
 - Positive log2FC means increased in the comparison level versus the reference level.
+- For a continuous primary variable, the x-axis shows the model coefficient per one-unit increase in the predictor.
 
 ### 3.2 Bar plot
 - Bars show the top 10 significant taxa ranked by absolute log2FC.
 - If no significant rows are available, the plot falls back to the top 10 finite log2FC rows.
 - The number printed beside each bar is the selected statistical metric (`q-value` or `p-value`).
+- For a continuous predictor, bars use the model coefficient and are ranked by its absolute magnitude.
 
-### 3.3 Table
-- Reports MaAsLin2 coefficient estimates, transformed effect sizes, significance values, selected contrast labels, and taxonomy fields.
+### 3.3 Association Heatmap
+- Rows show taxa and columns show model terms or contrasts. Tile colors represent model coefficients. A star marks a cell meeting the selected q-value threshold, and gray indicates an unavailable estimate.
+- Set the q-value threshold and maximum taxa, then click a cell to see its coefficient and q-value. The preview and PNG download follow the left-panel **Plot Dimensions** settings.
+
+### 3.4 Table and Association Detail
+- The table reports coefficient estimates, significance values, and taxonomy fields. Group results also include contrast labels and transformed effect sizes.
+- Select a row to see sample-level values below the table. Categorical contrasts show a boxplot with sample points for the reference and comparison groups. Continuous predictors show a scatter plot.
+- The graph uses sample values on the model input scale. The displayed coefficient and q-value come from the fitted model. The graph follows the left-panel width, height, and base font size.
 
 ## 4. Result Columns
 
@@ -80,7 +90,7 @@ This module is designed for selected group-level contrasts with optional fixed c
 - With covariates, the coefficient is conditional on the other model terms.
 
 ### 4.3 Coefficient / log2FC-style effect
-- Direction is relative to the reference level for group contrasts.
+- Direction is relative to the reference level for group contrasts. For continuous predictors, the coefficient describes a one-unit increase.
 - Magnitude depends on the automatic normalization/transform and selected analysis method.
 
 ### 4.4 p-value
@@ -92,10 +102,10 @@ This module is designed for selected group-level contrasts with optional fixed c
 - Preferred significance value for reporting.
 
 ## 5. Interpretation Workflow
-1. Confirm comparison variable, selected levels, and reference level.
+1. Confirm the primary variable and its interpretation. For categorical predictors, check the selected levels and reference.
 2. Confirm analysis method and the automatic normalization/transform it implies.
 3. Check sample counts and prevalence filtering.
-4. Interpret coefficient direction relative to the reference level.
+4. Interpret the coefficient relative to the reference level or per unit of the continuous predictor.
 5. Prioritize q-value significant associations.
 6. Review covariates, interactions, and random effects for biological and statistical plausibility.
 

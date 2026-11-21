@@ -12,6 +12,18 @@
     "Version": "3.22"
   },
   "Packages": {
+    "maaslin3": {
+      "Package": "maaslin3",
+      "Version": "1.2.0",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.22",
+      "Requirements": [
+        "BiocGenerics", "RColorBrewer", "SummarizedExperiment",
+        "TreeSummarizedExperiment", "dplyr", "ggnewscale", "ggplot2",
+        "lme4", "lmerTest", "logging", "multcomp", "optparse", "patchwork",
+        "pbapply", "plyr", "rlang", "scales", "survival", "tibble"
+      ]
+    },
     "ANCOMBC": {
       "Package": "ANCOMBC",
       "Version": "2.12.0",

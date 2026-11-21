@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-21] v1.1
+
+### Added
+
+- Added MaAsLin3 to Differential Abundance, with abundance and prevalence models, an official summary plot with PNG and PDF exports, a filterable results table, and sample-level association plots.
+- Added continuous primary predictors and numeric-to-categorical selection to MaAsLin2. Added an association heatmap and sample-level plots linked to result rows.
+
+### Changed
+
+- MaAsLin2 and MaAsLin3 warn when a categorical comparison variable has more than 10 observed levels and allow users to choose the groups to analyze.
+- Linked association detail plot dimensions and fonts to each module's plot controls, and placed the MaAsLin2 status panel below the heatmap.
+- Standardized dropdown text and placeholders at 12 px across modules.
+
+### Documentation
+
+- Added the MaAsLin3 manual and method reference, and updated the MaAsLin2 manual. See the [release notes](docs/releases/2026-11-21.md).
+
 ## [2026-11-20] v1.0
 
 ### Added

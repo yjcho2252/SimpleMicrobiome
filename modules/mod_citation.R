@@ -81,6 +81,9 @@ mod_citation_server <- function(id) {
       "MaAsLin2" = c(
         "Mallick, H., Rahnavard, A., McIver, L. J., Ma, S., Zhang, Y., Tickle, T. L., Weingart, G., Ren, B., Schwager, E. H., Thompson, K. N., Lu, Y., Waldron, L., Huttenhower, C., et al. (2021). Multivariable association discovery in population-scale meta-omics studies. PLOS Computational Biology, 17(11), e1009442. https://doi.org/10.1371/journal.pcbi.1009442"
       ),
+      "MaAsLin3" = c(
+        "Nickols, W. A., Kuntz, T., Shen, J., et al. (2026). MaAsLin 3: Refining and extending generalized multivariable linear models for meta-omic association discovery. Nature Methods, 23, 554–564. https://doi.org/10.1038/s41592-025-02923-9"
+      ),
       "Random Forest" = c(
         "Breiman, L. (2001). Random forests. Machine Learning, 45(1), 5-32. https://doi.org/10.1023/A:1010933404324",
         "Liaw, A., & Wiener, M. (2002). randomForest: Breiman and Cutler's random forests for classification and regression (R package). https://CRAN.R-project.org/package=randomForest",

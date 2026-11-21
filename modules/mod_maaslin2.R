@@ -63,7 +63,11 @@ mod_maaslin2_ui <- function(id) {
         h4(icon("flask"), "MaAsLin2"),
         hr(),
 
-        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
+        selectInput(ns("group_var"), "1. Primary variable", choices = NULL),
+        uiOutput(ns("primary_type_ui")),
+        conditionalPanel(
+          condition = "!output.continuous_primary",
+          ns = ns,
         checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
         conditionalPanel(
           condition = "input.use_subgroup",
@@ -82,8 +86,10 @@ mod_maaslin2_ui <- function(id) {
             plugins = list("remove_button")
           )
         ),
+        uiOutput(ns("group_level_warning")),
 
         selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
+        ),
 
         selectInput(ns("tax_level"), "4. Taxonomic level",
                     choices = c("ASV", "Genus", "Species", "Strain"), selected = "Genus"),
@@ -193,18 +199,30 @@ mod_maaslin2_ui <- function(id) {
                        style = "margin-top: 8px;",
                        plotOutput(ns("maaslin2_barplot"), height = "auto")
                      )),
+            tabPanel("Association Heatmap",
+                     numericInput(ns("association_q"), "q-value threshold", 0.05, min = 0, max = 1, step = 0.01),
+                     numericInput(ns("association_top"), "Maximum taxa", 20, min = 1, max = 50, step = 1),
+                     downloadButton(ns("download_association_heatmap"), "Download heatmap (PNG)"),
+                     p("Click a cell to see its coefficient and q-value."),
+                     uiOutput(ns("association_heatmap_container")),
+                     textOutput(ns("association_detail"))),
             tabPanel("Table",
                      downloadButton(ns("download_maaslin2_table"), "Download Table (TSV)", style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"),
                      tags$div(
                        style = "position: relative; z-index: 1; margin-bottom: 18px;",
+                       p("Select a result row to inspect the observed values."),
                        DTOutput(ns("maaslin2_table"))
-                     ))
+                     ),
+                     uiOutput(ns("table_association_detail")))
           )
         ),
         uiOutput(ns("maaslin2_legend_box")),
-        uiOutput(ns("maaslin2_status_separator")),
-        h5(icon("circle-info"), "MaAsLin2 Status"),
-        uiOutput(ns("maaslin2_status_box"))
+        div(
+          style = "clear: both; margin-top: 16px;",
+          uiOutput(ns("maaslin2_status_separator")),
+          h5(icon("circle-info"), "MaAsLin2 Status"),
+          uiOutput(ns("maaslin2_status_box"))
+        )
       )
     )
   )
@@ -312,9 +330,24 @@ mod_maaslin2_server <- function(id, ps_obj) {
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
       resolve_meta_colname(input$group_var, colnames(meta_df))
     })
+    numeric_primary <- reactive({
+      isTruthy(input$group_var) && !is.null(ps_obj()) &&
+        is.numeric(phyloseq::sample_data(ps_obj())[[group_var_resolved()]])
+    })
+    continuous_primary <- reactive({
+      numeric_primary() && !identical(input$primary_type, "categorical")
+    })
+    output$primary_type_ui <- renderUI({
+      req(numeric_primary())
+      selectInput(session$ns("primary_type"), "Treat as",
+                  choices = c("Continuous" = "continuous", "Categorical" = "categorical"))
+    })
+    output$continuous_primary <- reactive(continuous_primary())
+    outputOptions(output, "continuous_primary", suspendWhenHidden = FALSE)
+
     secondary_var_resolved <- reactive({
       req(ps_obj())
-      if (!isTRUE(input$use_subgroup)) {
+      if (continuous_primary() || !isTRUE(input$use_subgroup)) {
         return(NULL)
       }
       req(input$secondary_var)
@@ -437,12 +470,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       req(ps_obj())
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
       meta_cols <- colnames(meta_df)
-      candidate_groups <- setdiff(meta_cols, "SampleID")
-      group_choices <- candidate_groups[vapply(candidate_groups, function(col) {
-        level_values <- as.character(meta_df[[col]])
-        level_values <- level_values[!is.na(level_values) & nzchar(level_values)]
-        length(unique(level_values)) <= 10
-      }, logical(1))]
+      group_choices <- setdiff(meta_cols, "SampleID")
       selected_group <- if (length(group_choices) > 0) group_choices[1] else NULL
 
       updateSelectInput(session, "group_var",
@@ -450,7 +478,28 @@ mod_maaslin2_server <- function(id, ps_obj) {
                         selected = selected_group)
     }, ignoreNULL = FALSE)
 
-    observeEvent(list(ps_obj(), input$group_var), {
+    output$group_level_warning <- renderUI({
+      req(ps_obj(), input$group_var, !continuous_primary())
+      meta <- as(phyloseq::sample_data(ps_obj()), "data.frame")
+      primary <- group_var_resolved()
+      secondary <- secondary_var_resolved()
+      values <- as.character(meta[[if (is.null(secondary)) primary else secondary]])
+      if (!is.null(secondary)) {
+        primary_values <- as.character(meta[[primary]])
+        keep <- if (identical(input$primary_level, "All")) !is.na(primary_values) else
+          which(primary_values == input$primary_level)
+        values <- values[keep]
+      }
+      n_levels <- length(unique(values[!is.na(values) & nzchar(values)]))
+      if (n_levels > 10L) {
+        p(class = "text-warning-emphasis", sprintf(
+          "This variable has %d observed levels. Review sample counts and keep the groups relevant to your analysis.",
+          n_levels
+        ))
+      }
+    })
+
+    observeEvent(list(ps_obj(), input$group_var, continuous_primary()), {
       req(ps_obj(), input$group_var)
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
       primary_var <- group_var_resolved()
@@ -458,7 +507,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
         need(primary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found."))
       )
 
-      level_choices <- sort(unique(as.character(meta_df[[primary_var]])))
+      level_choices <- if (continuous_primary()) character() else
+        sort(unique(as.character(meta_df[[primary_var]])))
       level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       level_choices <- c("All", level_choices)
       selected_primary_level <- isolate(input$primary_level)
@@ -480,7 +530,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
       )
     }, ignoreNULL = FALSE)
 
-    observeEvent(list(ps_obj(), input$group_var, input$primary_level, input$secondary_var), {
+    observeEvent(list(ps_obj(), input$group_var, input$primary_level, input$secondary_var,
+                      input$use_subgroup, continuous_primary()), {
       req(ps_obj(), input$group_var, input$primary_level, input$secondary_var)
       meta_df <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
       primary_var <- group_var_resolved()
@@ -491,7 +542,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
       }
       current_reference <- isolate(input$reference_level)
       primary_values <- as.character(meta_df[[primary_var]])
-      if (is.null(secondary_var)) {
+      if (continuous_primary()) {
+        level_choices <- character()
+      } else if (is.null(secondary_var)) {
         level_choices <- sort(unique(primary_values))
         level_choices <- level_choices[!is.na(level_choices) & nzchar(level_choices)]
       } else {
@@ -598,7 +651,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
     }, ignoreNULL = FALSE)
 
     group_selection_info <- reactive({
-      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var)
+      req(ps_obj(), input$group_var)
       ps <- ps_obj()
       meta_df <- as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE)
       primary_var <- group_var_resolved()
@@ -606,6 +659,12 @@ mod_maaslin2_server <- function(id, ps_obj) {
       validate(
         need(primary_var %in% colnames(meta_df), paste0("ERROR: Metadata variable '", input$group_var, "' not found in sample_data."))
       )
+      if (continuous_primary()) {
+        values <- meta_df[[primary_var]]
+        return(list(primary_var = primary_var, group_var = primary_var, using_secondary = FALSE,
+                    selected_levels = character(), selected_ids = rownames(meta_df)[is.finite(values)],
+                    counts_by_level = numeric()))
+      }
 
       selected_levels <- input$group_levels
       if (is.null(selected_levels)) {
@@ -655,15 +714,15 @@ mod_maaslin2_server <- function(id, ps_obj) {
     })
 
     output$group_sample_counts <- renderText({
-      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var)
+      req(ps_obj(), input$group_var)
       info <- group_selection_info()
       counts <- taxa_counts()
 
       lines <- c(
         "Selected Sample Counts",
-        if (isTRUE(info$using_secondary)) paste0("Primary filter: ", info$primary_var, " = ", info$primary_level) else "Primary-only comparison mode",
+        if (continuous_primary()) "Continuous predictor mode" else if (isTRUE(info$using_secondary)) paste0("Primary filter: ", info$primary_var, " = ", info$primary_level) else "Primary-only comparison mode",
         if (isTRUE(info$using_secondary)) paste0("Secondary variable: ", info$group_var) else paste0("Grouping variable: ", info$group_var),
-        paste0("Included levels: ", paste(info$selected_levels, collapse = ", ")),
+        if (!continuous_primary()) paste0("Included levels: ", paste(info$selected_levels, collapse = ", ")),
         paste0("Total selected samples: ", length(info$selected_ids)),
         paste0("Prevalence filter: > ", input$prevalence_filter_pct, "%"),
         "Zero-variance taxa: removed before MaAsLin2 fitting"
@@ -686,16 +745,16 @@ mod_maaslin2_server <- function(id, ps_obj) {
     })
 
     ps_filtered <- reactive({
-      req(ps_obj(), input$group_var, input$primary_level, input$secondary_var, input$group_levels, input$tax_level)
+      req(ps_obj(), input$group_var, input$tax_level)
 
       info <- group_selection_info()
       selected_levels <- info$selected_levels
 
       validate(
-        need(length(selected_levels) >= 2, "ERROR: Select at least two group levels.")
+        need(continuous_primary() || length(selected_levels) >= 2, "ERROR: Select at least two group levels.")
       )
       validate(
-        need(!is.null(input$reference_level) && input$reference_level %in% selected_levels,
+        need(continuous_primary() || input$reference_level %in% selected_levels,
              "ERROR: Select a valid reference level from included levels.")
       )
 
@@ -704,6 +763,11 @@ mod_maaslin2_server <- function(id, ps_obj) {
       validate(
         need(length(selected_ids) > 0, "ERROR: No samples found for selected filter combination.")
       )
+      if (continuous_primary()) {
+        values <- phyloseq::sample_data(ps)[[info$group_var]]
+        validate(need(length(unique(values[is.finite(values)])) >= 2,
+                      "The continuous primary variable must have at least two distinct finite values."))
+      }
       ps_sub <- phyloseq::prune_samples(selected_ids, ps)
 
       if (input$tax_level != "ASV") {
@@ -767,6 +831,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       list(
         data = phyloseq_signature(ps_obj()),
         group_var = input$group_var,
+        continuous = continuous_primary(),
         use_subgroup = isTRUE(input$use_subgroup),
         primary_level = input$primary_level,
         secondary_var = input$secondary_var,
@@ -810,8 +875,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
     }, ignoreInit = TRUE)
 
     maaslin2_res <- eventReactive(maaslin2_run_nonce(), {
-      req(ps_filtered(), input$reference_level)
-      maaslin2_running(TRUE)
+      req(ps_filtered())
 
       validate(
         need(requireNamespace("Maaslin2", quietly = TRUE),
@@ -819,6 +883,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       )
 
       current_group_var <- if (is.null(secondary_var_resolved())) group_var_resolved() else secondary_var_resolved()
+      maaslin2_running(TRUE)
 
       session$sendCustomMessage("toggle-maaslin2-run-btn", list(
         id = session$ns("run_maaslin2_btn"),
@@ -872,7 +937,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
           }
           input_data <- as.data.frame(t(otu_mat), stringsAsFactors = FALSE, check.names = FALSE)
 
-          input_metadata <- as.data.frame(phyloseq::sample_data(ps_current), stringsAsFactors = FALSE)
+          input_metadata <- as(phyloseq::sample_data(ps_current), "data.frame")
           input_metadata$SampleID <- rownames(input_metadata)
           rownames(input_metadata) <- input_metadata$SampleID
 
@@ -927,6 +992,11 @@ mod_maaslin2_server <- function(id, ps_obj) {
             }
           }
 
+          if (!continuous_primary()) {
+            input_metadata[[current_group_var]] <- stats::relevel(
+              factor(input_metadata[[current_group_var]]), ref = input$reference_level
+            )
+          }
           expanded_interactions <- expand_interaction_columns(input_metadata, interaction_terms)
           input_metadata <- expanded_interactions$metadata
           interaction_effects <- expanded_interactions$interaction_effects
@@ -977,7 +1047,9 @@ mod_maaslin2_server <- function(id, ps_obj) {
           }
 
           reference_terms <- character(0)
-          reference_terms <- c(reference_terms, make_reference(current_group_var, input$reference_level))
+          if (!continuous_primary()) {
+            reference_terms <- c(reference_terms, make_reference(current_group_var, input$reference_level))
+          }
 
           for (col in setdiff(main_effects, current_group_var)) {
             if (!col %in% colnames(input_metadata)) {
@@ -1014,10 +1086,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
           fit <- Maaslin2::Maaslin2(
             input_data = input_data_path,
-            input_metadata = input_metadata_path,
+            input_metadata = input_metadata[, setdiff(names(input_metadata), "SampleID"), drop = FALSE],
             output = out_dir,
             fixed_effects = fixed_effects,
-            reference = reference_terms,
+            reference = if (length(reference_terms)) reference_terms else NULL,
             random_effects = random_effects_arg,
             normalization = normalization_selected,
             transform = transform_selected,
@@ -1042,6 +1114,14 @@ mod_maaslin2_server <- function(id, ps_obj) {
           )
 
           res <- as.data.frame(res, stringsAsFactors = FALSE)
+          association_results <- res
+          taxonomy <- as.data.frame(phyloseq::tax_table(ps_current))
+          association_results$taxon_label <- as.character(association_results$feature)
+          if (input$tax_level %in% names(taxonomy)) {
+            association_results$taxon_label <- as.character(
+              taxonomy[match(association_results$feature, rownames(taxonomy)), input$tax_level]
+            )
+          }
           if ("metadata" %in% colnames(res)) {
             metadata_chr <- as.character(res$metadata)
             metadata_chr[is.na(metadata_chr)] <- ""
@@ -1054,7 +1134,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
             }
             res <- res[metadata_keep, , drop = FALSE]
           }
-          if ("value" %in% colnames(res)) {
+          if (!continuous_primary() && "value" %in% colnames(res)) {
             selected_levels <- group_selection_info()$selected_levels
             contrast_levels <- setdiff(selected_levels, input$reference_level)
             value_chr <- as.character(res$value)
@@ -1093,7 +1173,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
             res <- res[!is.na(res$value) & nzchar(res$value), , drop = FALSE]
           }
           validate(
-            need(nrow(res) > 0, "No contrast rows were found for the selected grouping variable.")
+            need(nrow(res) > 0, "No results were found for the primary variable.")
           )
 
           source_id <- if ("feature" %in% colnames(res)) as.character(res$feature) else as.character(rownames(res))
@@ -1140,6 +1220,21 @@ mod_maaslin2_server <- function(id, ps_obj) {
           row_key <- make.unique(row_key)
           res$feature_id <- row_key
           rownames(res) <- row_key
+          attr(res, "association_results") <- association_results
+          transformed_path <- file.path(out_dir, "features", "filtered_data_norm_transformed.tsv")
+          if (file.exists(transformed_path)) {
+            abundances <- readr::read_tsv(transformed_path, show_col_types = FALSE,
+                                          name_repair = "minimal",
+                                          col_types = readr::cols(.default = readr::col_character()))
+            attr(res, "table_association_data") <- list(
+              features = setNames(source_id, row_key),
+              abundance = abundances,
+              predictor = setNames(input_metadata[[current_group_var]], rownames(input_metadata)),
+              variable = current_group_var,
+              method = analysis_method_selected,
+              reference = if (!continuous_primary()) input$reference_level
+            )
+          }
 
           res
         })
@@ -1166,9 +1261,112 @@ mod_maaslin2_server <- function(id, ps_obj) {
       result
     })
 
+    association_cells <- reactive({
+      res <- attr(display_maaslin2_res(), "association_results")
+      q <- input$association_q
+      top <- input$association_top
+      validate(
+        need(length(q) == 1L && is.finite(q) && q >= 0 && q <= 1, "Enter a q-value threshold between 0 and 1."),
+        need(length(top) == 1L && is.finite(top) && top %in% 1:50, "Enter a maximum between 1 and 50 taxa."),
+        need(all(c("feature", "metadata", "value", "coef", "qval") %in% names(res)),
+             "Association estimates are unavailable for this run.")
+      )
+      res <- res[order(res$qval, na.last = TRUE), , drop = FALSE]
+      significant <- is.finite(res$coef) & is.finite(res$qval) & res$qval <= q
+      taxa <- head(unique(as.character(res$feature[significant])), top)
+      validate(need(length(taxa) > 0, sprintf("No associations meet q ≤ %g.", q)))
+      res <- res[res$feature %in% taxa, , drop = FALSE]
+      res$term <- as.character(res$metadata)
+      has_level <- !is.na(res$value) & nzchar(res$value) & res$value != res$metadata
+      res$term[has_level] <- paste(res$metadata[has_level], res$value[has_level], sep = " / ")
+      terms <- unique(res$term)
+      res$x <- match(res$term, terms)
+      res$y <- match(res$feature, rev(taxa))
+      labels <- res$taxon_label[match(rev(taxa), res$feature)]
+      missing <- is.na(labels) | !nzchar(labels)
+      labels[missing] <- rev(taxa)[missing]
+      duplicated_labels <- duplicated(labels) | duplicated(labels, fromLast = TRUE)
+      labels[duplicated_labels] <- paste0(labels[duplicated_labels], " [", rev(taxa)[duplicated_labels], "]")
+      cells <- tidyr::expand_grid(x = seq_along(terms), y = seq_along(taxa))
+      values <- res[, c("x", "y", "coef", "qval")]
+      cells <- dplyr::left_join(cells, values[!duplicated(values[c("x", "y")]), ], by = c("x", "y"))
+      cells$coef[!is.finite(cells$coef)] <- NA_real_
+      list(data = cells, terms = terms, taxa = labels, q = q)
+    })
+
+    association_plot <- reactive({
+      view <- association_cells()
+      cells <- view$data
+      marked <- cells[which(is.finite(cells$coef) & cells$qval <= view$q), , drop = FALSE]
+      font_size <- input$base_size
+      req(isTruthy(font_size), is.finite(font_size))
+      ggplot2::ggplot(cells, ggplot2::aes(x, y, fill = coef)) +
+        ggplot2::geom_tile(colour = "white") +
+        ggplot2::geom_text(data = marked, label = "*", colour = "black",
+                          size = 5 * font_size / 11, vjust = 0.8) +
+        ggplot2::scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#b2182b",
+                                      midpoint = 0, na.value = "grey75", name = "Model coefficient") +
+        ggplot2::scale_x_continuous(breaks = seq_along(view$terms), labels = view$terms) +
+        ggplot2::scale_y_continuous(breaks = seq_along(view$taxa), labels = view$taxa) +
+        ggplot2::labs(x = "Model term / level", y = NULL,
+                      subtitle = if (continuous_primary()) sprintf("* q ≤ %g", view$q) else
+                        sprintf("* q ≤ %g | Selected group reference: %s", view$q, input$reference_level),
+                      caption = "Gray indicates an unavailable estimate.") +
+        ggplot2::theme_minimal(base_size = font_size) +
+        ggplot2::theme(panel.grid = ggplot2::element_blank(),
+                       axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+                       legend.position = "bottom")
+    })
+
+    association_dimensions <- reactive({
+      width <- input$plot_width
+      height <- input$plot_height
+      req(isTruthy(width), isTruthy(height), is.finite(width), is.finite(height), width > 0, height > 0)
+      list(width = as.integer(width), height = as.integer(height))
+    })
+
+    output$association_heatmap_container <- renderUI({
+      size <- association_dimensions()
+      div(
+        style = "overflow-x: auto; margin-bottom: 12px;",
+        plotOutput(session$ns("association_heatmap"),
+                   width = paste0(size$width, "px"), height = paste0(size$height, "px"),
+                   click = session$ns("association_cell"))
+      )
+    })
+
+    output$association_heatmap <- renderPlot(
+      association_plot(),
+      width = function() association_dimensions()$width,
+      height = function() association_dimensions()$height
+    )
+
+    output$association_detail <- renderText({
+      view <- association_cells()
+      click <- input$association_cell
+      req(click)
+      x <- round(click$x)
+      y <- round(click$y)
+      cell <- view$data[view$data$x == x & view$data$y == y, , drop = FALSE]
+      req(nrow(cell) == 1)
+      sprintf("%s | %s | Coefficient: %s | q-value: %s",
+              view$taxa[y], view$terms[x],
+              if (is.na(cell$coef)) "unavailable" else format(cell$coef, digits = 4),
+              if (is.na(cell$qval)) "unavailable" else format(cell$qval, digits = 4))
+    })
+
+    output$download_association_heatmap <- downloadHandler(
+      "maaslin2-association-heatmap.png",
+      function(file) {
+        size <- association_dimensions()
+        ggplot2::ggsave(file, association_plot(), device = "png", dpi = 72,
+                        units = "px", width = size$width, height = size$height)
+      }
+    )
+
     output$model_formula_preview <- renderText({
-      req(input$secondary_var)
-      group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
+      req(input$group_var)
+      group_var <- group_selection_info()$group_var
       covariates <- input$fix_covariates
       if (is.null(covariates) || length(covariates) == 0) {
         covariates <- character(0)
@@ -1216,13 +1414,13 @@ mod_maaslin2_server <- function(id, ps_obj) {
       req(display_maaslin2_res())
       res <- display_maaslin2_res()
 
-      if ("coef" %in% colnames(res)) {
+      if (!continuous_primary() && "coef" %in% colnames(res)) {
         coef_num_raw <- suppressWarnings(as.numeric(res$coef))
         coef_num <- coef_num_raw
         res$coef <- coef_num
         res$exp_coef <- exp(coef_num)
         res$lfc <- log2(res$exp_coef)
-      } else {
+      } else if (!continuous_primary()) {
         res$exp_coef <- NA_real_
         res$lfc <- NA_real_
       }
@@ -1296,6 +1494,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       datatable(
         res,
         options = list(scrollX = TRUE),
+        selection = "single",
         class = "compact stripe hover cell-border",
         style = "bootstrap"
       ) %>%
@@ -1306,15 +1505,75 @@ mod_maaslin2_server <- function(id, ps_obj) {
         )
     })
 
+    selected_table_association <- reactive({
+      res <- display_maaslin2_res()
+      selected <- input$maaslin2_table_rows_selected
+      req(length(selected) == 1L, selected %in% seq_len(nrow(res)))
+      row <- res[selected, , drop = FALSE]
+      detail <- attr(res, "table_association_data")
+      feature <- unname(detail$features[row$feature_id])
+      validate(need(length(feature) == 1L && feature %in% names(detail$abundance),
+                    "Observed values are unavailable for this result."))
+      ids <- detail$abundance[[1L]]
+      data <- data.frame(
+        predictor = unname(detail$predictor[ids]),
+        abundance = as.numeric(detail$abundance[[feature]])
+      )
+      if (!is.null(detail$reference)) {
+        levels <- c(detail$reference, as.character(row$value))
+        data$predictor <- factor(as.character(data$predictor), levels = unique(levels))
+      }
+      data <- data[!is.na(data$predictor) & is.finite(data$abundance), , drop = FALSE]
+      validate(need(nrow(data) > 0L, "No observed values are available for this result."))
+      list(data = data, row = row, variable = detail$variable, method = detail$method,
+           feature = feature, reference = detail$reference)
+    })
+
+    output$table_association_detail <- renderUI({
+      detail <- selected_table_association()
+      size <- association_dimensions()
+      row <- detail$row
+      contrast <- if (!is.null(detail$reference)) {
+        paste0(" (", row$value, " vs ", detail$reference, ")")
+      }
+      tagList(
+        hr(), h5("Association Detail"),
+        p(strong(paste0(detail$feature, " / ", detail$variable, contrast))),
+        p(sprintf("Model coefficient: %s | q-value: %s",
+                  format(row$coef, digits = 4), format(row$qval, digits = 4))),
+        p("The figure shows observed sample values. The coefficient and q-value come from the fitted model."),
+        div(style = "overflow-x: auto;",
+            plotOutput(session$ns("table_association_plot"),
+                       width = paste0(size$width, "px"), height = paste0(size$height, "px")))
+      )
+    })
+
+    output$table_association_plot <- renderPlot({
+      detail <- selected_table_association()
+      plot <- ggplot2::ggplot(detail$data, ggplot2::aes(predictor, abundance))
+      if (is.factor(detail$data$predictor)) {
+        plot <- plot +
+          ggplot2::geom_boxplot(ggplot2::aes(fill = predictor), width = 0.48, alpha = 0.55,
+                                colour = "#264653", outlier.shape = NA, show.legend = FALSE) +
+          ggplot2::geom_point(position = ggplot2::position_jitter(width = 0.14, height = 0, seed = 42),
+                              colour = "#264653", alpha = 0.55, size = 1.8) +
+          ggplot2::scale_fill_manual(values = c("#8ab7c8", "#e9a47e")) +
+          ggplot2::scale_x_discrete(labels = scales::label_wrap(18))
+      } else {
+        plot <- plot + ggplot2::geom_point(colour = "#287a8b", alpha = 0.7, size = 2)
+      }
+      plot + ggplot2::labs(x = detail$variable,
+                           y = if (identical(detail$method, "ZINB")) "Read count" else "Log-transformed relative abundance") +
+        ggplot2::theme_minimal(base_size = input$base_size) +
+        ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
+                       panel.grid.major.x = ggplot2::element_blank(),
+                       axis.title = ggplot2::element_text(face = "bold", colour = "#243746"))
+    }, width = function() association_dimensions()$width,
+       height = function() association_dimensions()$height)
+
     output$download_maaslin2_table <- downloadHandler(
       filename = function() {
-        group_tag <- if (identical(input$secondary_var, "None")) {
-          gsub("[^A-Za-z0-9_]+", "_", input$group_var)
-        } else {
-          gsub("[^A-Za-z0-9_]+", "_", input$secondary_var)
-        }
-        ref_tag <- gsub("[^A-Za-z0-9_]+", "_", input$reference_level)
-        paste0("maaslin2_table_", group_tag, "_ref_", ref_tag, "_", Sys.Date(), ".tsv")
+        paste0("maaslin2_table_", maaslin2_download_tag(), "_", Sys.Date(), ".tsv")
       },
       content = function(file) {
         req(maaslin2_table_data())
@@ -1428,9 +1687,17 @@ mod_maaslin2_server <- function(id, ps_obj) {
       out
     }
 
+    maaslin2_download_tag <- function() {
+      group <- gsub("[^A-Za-z0-9_]+", "_", group_selection_info()$group_var)
+      if (continuous_primary()) return(paste0(group, "_continuous"))
+      paste0(group, "_ref_", gsub("[^A-Za-z0-9_]+", "_", input$reference_level))
+    }
+
     volcano_plot_reactive <- reactive({
       req(selected_plot_data(), input$volcano_y_axis, input$base_size)
       res <- selected_plot_data()
+      continuous <- continuous_primary()
+      if (continuous) res$lfc <- res$coef
       selected_levels <- group_selection_info()$selected_levels
       target_levels <- setdiff(selected_levels, input$reference_level)
       target_label <- if (length(target_levels) == 1) target_levels[1] else "selected comparison levels"
@@ -1443,7 +1710,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
       validate(
         need(nrow(plot_df) > 0, "No valid rows to plot. Check MaAsLin2 results.")
       )
-      effect_cutoff <- 0.5
+      effect_cutoff <- if (continuous) 0 else 0.5
 
       plot_df$y_metric <- -log10(y_data[!is.na(res$lfc) & !is.na(y_data) & y_data > 0])
       is_significant <- !is.na(plot_df[[y_col_name]]) & is.finite(plot_df[[y_col_name]]) & (plot_df[[y_col_name]] < 0.05)
@@ -1482,11 +1749,13 @@ mod_maaslin2_server <- function(id, ps_obj) {
         ) +
         coord_cartesian(ylim = c(0, y_upper), xlim = x_lim) +
         scale_x_continuous(breaks = x_breaks) +
-        labs(title = paste0(input$tax_level, "-Level MaAsLin2 Volcano plot (reference: ", input$reference_level, ")"),
-             x = expression("log"[2]*"FC"),
+        labs(title = if (continuous) "MaAsLin2 volcano plot" else
+               paste0(input$tax_level, "-Level MaAsLin2 Volcano plot (reference: ", input$reference_level, ")"),
+             x = if (continuous) paste("Coefficient per unit of", group_var_resolved()) else expression("log"[2]*"FC"),
              y = y_axis_label,
              color = "Direction",
-             subtitle = paste0("Positive log2FC = increased in ", target_label, " (vs ", input$reference_level, ")")) +
+             subtitle = if (continuous) paste("Continuous predictor:", group_var_resolved()) else
+               paste0("Positive log2FC = increased in ", target_label, " (vs ", input$reference_level, ")")) +
         theme_minimal(base_size = input$base_size) +
         theme(
           plot.title = element_text(size = 16, face = "bold"),
@@ -1497,7 +1766,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
           legend.text = element_text(size = 12)
         )
 
-      if ("contrast" %in% colnames(plot_df)) {
+      if (!continuous && "contrast" %in% colnames(plot_df)) {
         p <- p + facet_wrap(~ contrast, scales = "free_x", drop = FALSE)
       }
 
@@ -1513,6 +1782,8 @@ mod_maaslin2_server <- function(id, ps_obj) {
     bar_plot_reactive <- reactive({
       req(selected_plot_data(), input$volcano_y_axis, input$base_size)
       res <- selected_plot_data()
+      continuous <- continuous_primary()
+      if (continuous) res$lfc <- res$coef
       selected_levels <- group_selection_info()$selected_levels
       target_levels <- setdiff(selected_levels, input$reference_level)
       target_label <- if (length(target_levels) == 1) target_levels[1] else "selected comparison levels"
@@ -1569,14 +1840,15 @@ mod_maaslin2_server <- function(id, ps_obj) {
           values = c("Decreased" = "blue", "Increased" = "red"),
           breaks = c("Decreased", "Increased"),
           labels = c(
-            "Decreased" = paste0("Decrease in ", target_label),
-            "Increased" = paste0("Increase in ", target_label)
+            "Decreased" = if (continuous) "Negative coefficient" else paste0("Decrease in ", target_label),
+            "Increased" = if (continuous) "Positive coefficient" else paste0("Increase in ", target_label)
           ),
           drop = FALSE
         ) +
-        labs(title = paste0("Top ", top_n, " ", input$tax_level, "-Level Differential Taxa by log2FC (reference: ", input$reference_level, ")"),
+        labs(title = if (continuous) "Top MaAsLin2 associations by coefficient magnitude" else
+               paste0("Top ", top_n, " ", input$tax_level, "-Level Differential Taxa by log2FC (reference: ", input$reference_level, ")"),
              x = input$tax_level,
-             y = expression("log"[2]*"FC"),
+             y = if (continuous) paste("Coefficient per unit of", group_var_resolved()) else expression("log"[2]*"FC"),
              fill = "Direction") +
         theme_bw(base_size = input$base_size) +
         theme(
@@ -1584,7 +1856,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
           plot.margin = ggplot2::margin(6, 90, 6, 90)
         )
 
-      if ("contrast" %in% colnames(res_top)) {
+      if (!continuous && "contrast" %in% colnames(res_top)) {
         p <- p + facet_wrap(~ contrast, scales = "free_y", drop = FALSE)
       }
 
@@ -1645,13 +1917,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
     output$download_volcano <- downloadHandler(
       filename = function() {
-        group_tag <- if (identical(input$secondary_var, "None")) {
-          gsub("[^A-Za-z0-9_]+", "_", input$group_var)
-        } else {
-          gsub("[^A-Za-z0-9_]+", "_", input$secondary_var)
-        }
-        ref_tag <- gsub("[^A-Za-z0-9_]+", "_", input$reference_level)
-        paste0("maaslin2_volcano_", group_tag, "_ref_", ref_tag, ".png")
+        paste0("maaslin2_volcano_", maaslin2_download_tag(), ".png")
       },
       content = function(file) {
         req(input$plot_height, input$plot_width)
@@ -1662,13 +1928,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
     output$download_barplot <- downloadHandler(
       filename = function() {
-        group_tag <- if (identical(input$secondary_var, "None")) {
-          gsub("[^A-Za-z0-9_]+", "_", input$group_var)
-        } else {
-          gsub("[^A-Za-z0-9_]+", "_", input$secondary_var)
-        }
-        ref_tag <- gsub("[^A-Za-z0-9_]+", "_", input$reference_level)
-        paste0("maaslin2_barplot_", group_tag, "_ref_", ref_tag, ".png")
+        paste0("maaslin2_barplot_", maaslin2_download_tag(), ".png")
       },
       content = function(file) {
         req(input$plot_height, input$plot_width)
@@ -1680,7 +1940,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
     output$maaslin2_legend_box <- renderUI({
       req(input$plot_width)
       active_tab <- if (is.null(input$maaslin2_active_tab) || !nzchar(input$maaslin2_active_tab)) "Volcano plot" else input$maaslin2_active_tab
-      if (identical(active_tab, "Table")) {
+      if (active_tab %in% c("Table", "Association Heatmap")) {
         return(NULL)
       }
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
@@ -1734,7 +1994,7 @@ mod_maaslin2_server <- function(id, ps_obj) {
 
     output$maaslin2_figure_legend <- renderUI({
       req(display_maaslin2_res())
-      req(input$tax_level, input$reference_level)
+      req(input$tax_level)
       active_tab <- if (is.null(input$maaslin2_active_tab) || !nzchar(input$maaslin2_active_tab)) "Volcano plot" else input$maaslin2_active_tab
       y_metric_label <- if (identical(input$volcano_y_axis, "q_val")) {
         "FDR-adjusted p-value (q-value)"
@@ -1748,7 +2008,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
       } else {
         "MaAsLin2 volcano plot"
       }
-      legend_body <- if (identical(active_tab, "Bar plot")) {
+      legend_body <- if (continuous_primary()) {
+        paste0("Coefficients are estimated per one-unit increase in ", group_var_resolved(),
+               " on the fitted model scale, with other model terms held fixed.")
+      } else if (identical(active_tab, "Bar plot")) {
         paste0(
           "Bars show the top 10 taxa ranked by absolute log2 fold-change (log2FC) from MaAsLin2 at ",
           tolower(input$tax_level),
