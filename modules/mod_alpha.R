@@ -137,7 +137,7 @@ mod_alpha_ui <- function(id) {
 }
 
 ## Server
-mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) { 
+mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
 
     resolve_meta_colname <- function(requested, available) {
@@ -341,6 +341,11 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
       has_subject <- isTRUE(input$enable_within_subject_pairing) && "SubjectID" %in% colnames(alpha_long)
       x_axis_col <- if (is_secondary) secondary_col else primary_col
       group_levels <- levels(factor(alpha_long[[x_axis_col]]))
+      order_config <- plot_order()
+      alpha_long[[primary_col]] <- plot_order_factor(alpha_long[[primary_col]], input$group_var, order_config)
+      if (is_secondary) {
+        alpha_long[[secondary_col]] <- plot_order_factor(alpha_long[[secondary_col]], input$secondary_group_var, order_config)
+      }
       num_groups <- length(group_levels)
       plot_type <- input$plot_type
       if (is.null(plot_type) || !plot_type %in% c("boxplot", "violin", "jitter", "barplot")) {

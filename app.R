@@ -63,12 +63,15 @@ if (dir.exists(mod_path)) {
 ui <- page_navbar(
   title = actionLink(
     "go_home",
-    label = tags$img(
-      src = "brand-wordmark.svg",
-      alt = "SimpleMicrobiome",
-      style = "height: 30px; width: auto; display: block;"
+    label = tagList(
+      tags$img(
+        src = "brand-wordmark.svg",
+        alt = "SimpleMicrobiome",
+        style = "height: 30px; width: auto; display: block;"
+      ),
+      tags$span("v.1.1.3", class = "navbar-app-version")
     ),
-    style = "display: inline-flex; align-items: center; text-decoration: none; padding: 0;"
+    style = "display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; padding: 0;"
   ),
   window_title = "SimpleMicrobiome",
   id = "tab_panel_main",
@@ -85,6 +88,7 @@ ui <- page_navbar(
       body { font-size: 14px; }
       .navbar { min-height: 40px; }
       .navbar-brand { font-size: 15px; padding-top: 6px; padding-bottom: 6px; line-height: 1.1; }
+      .navbar-app-version { color: #fff; font-size: 11px; white-space: nowrap; }
       .navbar .container-fluid { gap: 0.2rem; }
       .navbar-brand { margin-right: 0.2rem !important; }
       .navbar-nav .nav-link { font-size: 13px; padding-top: 6px; padding-bottom: 6px; line-height: 1.1; }
@@ -220,17 +224,18 @@ server <- function(input, output, session) {
   
   ps_obj_filtered_raw <- preprocessing_data$ps_filtered_raw
   
-  mod_barplot_server("mod_barplot", preprocessing_data$ps_selected_raw, meta_vars)
-  mod_taxa_comparison_server("mod_taxa_comparison", ps_obj_filtered_raw, meta_vars, active_tab)
-  mod_alpha_server("mod_alpha", ps_obj_filtered_raw, meta_vars, active_tab)
-  mod_beta_server("mod_beta", ps_obj_filtered_raw, meta_vars)
-  mod_ancom_server("mod_ancom", ps_obj_filtered_raw)
-  mod_maaslin2_server("mod_maaslin2", ps_obj_filtered_raw)
-  mod_maaslin3_server("mod_maaslin3", ps_obj_filtered_raw)
+  plot_order <- preprocessing_data$plot_order
+  mod_barplot_server("mod_barplot", preprocessing_data$ps_selected_raw, meta_vars, plot_order)
+  mod_taxa_comparison_server("mod_taxa_comparison", ps_obj_filtered_raw, meta_vars, active_tab, plot_order)
+  mod_alpha_server("mod_alpha", ps_obj_filtered_raw, meta_vars, active_tab, plot_order)
+  mod_beta_server("mod_beta", ps_obj_filtered_raw, meta_vars, plot_order)
+  mod_ancom_server("mod_ancom", ps_obj_filtered_raw, plot_order)
+  mod_maaslin2_server("mod_maaslin2", ps_obj_filtered_raw, plot_order)
+  mod_maaslin3_server("mod_maaslin3", ps_obj_filtered_raw, plot_order)
   mod_randomforest_server("mod_randomforest", ps_obj_filtered_raw)
   mod_spieceasi_server("mod_spieceasi", ps_obj_filtered_raw)
   mod_sparcc_server("mod_sparcc", ps_obj_filtered_raw)
-  mod_heatmap_server("mod_heatmap", ps_obj_filtered_raw, meta_vars)
+  mod_heatmap_server("mod_heatmap", ps_obj_filtered_raw, meta_vars, plot_order)
   mod_biplot_server("mod_biplot", ps_obj_filtered_raw, meta_vars)
   mod_citation_server("mod_citation")
   mod_top_server("mod_top")

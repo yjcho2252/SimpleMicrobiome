@@ -143,6 +143,17 @@ mod_heatmap_ui <- function(id) {
           ),
           checkboxInput(ns("show_row_dendrogram"), "Show row dendrogram (cluster row)", value = TRUE),
           checkboxInput(ns("show_col_dendrogram"), "Show column dendrogram (cluster column)", value = TRUE),
+          selectInput(
+            ns("color_palette"),
+            "Color palette",
+            choices = c(
+              "Blue - White - Red" = "blue_red",
+              "Blue - White - Orange (colorblind friendly)" = "blue_orange",
+              "Purple - White - Green" = "purple_green",
+              "Teal - White - Brown" = "teal_brown"
+            ),
+            selected = "blue_red"
+          ),
           numericInput(ns("abs_limit"), "Color scale abs limit (0 = auto)", value = 0, min = 0, max = 100, step = 0.1),
           checkboxInput(ns("apply_sig_filter"), "Mask non-significant cells (FDR)", value = FALSE),
           numericInput(ns("q_cutoff"), "FDR cutoff (q)", value = 0.05, min = 0.0001, max = 1, step = 0.01)
@@ -212,7 +223,7 @@ mod_heatmap_ui <- function(id) {
 }
 
 ## Server
-mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
+mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
@@ -460,8 +471,6 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
     })
 
     heatmap_running <- reactiveVal(FALSE)
-
-    heatmap_running <- reactiveVal(FALSE)
     heatmap_run_nonce <- reactiveVal(0L)
     heatmap_next_allowed_at <- reactiveVal(as.POSIXct(NA))
 
@@ -618,6 +627,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       q_mat <- NULL
       sig_supported <- FALSE
       sig_note <- "Not computed."
+      column_group <- NULL
       row_hclust <- NULL
       col_hclust <- NULL
 
@@ -751,6 +761,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
           group_chr <- as.character(group_vec)
           group_chr[is.na(group_chr) | !nzchar(group_chr)] <- "(Missing)"
           levels_keep <- unique(group_chr)
+          column_group <- effective_group_var
           validate(
             need(length(levels_keep) >= 2, "Categorical group needs at least 2 levels.")
           )
@@ -935,6 +946,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
 
       list(
         assoc_mat = assoc_mat,
+        column_group = column_group,
         heat_df = heat_df,
         n_samples = ncol(analysis_mat),
         n_taxa = nrow(analysis_mat),
@@ -980,10 +992,25 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
       list(cell_width = cell_width, cell_height = cell_height)
     })
 
+    heatmap_palette <- reactive({
+      switch(
+        input$color_palette,
+        blue_orange = list(colors = c("#3B4CC0", "#F7F7F7", "#E66101"), label = "Blue - White - Orange"),
+        purple_green = list(colors = c("#762A83", "#F7F7F7", "#1B7837"), label = "Purple - White - Green"),
+        teal_brown = list(colors = c("#018571", "#F5F5F5", "#A6611A"), label = "Teal - White - Brown"),
+        list(colors = c("#2166AC", "#F7F7F7", "#B2182B"), label = "Blue - White - Red")
+      )
+    })
+
     heatmap_plot_obj <- reactive({
-      req(display_corr_payload())
-      heat_df <- display_corr_payload()$heat_df
-      assoc_mat <- display_corr_payload()$assoc_mat
+      payload <- display_corr_payload()
+      heat_df <- payload$heat_df
+      assoc_mat <- payload$assoc_mat
+      if (!is.null(payload$column_group) && !isTRUE(input$show_col_dendrogram)) {
+        columns <- colnames(assoc_mat)
+        ordered <- levels(plot_order_factor(columns, payload$column_group, plot_order(), columns))
+        assoc_mat <- assoc_mat[, ordered, drop = FALSE]
+      }
       if (length(input$selected_taxa) > 0) {
         taxa_keep <- intersect(input$selected_taxa, rownames(assoc_mat))
         validate(need(length(taxa_keep) > 0, "None of the selected taxa are available in the current matrix."))
@@ -998,7 +1025,15 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         need(requireNamespace("circlize", quietly = TRUE), "Package 'circlize' is required.")
       )
 
-      fill_limit <- max(abs(heat_df$Association), na.rm = TRUE)
+      finite_associations <- abs(heat_df$Association[is.finite(heat_df$Association)])
+      fill_limit <- if (length(finite_associations) > 0) {
+        as.numeric(stats::quantile(finite_associations, probs = 0.98, names = FALSE, type = 8))
+      } else {
+        1
+      }
+      if (!is.finite(fill_limit) || fill_limit <= 0) {
+        fill_limit <- max(finite_associations, na.rm = TRUE)
+      }
       if (!is.finite(fill_limit) || fill_limit <= 0) fill_limit <- 1
       abs_limit_input <- as.numeric(input$abs_limit)
       if (is.finite(abs_limit_input) && abs_limit_input > 0) {
@@ -1027,7 +1062,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
 
       col_fun <- circlize::colorRamp2(
         c(-fill_limit, 0, fill_limit),
-        c("#2166AC", "#F7F7F7", "#B2182B")
+        heatmap_palette()$colors
       )
 
       legend_title <- if (identical(input$association_mode, "prevalence")) {
@@ -1074,6 +1109,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         name = legend_title,
         col = col_fun,
         na_col = "#D9D9D9",
+        rect_gp = grid::gpar(col = "#FFFFFF", lwd = 0.4),
         cluster_rows = cluster_rows_opt,
         cluster_columns = cluster_cols_opt,
         show_row_dend = show_row_dend_opt,
@@ -1146,7 +1182,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         ComplexHeatmap::draw(
           ht,
           heatmap_legend_side = "right",
-          padding = grid::unit(c(top_pad_mm, 6, 6, left_pad_mm), "mm")
+          padding = grid::unit(c(top_pad_mm, 2, 6, left_pad_mm), "mm")
         )
       },
       width = function() plot_dims_px()$width_px,
@@ -1223,7 +1259,8 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
               "Raw"
             }
           ),
-          paste0("Color scale abs limit: ", if (is.finite(as.numeric(input$abs_limit)) && as.numeric(input$abs_limit) > 0) format(as.numeric(input$abs_limit), digits = 3) else "Auto"),
+          paste0("Color palette: ", heatmap_palette()$label),
+          paste0("Color scale abs limit: ", if (is.finite(as.numeric(input$abs_limit)) && as.numeric(input$abs_limit) > 0) format(as.numeric(input$abs_limit), digits = 3) else "Auto (98th percentile)"),
           paste0("Cell width (px): ", format(as.numeric(input$cell_width), digits = 3)),
           paste0("Cell height (px): ", format(as.numeric(input$cell_height), digits = 3)),
           paste0("Auto plot width (px): ", plot_dims_px()$width_px),
@@ -1407,7 +1444,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL) {
         ComplexHeatmap::draw(
           ht,
           heatmap_legend_side = "right",
-          padding = grid::unit(c(top_pad_mm, 6, 6, left_pad_mm), "mm")
+          padding = grid::unit(c(top_pad_mm, 2, 6, left_pad_mm), "mm")
         )
       }
     )

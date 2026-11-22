@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-23] v1.1.3
+
+- Added shared sample and group plot ordering in Preprocessing and applied it across supported plots.
+- Improved Correlation Heatmap color scaling, palette choices, cell separation, and legend placement.
+- Refined plot-order behavior and related user guidance. See the [release notes](docs/releases/2026-11-23-v1.1.3.md).
+
 ## [2026-11-22] v1.1.2
 
 - Beta Diversity adds PERMDISP, covariate-adjusted PERMANOVA with comparisons on the same samples, and sample color overlays.

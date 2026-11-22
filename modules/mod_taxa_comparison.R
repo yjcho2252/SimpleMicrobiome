@@ -238,7 +238,7 @@ mod_taxa_comparison_ui <- function(id) {
 }
 
 ## Server
-mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
+mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
@@ -585,35 +585,26 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         dplyr::summarise(
           mean_abundance = mean(AbundancePlot, na.rm = TRUE),
           p_value = tryCatch({
+            n_groups <- dplyr::n_distinct(Group)
             if (show_regression_line) {
-              sub_df <- dplyr::cur_data_all()
-              if (is.null(trend_group_type) || !trend_group_type %in% c("categorical", "continuous")) {
-                trend_group_type <- "categorical"
-              }
               if (is.null(trend_method) || !trend_method %in% c("spearman", "pearson")) {
                 trend_method <- "spearman"
               }
-              group_levels <- levels(factor(sub_df$Group))
               if (identical(trend_group_type, "continuous")) {
-                x_vals <- suppressWarnings(as.numeric(as.character(sub_df$Group)))
-              } else if (identical(trend_group_type, "categorical")) {
-                x_vals <- as.numeric(factor(sub_df$Group, levels = group_levels))
+                x_vals <- suppressWarnings(as.numeric(as.character(Group)))
               } else {
-                as.numeric(factor(sub_df$Group, levels = group_levels))
+                x_vals <- as.numeric(factor(Group))
               }
-              y_vals <- sub_df$AbundancePlot
+              y_vals <- AbundancePlot
               ok <- is.finite(x_vals) & is.finite(y_vals)
               if (sum(ok) < 3) {
-                return(NA_real_)
-              }
-              if (identical(trend_method, "spearman")) {
-                return(suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value))
+                NA_real_
+              } else if (identical(trend_method, "spearman")) {
+                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "spearman", exact = FALSE)$p.value)
               } else {
-                return(suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value))
+                suppressWarnings(stats::cor.test(x_vals[ok], y_vals[ok], method = "pearson")$p.value)
               }
-            }
-            n_groups <- dplyr::n_distinct(Group)
-            if (n_groups == 2) {
+            } else if (n_groups == 2) {
               if (!has_subject) {
                 if (identical(input$stat_method, "t.test")) {
                   stats::t.test(AbundancePlot ~ Group)$p.value
@@ -760,6 +751,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       list(raw = raw_df, rel = rel_df)
     })
     
+    last_taxa_choices <- reactiveVal(NULL)
     observeEvent(list(
       taxa_stats(),
       input$tax_level,
@@ -800,6 +792,10 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         taxa_selected_memory(default_selected)
       }
       
+      if (identical(taxa_choices, last_taxa_choices()) &&
+          identical(default_selected, as.character(current_selected))) {
+        return()
+      }
       updateSelectizeInput(
         session,
         "taxa_selected",
@@ -807,6 +803,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         selected = default_selected,
         server = TRUE
       )
+      last_taxa_choices(taxa_choices)
     })
 
     observeEvent(input$taxa_selected, {
@@ -826,7 +823,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         input$taxa_selected
       }
       
-      validate(need(length(selected_taxa) > 0, ""))
+      validate(need(
+        length(selected_taxa) > 0,
+        if (isTRUE(input$show_p_lt_0_05_only) && identical(last_taxa_choices(), character(0))) {
+          "No taxa meet the q-value < 0.05 filter."
+        } else {
+          "Select at least one taxon to display the comparison."
+        }
+      ))
       
       df_sub <- df[df$Taxa %in% selected_taxa, , drop = FALSE]
       
@@ -937,6 +941,15 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       }
       if (isTRUE(use_continuous_x) && sum(is.finite(df$GroupContinuous)) < 3) {
         use_continuous_x <- FALSE
+      }
+      order_config <- plot_order()
+      df$PrimaryGroup <- plot_order_factor(df$PrimaryGroup, input$group_var, order_config)
+      if (is_secondary) {
+        df$SecondaryGroup <- plot_order_factor(df$SecondaryGroup, secondary_col, order_config)
+      }
+      # Categorical regression uses the original group positions as numeric inputs.
+      if (!isTRUE(input$show_trend_line)) {
+        df$Group <- if (is_secondary) df$SecondaryGroup else df$PrimaryGroup
       }
       if (has_subject) {
         df$LongitudinalSubject <- as.character(df[[subject_col]])
@@ -1246,7 +1259,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       }
 
       if (has_subject) {
-        group_levels <- levels(factor(df$Group))
         df$LongitudinalOrder <- as.numeric(factor(df$Group, levels = group_levels))
 
         line_df <- df %>%
@@ -1481,6 +1493,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       }
       tryCatch(
         taxa_plot_reactive(),
+        shiny.silent.error = function(e) stop(e),
         error = function(e) {
           graphics::plot.new()
           graphics::text(

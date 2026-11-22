@@ -117,7 +117,7 @@ mod_maaslin3_ui <- function(id) {
   )
 }
 
-mod_maaslin3_server <- function(id, ps_obj) {
+mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
     result <- reactiveVal(NULL)
     status <- reactiveVal("")
@@ -805,7 +805,10 @@ mod_maaslin3_server <- function(id, ps_obj) {
           ggplot2::geom_point(position = ggplot2::position_jitter(width = 0.14, height = 0, seed = 42),
                               colour = "#264653", alpha = 0.55, size = 1.8) +
           ggplot2::scale_fill_viridis_d(begin = 0.25, end = 0.85) +
-          ggplot2::scale_x_discrete(labels = scales::label_wrap(16))
+          ggplot2::scale_x_discrete(
+            limits = function(values) levels(plot_order_factor(values, detail$variable, plot_order(), values)),
+            labels = scales::label_wrap(16)
+          )
       } else {
         plot <- plot + ggplot2::geom_point(colour = "#287a8b", alpha = 0.7, size = 2)
       }
@@ -831,7 +834,10 @@ mod_maaslin3_server <- function(id, ps_obj) {
           ggplot2::geom_text(ggplot2::aes(label = label), vjust = -0.45, colour = "#243746",
                              fontface = "bold", size = input$summary_font / ggplot2::.pt) +
           ggplot2::scale_fill_viridis_d(begin = 0.25, end = 0.85) +
-          ggplot2::scale_x_discrete(labels = scales::label_wrap(16)) +
+          ggplot2::scale_x_discrete(
+            limits = function(values) levels(plot_order_factor(values, detail$variable, plot_order(), values)),
+            labels = scales::label_wrap(16)
+          ) +
           ggplot2::scale_y_continuous(labels = scales::label_percent(), breaks = seq(0, 1, 0.25),
                                       limits = c(0, 1.08)) +
           ggplot2::labs(x = detail$variable, y = "Samples with detection")

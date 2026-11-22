@@ -252,7 +252,7 @@ mod_beta_ui <- function(id) {
 }
 
 ## Server
-mod_beta_server <- function(id, ps_obj, meta_cols) {
+mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
     observe({
       width_px <- suppressWarnings(as.integer(input$plot_width_px))
@@ -2408,6 +2408,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
 
     output$permdisp_plot <- renderPlot({
       result <- permdisp_reactive()
+      result$points$Group <- plot_order_factor(result$points$Group, result$group_var, plot_order())
       colors <- if (identical(result$group_var, primary_group_var())) {
         primary_color_map()
       } else {

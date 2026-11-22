@@ -1,7 +1,65 @@
+plot_order_levels <- function(default, preferred) {
+  c(intersect(preferred, default), setdiff(default, preferred))
+}
+
+plot_order_factor <- function(values, variable, plot_order = NULL, default = levels(factor(values))) {
+  preferred <- if (identical(variable, "SampleID")) {
+    plot_order$samples
+  } else if (length(variable) == 1L && !is.na(variable)) {
+    groups <- plot_order$groups
+    if (!variable %in% names(groups) && length(groups)) {
+      matches <- names(groups)[make.names(names(groups)) == make.names(variable)]
+      if (length(matches) == 1L) variable <- matches
+    }
+    groups[[variable]]
+  }
+  factor(values, levels = plot_order_levels(default, preferred))
+}
+
+parse_plot_order <- function(text, available) {
+  entries <- trimws(strsplit(if (is.null(text)) "" else text, "\n", fixed = TRUE)[[1L]])
+  entries <- entries[nzchar(entries)]
+  unknown <- setdiff(entries, available)
+  duplicates <- unique(entries[duplicated(entries)])
+  problems <- c(
+    if (length(unknown)) paste("Unknown:", paste(unknown, collapse = ", ")),
+    if (length(duplicates)) paste("Repeated:", paste(duplicates, collapse = ", "))
+  )
+  list(values = entries, problems = problems)
+}
+
+resolve_sample_plot_order <- function(metadata, specification, groups) {
+  ids <- rownames(metadata)
+  if (identical(specification$mode, "default") || is.null(specification)) return(NULL)
+  keys <- lapply(specification$values, function(variable) {
+    values <- metadata[[variable]]
+    if (length(groups[[variable]]) || !is.numeric(values)) {
+      plot_order_factor(values, variable, list(groups = groups))
+    } else {
+      values
+    }
+  })
+  ids[do.call(order, c(keys, list(ids, na.last = TRUE)))]
+}
+
 ## UI
+plot_order_editor <- function(input_id, values) {
+  div(
+    class = "plot-order-editor",
+    div(hidden = NA, textAreaInput(input_id, NULL, value = paste(values, collapse = "\n"))),
+    helpText("Drag group levels or use the Up and Down keys on a focused item."),
+    tags$ol(
+      class = "plot-order-items",
+      "aria-label" = "Group levels",
+      lapply(values, function(value) tags$li(draggable = "true", tabindex = "0", value))
+    )
+  )
+}
+
 mod_preprocessing_ui <- function(id) {
   ns <- NS(id)
   tagList(
+    singleton(tags$head(tags$script(src = "plot-order.js", defer = NA))),
     tags$style(HTML("
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
@@ -10,6 +68,15 @@ mod_preprocessing_ui <- function(id) {
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
       .well .irs-grid-text { display: none !important; }
+      .plot-order-settings { padding: 8px 12px; margin-bottom: 8px; }
+      .plot-order-settings > summary { cursor: pointer; font-weight: 600; }
+      .plot-order-settings[open] > summary { margin-bottom: 12px; }
+      .plot-order-items { max-height: 12rem; overflow-y: auto; padding-left: 2rem; margin: 6px 0; }
+      .plot-order-items li { border: 1px solid var(--bs-border-color, #ced4da); border-radius: 4px;
+        margin-bottom: 3px; padding: 4px 8px; cursor: grab; overflow-wrap: anywhere; }
+      .plot-order-items li[data-drop='before'] { box-shadow: inset 0 2px currentColor; }
+      .plot-order-items li[data-drop='after'] { box-shadow: inset 0 -2px currentColor; }
+      .plot-order-items:empty { display: none; }
     ")),
     fluidRow(
       column(
@@ -59,6 +126,31 @@ mod_preprocessing_ui <- function(id) {
       ),
       column(
         width = 9,
+        tags$details(
+          class = "well plot-order-settings",
+          tags$summary("Plot Order"),
+          fluidRow(
+            column(
+              width = 6,
+              selectInput(ns("sample_order_mode"), "Sample Order",
+                          c("Module default" = "default", "By metadata" = "metadata")),
+              conditionalPanel(
+                condition = "input.sample_order_mode === 'metadata'", ns = ns,
+                selectInput(ns("sample_order_first"), "First sort column", choices = NULL),
+                selectInput(ns("sample_order_second"), "Second sort column", choices = NULL, selectize = FALSE)
+              ),
+              verbatimTextOutput(ns("sample_order_preview")),
+              actionButton(ns("apply_sample_order"), "Apply Sample Order")
+            ),
+            column(
+              width = 6,
+              selectInput(ns("group_order_var"), "Group Order", choices = NULL),
+              uiOutput(ns("group_order_editor")),
+              actionButton(ns("apply_group_order"), "Apply Group Order"),
+              actionButton(ns("reset_group_order"), "Reset Group Order")
+            )
+          )
+        ),
         wellPanel(
           h4(icon("list-check"), "Individual Sample Selection (Click to Toggle)"),
           p("After finishing selection, click another analysis tab to continue.", style = "margin: 0 0 8px 0; color: #4b5563; font-size: 12px;"),
@@ -93,6 +185,109 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     ps_selected_raw <- reactiveVal(NULL)
     last_applied_selection <- reactiveVal(NULL)
     default_min_reads <- 2000
+
+    order_metadata <- reactive({
+      req(ps_obj_initial())
+      as(phyloseq::sample_data(ps_obj_initial()), "data.frame")
+    })
+    sample_order <- reactiveVal(NULL)
+    group_orders <- reactiveVal(list())
+
+    observeEvent(ps_obj_initial(), {
+      sample_order(NULL)
+      group_orders(list())
+      updateSelectInput(session, "sample_order_mode", selected = "default")
+      if (is.null(ps_obj_initial())) return()
+      columns <- setdiff(names(order_metadata()), "SampleID")
+      updateSelectInput(session, "sample_order_first", choices = columns)
+      updateSelectInput(session, "sample_order_second", choices = c("None" = "", columns), selected = "")
+      updateSelectInput(session, "group_order_var", choices = columns)
+    }, ignoreNULL = FALSE)
+
+    group_order_levels <- reactive({
+      metadata <- order_metadata()
+      req(input$group_order_var %in% names(metadata))
+      levels(factor(metadata[[input$group_order_var]]))
+    })
+
+    group_order_input_id <- reactive({
+      req(group_order_levels())
+      paste0("group_order_text_", match(input$group_order_var, names(order_metadata())))
+    })
+
+    output$group_order_editor <- renderUI({
+      available <- group_order_levels()
+      plot_order_editor(
+        session$ns(group_order_input_id()),
+        plot_order_levels(available, group_orders()[[input$group_order_var]])
+      )
+    })
+
+    group_order_draft <- reactive({
+      parse_plot_order(input[[group_order_input_id()]], group_order_levels())
+    })
+
+    sample_order_draft <- reactive({
+      metadata <- order_metadata()
+      mode <- input$sample_order_mode
+      req(mode)
+      draft <- list(mode = mode, values = NULL, problems = NULL)
+      if (identical(mode, "metadata")) {
+        variables <- unique(c(input$sample_order_first, input$sample_order_second))
+        draft$values <- variables[nzchar(variables)]
+        if (!length(draft$values) || any(!draft$values %in% setdiff(names(metadata), "SampleID"))) {
+          draft$problems <- "Select a metadata column."
+        }
+      }
+      draft
+    })
+
+    plot_order <- reactive({
+      groups <- group_orders()
+      list(samples = resolve_sample_plot_order(order_metadata(), sample_order(), groups), groups = groups)
+    })
+
+    format_order_preview <- function(values) {
+      shown <- paste(utils::head(values, 12L), collapse = " -> ")
+      if (length(values) > 12L) {
+        shown <- paste0(shown, " ... (", length(values), " total)")
+      }
+      shown
+    }
+
+    output$sample_order_preview <- renderText({
+      draft <- sample_order_draft()
+      if (length(draft$problems)) return(paste(draft$problems, collapse = "\n"))
+      ids <- resolve_sample_plot_order(order_metadata(), draft, group_orders())
+      if (is.null(ids)) return("Each plot uses its default sample sorting.")
+      selected <- meta_df_for_dt()$SampleID[selected_indices_for_apply()]
+      format_order_preview(intersect(ids, selected))
+    })
+
+    observeEvent(input$apply_sample_order, {
+      draft <- sample_order_draft()
+      if (length(draft$problems)) return(showNotification(paste(draft$problems, collapse = " "), type = "error"))
+      sample_order(draft)
+      showNotification("Sample order applied.")
+    })
+
+    observeEvent(input$apply_group_order, {
+      draft <- group_order_draft()
+      if (length(draft$problems)) return(showNotification(paste(draft$problems, collapse = " "), type = "error"))
+      groups <- group_orders()
+      groups[[input$group_order_var]] <- draft$values
+      group_orders(groups)
+      showNotification("Group order applied.")
+    })
+
+    observeEvent(input$reset_group_order, {
+      req(group_order_levels())
+      groups <- group_orders()
+      groups[[input$group_order_var]] <- NULL
+      group_orders(groups)
+      updateTextAreaInput(session, group_order_input_id(), value = paste(group_order_levels(), collapse = "\n"))
+      showNotification("Group order reset.")
+    })
     
     meta_df_for_dt <- reactive({
       req(ps_obj_initial())
@@ -342,7 +537,8 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
 
     return(list(
       ps_filtered_raw = ps_filtered,
-      ps_selected_raw = ps_selected_raw
+      ps_selected_raw = ps_selected_raw,
+      plot_order = plot_order
     ))
   })
 }

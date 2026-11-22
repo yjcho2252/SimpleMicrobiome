@@ -48,6 +48,7 @@ mod_barplot_ui <- function(id) {
         
         uiOutput(ns("secondary_group_selector")),
 
+        uiOutput(ns("shared_sort_notice")),
         conditionalPanel(
           condition = paste0("input['", ns("plot_mode"), "'] == 'Sample'"),
 
@@ -167,9 +168,14 @@ mod_barplot_ui <- function(id) {
 }
 
 ## Server
-mod_barplot_server <- function(id, ps_obj, meta_cols) {
+mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
     supported_taxonomic_ranks <- c("Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")
+    output$shared_sort_notice <- renderUI({
+      samples <- plot_order()$samples
+      active <- identical(input$plot_mode, "Sample") && length(samples) > 0L
+      if (active) helpText("Sample order is set in Preprocessing.")
+    })
     ps_barplot <- reactive({
       ps <- ps_obj()
       if (is.null(ps) || phyloseq::nsamples(ps) == 0L) {
@@ -578,7 +584,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         )
         return(NULL)
       }
-      df_sample[[primary_var]] <- factor(df_sample[[primary_var]])
+      order_config <- plot_order()
+      df_sample[[primary_var]] <- plot_order_factor(df_sample[[primary_var]], primary_var, order_config)
 
       if (!is.null(secondary_var_val)) {
         if (!secondary_var_val %in% names(df_sample)) {
@@ -588,7 +595,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
           )
           return(NULL)
         }
-        df_sample[[secondary_var_val]] <- factor(df_sample[[secondary_var_val]])
+        df_sample[[secondary_var_val]] <- plot_order_factor(df_sample[[secondary_var_val]], secondary_var_val, order_config)
       }
 
       if (input$name_display_mode == "full") {
@@ -629,11 +636,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
 
       sample_metadata <- meta_df_base
       if (!is.null(secondary_var_val)) {
-        meta_df_base[[primary_var]] <- factor(meta_df_base[[primary_var]])
-        meta_df_base[[secondary_var_val]] <- factor(meta_df_base[[secondary_var_val]])
-
-        df_sample[[primary_var]] <- factor(df_sample[[primary_var]])
-        df_sample[[secondary_var_val]] <- factor(df_sample[[secondary_var_val]])
+        meta_df_base[[primary_var]] <- plot_order_factor(meta_df_base[[primary_var]], primary_var, order_config)
+        meta_df_base[[secondary_var_val]] <- plot_order_factor(meta_df_base[[secondary_var_val]], secondary_var_val, order_config)
 
         meta_df_tibble <- tibble::as_tibble(meta_df_base)
         if (has_primary) {
@@ -709,6 +713,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       secondary_var_val <- data$secondary_var
       ordered_taxa_levels <- data$taxa_levels
       df_plot <- data$df_plot
+      order_config <- plot_order()
       plot_mode <- input$plot_mode
       base_size <- input$base_size
       subgroup_label_size <- base_size / 3.6
@@ -731,81 +736,86 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         subgroup_boundary_df <- NULL
         subgroup_label_df <- NULL
         
-        req(input$sort_method)
-        sort_method <- input$sort_method
-        ordered_sample_levels <- c()
-        meta_df_base <- data$metadata
-        if (!"Sample" %in% names(meta_df_base)) { meta_df_base$Sample <- rownames(meta_df_base) }
-        
-        sorting_vars <- c("Sample", primary_var)
-        if (!is.null(secondary_var_val)) { sorting_vars <- c(sorting_vars, secondary_var_val) }
-        
-        
-        required_vars <- c("Sample", primary_var)
-        if (!is.null(secondary_var_val)) { required_vars <- c(required_vars, secondary_var_val) }
-        
-        if (sort_method == "metadata_var") {
-          req(input$sort_metadata_var)
-          sort_meta_var <- sort_metadata_var_resolved()
-          if (sort_meta_var %in% names(meta_df_base)) {
-            required_vars <- c(required_vars, sort_meta_var)
-          } else {
-            showNotification(paste0("Error: Metadata variable '", input$sort_metadata_var, "' not found in sample data."), type = "error")
-            return(NULL)
-          }
-        }
-        
-        valid_vars <- required_vars[required_vars %in% names(meta_df_base)]
-        meta_df_temp <- meta_df_base[, valid_vars, drop = FALSE]
-        meta_df <- unique(meta_df_temp)
-        meta_df <- tibble::as_tibble(meta_df)
-        req(nrow(meta_df) > 0)
-        
-        sort_args <- list(dplyr::sym(primary_var))
-        if (!is.null(secondary_var_val)) {
-          sort_args <- c(sort_args, dplyr::sym(secondary_var_val))
-        }
-        
-        if (sort_method == "taxa_top1") {
-          main_top_taxa_name <- as.character(ordered_taxa_levels[1])
-          df_sort <- df_plot %>% 
-            dplyr::filter(Taxa_Group == main_top_taxa_name) %>% 
-            dplyr::group_by_at(c("Sample", primary_var, if(!is.null(secondary_var_val)) secondary_var_val)) %>% 
-            dplyr::summarise(Sort_Abundance = sum(Abundance, na.rm = TRUE), .groups = 'drop') 
-          
-          sort_args_taxa <- c(sort_args, dplyr::quo(dplyr::desc(!!dplyr::sym("Sort_Abundance"))), dplyr::sym("Sample"))
-          df_sort_ordered <- df_sort %>% dplyr::arrange(!!!sort_args_taxa)
-          ordered_sample_levels <- unique(df_sort_ordered$Sample)
-          
-        } else if (sort_method == "sample_name") {
-          sort_args_name <- c(sort_args, dplyr::sym("Sample"))
-          ordered_sample_levels <- meta_df %>% dplyr::arrange(!!!sort_args_name) %>% dplyr::pull(Sample)
-          
-        } else if (sort_method == "metadata_var") {
-          req(input$secondary_sort)
-          sort_meta_var <- sort_metadata_var_resolved(); secondary_sort_crit <- input$secondary_sort; meta_df_sortable <- meta_df
-          
-          if (secondary_sort_crit == "taxa_top1") {
-            main_top_taxa_name <- as.character(ordered_taxa_levels[1])
-            taxa_abun_data <- df_plot %>% dplyr::filter(Taxa_Group == main_top_taxa_name) %>% dplyr::group_by(Sample) %>% dplyr::summarise(Sort_Abundance = sum(Abundance, na.rm = TRUE), .groups = 'drop')
-            meta_df_sortable <- meta_df_sortable %>% dplyr::left_join(taxa_abun_data, by = "Sample")
-          }
-          
-          sort_args_meta <- c(sort_args, dplyr::sym(sort_meta_var))
-          if (secondary_sort_crit == "taxa_top1") { 
-            sort_args_meta <- c(sort_args_meta, dplyr::quo(dplyr::desc(!!dplyr::sym("Sort_Abundance"))))
-          } else if (secondary_sort_crit == "sample_name_asc") { 
-            sort_args_meta <- c(sort_args_meta, dplyr::sym("Sample")) 
-          }
-          
-          meta_df_sorted <- meta_df_sortable %>% dplyr::arrange(!!!sort_args_meta)
-          ordered_sample_levels <- meta_df_sorted %>% dplyr::pull(Sample) %>% unique()
-          
+        if (length(order_config$samples)) {
+          ordered_sample_levels <- plot_order_levels(
+            sort(unique(as.character(df_plot$Sample))), order_config$samples
+          )
         } else {
-          sort_args_fallback <- c(sort_args, dplyr::sym("Sample"))
-          ordered_sample_levels <- meta_df %>% dplyr::arrange(!!!sort_args_fallback) %>% dplyr::pull(Sample) 
+          req(input$sort_method)
+          sort_method <- input$sort_method
+          ordered_sample_levels <- c()
+          meta_df_base <- data$metadata
+          if (!"Sample" %in% names(meta_df_base)) { meta_df_base$Sample <- rownames(meta_df_base) }
+
+          required_vars <- c("Sample", primary_var)
+          if (!is.null(secondary_var_val)) { required_vars <- c(required_vars, secondary_var_val) }
+
+          if (sort_method == "metadata_var") {
+            req(input$sort_metadata_var)
+            sort_meta_var <- sort_metadata_var_resolved()
+            if (sort_meta_var %in% names(meta_df_base)) {
+              required_vars <- c(required_vars, sort_meta_var)
+            } else {
+              showNotification(paste0("Error: Metadata variable '", input$sort_metadata_var, "' not found in sample data."), type = "error")
+              return(NULL)
+            }
+          }
+
+          valid_vars <- required_vars[required_vars %in% names(meta_df_base)]
+          meta_df_temp <- meta_df_base[, valid_vars, drop = FALSE]
+          meta_df <- unique(meta_df_temp)
+          meta_df <- tibble::as_tibble(meta_df)
+          req(nrow(meta_df) > 0)
+          for (variable in intersect(required_vars[-1L], names(order_config$groups))) {
+            meta_df[[variable]] <- plot_order_factor(meta_df[[variable]], variable, order_config)
+          }
+
+          sort_args <- list(dplyr::sym(primary_var))
+          if (!is.null(secondary_var_val)) {
+            sort_args <- c(sort_args, dplyr::sym(secondary_var_val))
+          }
+
+          if (sort_method == "taxa_top1") {
+            main_top_taxa_name <- as.character(ordered_taxa_levels[1])
+            df_sort <- df_plot %>%
+              dplyr::filter(Taxa_Group == main_top_taxa_name) %>%
+              dplyr::group_by_at(c("Sample", primary_var, if(!is.null(secondary_var_val)) secondary_var_val)) %>%
+              dplyr::summarise(Sort_Abundance = sum(Abundance, na.rm = TRUE), .groups = 'drop')
+
+            sort_args_taxa <- c(sort_args, dplyr::quo(dplyr::desc(!!dplyr::sym("Sort_Abundance"))), dplyr::sym("Sample"))
+            df_sort_ordered <- df_sort %>% dplyr::arrange(!!!sort_args_taxa)
+            ordered_sample_levels <- unique(df_sort_ordered$Sample)
+
+          } else if (sort_method == "sample_name") {
+            sort_args_name <- c(sort_args, dplyr::sym("Sample"))
+            ordered_sample_levels <- meta_df %>% dplyr::arrange(!!!sort_args_name) %>% dplyr::pull(Sample)
+
+          } else if (sort_method == "metadata_var") {
+            req(input$secondary_sort)
+            sort_meta_var <- sort_metadata_var_resolved(); secondary_sort_crit <- input$secondary_sort; meta_df_sortable <- meta_df
+
+            if (secondary_sort_crit == "taxa_top1") {
+              main_top_taxa_name <- as.character(ordered_taxa_levels[1])
+              taxa_abun_data <- df_plot %>% dplyr::filter(Taxa_Group == main_top_taxa_name) %>% dplyr::group_by(Sample) %>% dplyr::summarise(Sort_Abundance = sum(Abundance, na.rm = TRUE), .groups = 'drop')
+              meta_df_sortable <- meta_df_sortable %>% dplyr::left_join(taxa_abun_data, by = "Sample")
+            }
+
+            sort_args_meta <- c(sort_args, dplyr::sym(sort_meta_var))
+            if (secondary_sort_crit == "taxa_top1") {
+              sort_args_meta <- c(sort_args_meta, dplyr::quo(dplyr::desc(!!dplyr::sym("Sort_Abundance"))))
+            } else if (secondary_sort_crit == "sample_name_asc") {
+              sort_args_meta <- c(sort_args_meta, dplyr::sym("Sample"))
+            }
+
+            meta_df_sorted <- meta_df_sortable %>% dplyr::arrange(!!!sort_args_meta)
+            ordered_sample_levels <- meta_df_sorted %>% dplyr::pull(Sample) %>% unique()
+
+          } else {
+            sort_args_fallback <- c(sort_args, dplyr::sym("Sample"))
+            ordered_sample_levels <- meta_df %>% dplyr::arrange(!!!sort_args_fallback) %>% dplyr::pull(Sample)
+          }
+
         }
-        
         df_plot$Sample <- factor(df_plot$Sample, levels = ordered_sample_levels)
 
         if (!is.null(secondary_var_val) && secondary_var_val %in% names(df_plot)) {
@@ -817,12 +827,15 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
             ) %>%
             dplyr::group_by(.data[[primary_var]]) %>%
             dplyr::arrange(sample_rank_global, .by_group = TRUE) %>%
-            dplyr::mutate(x_pos = dplyr::row_number()) %>%
+            dplyr::mutate(
+              x_pos = dplyr::row_number(),
+              subgroup_block = dplyr::consecutive_id(.data[[secondary_var_val]])
+            ) %>%
             dplyr::ungroup()
 
           subgroup_blocks <- sample_group_df %>%
             dplyr::mutate(subgroup_label = as.character(.data[[secondary_var_val]])) %>%
-            dplyr::group_by(.data[[primary_var]], subgroup_label) %>%
+            dplyr::group_by(.data[[primary_var]], subgroup_label, subgroup_block) %>%
             dplyr::summarise(
               xmin = min(x_pos) - 0.5,
               xmax = max(x_pos) + 0.5,
@@ -1292,7 +1305,9 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
       sort_sentence <- ""
       if (!identical(input$plot_mode, "Group_Mean")) {
         sort_method <- input$sort_method
-        if (identical(sort_method, "sample_name")) {
+        if (length(plot_order()$samples)) {
+          sort_sentence <- "Sample order follows the Plot Order settings in Preprocessing. "
+        } else if (identical(sort_method, "sample_name")) {
           sort_sentence <- "Within each group, sample order is alphabetical by sample name. "
         } else if (identical(sort_method, "metadata_var")) {
           secondary_sort <- input$secondary_sort

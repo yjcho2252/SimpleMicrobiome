@@ -12,6 +12,8 @@ SimpleMicrobiome is an R Shiny application for downstream microbiome analysis wi
 It integrates data loading, preprocessing, taxa profiling, diversity, differential abundance, network analysis, and association analysis in a single workflow.
 Public app: https://simplemicrobiome.mglab.org/
 
+Current source version: **v1.1.3**. See the [release notes](docs/releases/2026-11-23-v1.1.3.md), [changelog](CHANGELOG.md), and [user manual](docs/manual/README.md).
+
 ## About the App
 
 SimpleMicrobiome is developed and maintained by the Microbial Genomics Laboratory at Kangwon National University, Korea.
@@ -25,29 +27,31 @@ Na, S.-I., Kim, J., Kim, S.-Y., Park, J., & Cho, Y.-J. (2026). SimpleMicrobiome:
 ## Current App Modules
 
 - **Top**
-  - App overview, quick workflow and version history
+  - App overview, quick workflow, manual, and version history
 - **Data Loading**
   - Upload ASV/OTU table, taxonomy table, metadata
   - Select, load, and download bundled example datasets
-  - external QZA converter link
+  - Link to the QZA converter
 - **Preprocessing**
-  - Sample/taxa filtering before downstream analyses
+  - Filter by read count and select samples for downstream analysis. Modules that use rarefaction apply it internally.
 - **Taxa Profiles**
-  - Taxa Bar plot
-  - Taxa Comparison
+  - **Taxa Bar Plot** shows interactive sample and group-mean composition profiles. Samples above 2,000 reads are subsampled to that depth.
+  - **Taxa Comparison** shows group-wise abundance distributions and supports paired comparisons, p-value annotations, and plot-only outlier exclusion.
 - **Diversity**
-  - Alpha Diversity
-  - Beta Diversity
+  - **Alpha Diversity** compares richness and diversity indices, with within-subject pairing available.
+  - **Beta Diversity** provides PCoA and NMDS, automatic rarefaction for Jaccard, sample color overlays, clustering, and EnvFit. The results include PERMDISP and a comparison of adjusted and unadjusted PERMANOVA on the same samples.
 - **Differential Abundance**
-  - ANCOM-BC2
-  - MaAsLin2
-  - Random Forest
+  - **ANCOM-BC2** tests differential abundance and provides forest plots, contrast heatmaps, and sample-level plots linked to the results.
+  - **MaAsLin2** tests multivariable associations with categorical or continuous predictors and provides association heatmaps and sample-level plots.
+  - **MaAsLin3** models abundance among detected samples and prevalence of detection. It provides summary and volcano plots, a filterable results table, and row-linked plots for both models.
+  - **Random Forest** supports classification and regression with validation, feature importance, and SHAP visualizations.
 - **Network**
-  - SparCC
-  - SPIEC-EASI
+  - **SparCC** estimates correlations between taxa from compositional abundance data.
+  - **SPIEC-EASI** infers sparse networks of conditional associations between taxa.
+  - Both modules support two-group network comparisons and export network plots, edge tables, and hub tables.
 - **Association**
-  - Correlation Heatmap
-  - Association Biplot (dbRDA/CCA)
+  - **Correlation Heatmap** shows pairwise associations between taxa using Pearson or Spearman correlation for abundance and the phi coefficient for binary detection. Heatmaps and correlation results can be exported as PNG and TSV.
+  - **Association Biplot** uses dbRDA or CCA to visualize relationships between community composition and selected metadata variables.
 - **Citation**
   - SimpleMicrobiome publication and method/package references
 
@@ -83,6 +87,8 @@ Silicon Macs, Docker Desktop may run the image through amd64 emulation, which
 can result in slower startup and execution.
 
 #### 1) Pull the image
+
+The commands below use the published `v1.0` image. To run the current source version, follow [Build the image from GitHub](#build-the-image-from-github).
 
 ```bash
 docker pull mglab2252/simplemicrobiome:v1.0

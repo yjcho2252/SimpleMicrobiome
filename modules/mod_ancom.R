@@ -220,7 +220,7 @@ mod_ancom_ui <- function(id) {
 }
 
 ## Server
-mod_ancom_server <- function(id, ps_obj) {
+mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
@@ -1302,7 +1302,7 @@ mod_ancom_server <- function(id, ps_obj) {
         group = factor(groups[keep], levels = levels),
         abundance = 100 * unname(observed) / unname(totals[ids])
       )
-      list(row = row, data = data, reference = run$reference)
+      list(row = row, data = data, reference = run$reference, variable = run$model_group)
     })
 
     output$ancom_taxon_detail <- renderUI({
@@ -1328,6 +1328,7 @@ mod_ancom_server <- function(id, ps_obj) {
 
     output$ancom_taxon_distribution <- renderPlot({
       detail <- selected_taxon_detail()
+      detail$data$group <- plot_order_factor(detail$data$group, detail$variable, plot_order())
       ggplot2::ggplot(detail$data, ggplot2::aes(group, abundance, fill = group)) +
         ggplot2::geom_boxplot(width = 0.45, alpha = 0.55, outlier.shape = NA, box.linewidth = 0.45) +
         ggplot2::geom_point(

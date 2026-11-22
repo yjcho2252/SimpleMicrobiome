@@ -142,21 +142,25 @@ This document explains what each left-panel parameter does and how different set
   - Can reduce per-cell sample size and lower power.
 
 ### 3.3 Within-Subject Pairing
-- **Options**: Enabled/Disabled.
-- **Interpretation impact**:
-  - Enabled: paired logic (within-subject change focus).
-  - Disabled: independent-group comparison.
-- **Critical note**:
-  - Enable only when repeated measures truly match by subject ID.
-  - Pairing becomes active only when the selected subject ID has repeated measurements across the x-axis groups used in the comparison.
+
+Enable **Within-Subject Pairing** to compare repeated samples from the same subject across conditions such as visits or treatment time points. The comparison uses the primary grouping variable by default and the secondary grouping variable when one is selected.
+
+- **Two groups** require at least two subjects with observations in both groups after sample filtering. The selected statistical method runs as a paired t-test or paired Wilcoxon signed-rank test.
+- **Three or more groups** require at least two subjects with observations in every comparison group for the overall Friedman test. Each pairwise test uses the subjects with observations in both groups being compared.
+- When a subject has multiple samples in the same group, the tests use the median abundance for that subject and group.
 
 ### 3.4 Subject Identifier
-- **Used when pairing is enabled**.
-- **Requirement**:
-  - Must uniquely map repeated samples to the same subject.
-- **Risk**:
-  - Incorrect ID column causes invalid paired statistics.
-  - If the selected subject ID is not repeated across groups, the app keeps the independent comparison behavior and shows a pairing-not-ready message.
+
+Use a separate metadata column such as `SubjectID`. Give every sample a unique `SampleID`, reuse the exact same `SubjectID` for all samples from one subject, and assign different IDs to different subjects. Rows with missing or empty subject IDs are excluded from paired tests.
+
+| SampleID | SubjectID | Timepoint |
+| --- | --- | --- |
+| S01_Pre | P01 | Pre |
+| S01_Post | P01 | Post |
+| S02_Pre | P02 | Pre |
+| S02_Post | P02 | Post |
+
+For this example, set **Primary grouping variable** to `Timepoint`, leave **Secondary grouping variable** unset, enable **Within-Subject Pairing**, and select `SubjectID` under **Subject Identifier**.
 
 ### 3.5 Show Regression Line / Group variable type / Regression method
 - **Show Regression Line**:

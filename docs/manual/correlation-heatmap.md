@@ -42,7 +42,8 @@ The module supports abundance-based associations and prevalence-based binary ass
 - `Max taxa`: limits the number of taxa shown.
 - `Selected taxa (optional)`: if selected, only those taxa are shown.
 - `Show row dendrogram` and `Show column dendrogram`: controls clustering display.
-- `Color scale abs limit (0 = auto)`: fixes the symmetric color scale limit when nonzero.
+- `Color palette`: selects a diverging palette, including a colorblind-friendly option.
+- `Color scale abs limit (0 = auto)`: fixes the symmetric color scale limit when nonzero. Auto mode uses a robust range to reduce the influence of extreme values.
 - `Mask non-significant cells (FDR)`: hides cells that do not pass the selected FDR cutoff.
 - `FDR cutoff (q)`: q-value threshold used when masking is enabled.
 

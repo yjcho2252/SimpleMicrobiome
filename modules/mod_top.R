@@ -3,6 +3,25 @@ mod_top_ui <- function(id) {
   ns <- NS(id)
   converter_url <- Sys.getenv("CONVERTER_APP_URL", "https://simplemicrobiome.mglab.org/convert/ui")
 
+  recent_count <- 5L
+  version_history <- c(
+    "261123: v1.1.3 - Shared plot ordering and improved correlation heatmap styling.",
+    "261122: v1.1.2 - Expanded beta diversity tests, module-specific rarefaction, and clearer plots.",
+    "261122: v1.1.1 - Automatic rarefaction, interactive Taxa Barplot, and new differential abundance plots.",
+    "261121: v1.1 - MaAsLin3 added, with continuous predictors and expanded result visualizations in MaAsLin2.",
+    "261120: v1.0 - Publication citation and optional read subsampling in Preprocessing.",
+    "260731: v0.4.6 - More reliable Docker dependency restoration with renv caching and retry support.",
+    "260728: v0.4.5 - Reproducible R 4.5.1 setup, dataset-aware taxonomic ranks, and run-consistent analysis outputs.",
+    "260708: v0.4.4 - Beta diversity NMDS run details and Docker-based local usage documentation.",
+    "260630: v0.4.3 - ANCOM-BC2/SparCC fixes, favicon fix, and manual documentation updates.",
+    "260629: v0.4.2 - R 4.5 installer updates, selectable example datasets, and Random Forest report text fixes.",
+    "260619: v0.4.1 - ANCOM-BC2 install compatibility and UI order updates.",
+    "260608: v0.4.0 - PNG export bug fixes.",
+    "260506: v0.3.0 - DA/Network/Association modules updated with new features and bug fixes.",
+    "260310: v0.2.0 - Preprocessing functionality improved.",
+    "251210: v0.1.0 - First version released."
+  )
+
   tagList(
     tags$style(HTML(
       paste0(
@@ -142,7 +161,17 @@ mod_top_ui <- function(id) {
             "."
           )
         ),
-        
+        div(
+          class = "top-start",
+          style = "margin-top: 8px;",
+          icon("github"),
+          tags$a(
+            href = "https://github.com/yjcho2252/SimpleMicrobiome",
+            target = "_blank",
+            rel = "noopener noreferrer",
+            "Source code on GitHub"
+          )
+        )
       ),
       div(
         class = "top-card top-card-readable",
@@ -177,23 +206,14 @@ mod_top_ui <- function(id) {
         h4(icon("clock-rotate-left"), " Version History"),
         tags$details(
           tags$summary("Show updates"),
-          tags$ul(
-            class = "top-list",
-            tags$li("261122: v1.1.2 - Expanded beta diversity tests, module-specific rarefaction, and clearer plots."),
-            tags$li("261122: v1.1.1 - Automatic rarefaction, interactive Taxa Barplot, and new differential abundance plots."),
-            tags$li("261121: v1.1 - MaAsLin3 added, with continuous predictors and expanded result visualizations in MaAsLin2."),
-            tags$li("261120: v1.0 - Publication citation and optional read subsampling in Preprocessing."),
-            tags$li("260731: v0.4.6 - More reliable Docker dependency restoration with renv caching and retry support."),
-            tags$li("260728: v0.4.5 - Reproducible R 4.5.1 setup, dataset-aware taxonomic ranks, and run-consistent analysis outputs."),
-            tags$li("260708: v0.4.4 - Beta diversity NMDS run details and Docker-based local usage documentation."),
-            tags$li("260630: v0.4.3 - ANCOM-BC2/SparCC fixes, favicon fix, and manual documentation updates."),
-            tags$li("260629: v0.4.2 - R 4.5 installer updates, selectable example datasets, and Random Forest report text fixes."),
-            tags$li("260619: v0.4.1 - ANCOM-BC2 install compatibility and UI order updates."),
-            tags$li("260608: v0.4.0 - PNG export bug fixes."),
-            tags$li("260506: v0.3.0 - DA/Network/Association modules updated with new features and bug fixes."),
-            tags$li("260310: v0.2.0 - Preprocessing functionality improved."),
-            tags$li("251210: v0.1.0 - First version released.")
-          )
+          tags$ul(class = "top-list", lapply(utils::head(version_history, recent_count), tags$li)),
+          if (length(version_history) > recent_count) {
+            tags$details(
+              style = "margin-top: 8px;",
+              tags$summary("Show older updates"),
+              tags$ul(class = "top-list", lapply(utils::tail(version_history, -recent_count), tags$li))
+            )
+          }
         )
       ),
       div(

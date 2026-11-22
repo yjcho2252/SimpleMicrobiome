@@ -229,7 +229,7 @@ mod_maaslin2_ui <- function(id) {
 }
 
 ## Server
-mod_maaslin2_server <- function(id, ps_obj) {
+mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
@@ -1558,7 +1558,10 @@ mod_maaslin2_server <- function(id, ps_obj) {
           ggplot2::geom_point(position = ggplot2::position_jitter(width = 0.14, height = 0, seed = 42),
                               colour = "#264653", alpha = 0.55, size = 1.8) +
           ggplot2::scale_fill_manual(values = c("#8ab7c8", "#e9a47e")) +
-          ggplot2::scale_x_discrete(labels = scales::label_wrap(18))
+          ggplot2::scale_x_discrete(
+            limits = function(values) levels(plot_order_factor(values, detail$variable, plot_order(), values)),
+            labels = scales::label_wrap(18)
+          )
       } else {
         plot <- plot + ggplot2::geom_point(colour = "#287a8b", alpha = 0.7, size = 2)
       }
