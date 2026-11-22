@@ -27,7 +27,7 @@ The preview lists selected terms, read depth adjustment, and the sample count us
 
 ### Plot Dimensions
 
-Set the width and height in pixels and the base font size in points. The controls apply to Summary Plot and Association Detail. For Association Detail, the two panels share the selected width. Plot settings can be changed after running the model.
+Set the width and height for Summary Plot and Volcano Plot. Plot width also sets the maximum width of the Results Table and Association Detail. The base font defaults to 10 pt.
 
 ## 3. Results
 
@@ -45,7 +45,7 @@ Abundance effect sizes are relative abundance fold changes, and prevalence effec
 
 ### Association Detail
 
-Select a table row for an ordinary main effect to see observed sample values alongside the adjusted model effect and individual q-value.
+Select a table row for an ordinary main effect to see observed sample values alongside the adjusted model effect and individual q-value. The detail card shows two 300 px high plots side by side when space allows and stacks them on narrower screens.
 
 | Predictor | Abundance | Prevalence |
 |---|---|---|

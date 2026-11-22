@@ -58,6 +58,7 @@ It is used to interpret how variables align with major ordination axes.
 - Keep scaling consistent when comparing multiple biplots.
 
 ### 2.11 Plot Width / Height / Base Font Size
+- The base font defaults to 14 pt and dot size defaults to 5. **Show Dot Outline** adds a dark border to each sample marker.
 - Increase dimensions for dense labels and multi-group overlays.
 
 ## 3. How to Interpret Biplot Elements

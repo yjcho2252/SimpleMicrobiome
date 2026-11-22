@@ -192,6 +192,7 @@ mod_taxa_comparison_ui <- function(id) {
         selectInput(ns("x_label_angle"), "X-axis label angle:",
                     choices = c("0° Horizontal" = "0", "45° Diagonal" = "45", "90° Vertical" = "90"),
                     selected = "0"),
+        checkboxInput(ns("exclude_plot_outliers"), "Exclude outliers from plot", value = FALSE),
         hr(),
         h5(icon("download"), "Download Plot"),
         div(
@@ -878,6 +879,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       ignoreInit = TRUE
     )
     
+    taxa_plot_outliers <- function(values) {
+      if (length(values) < 5L) return(rep(FALSE, length(values)))
+      quartiles <- stats::quantile(values, c(0.25, 0.75), names = FALSE)
+      spread <- diff(quartiles)
+      if (spread == 0) return(rep(FALSE, length(values)))
+      values < quartiles[1L] - 1.5 * spread | values > quartiles[2L] + 1.5 * spread
+    }
+
     taxa_plot_reactive <- reactive({
       req(isTRUE(is_active_tab()))
       req(taxa_plot_data())
@@ -929,15 +938,39 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       if (isTRUE(use_continuous_x) && sum(is.finite(df$GroupContinuous)) < 3) {
         use_continuous_x <- FALSE
       }
+      if (has_subject) {
+        df$LongitudinalSubject <- as.character(df[[subject_col]])
+      }
+      df$.plot_outlier <- FALSE
+      exclusion_note <- NULL
+      if (isTRUE(input$exclude_plot_outliers)) {
+        df <- df %>%
+          dplyr::group_by(Taxa, PrimaryGroup, Group) %>%
+          dplyr::mutate(.plot_outlier = taxa_plot_outliers(AbundancePlot)) %>%
+          dplyr::ungroup()
+        counts <- df %>%
+          dplyr::filter(.plot_outlier) %>%
+          dplyr::count(Taxa, PrimaryGroup, Group, name = "Excluded")
+        group_labels <- if (is_secondary) paste(counts$PrimaryGroup, counts$Group, sep = " / ") else counts$Group
+        exclusion_note <- if (nrow(counts) > 0L) {
+          details <- paste0(counts$Taxa, " / ", group_labels, ": ", counts$Excluded)
+          paste(strwrap(paste("Excluded from plot:", paste(details, collapse = "; ")), width = 65), collapse = "\n")
+        } else {
+          "Excluded from plot: 0"
+        }
+      }
+      test_df <- df
+      df <- df[!df$.plot_outlier, , drop = FALSE]
       x_var <- if (isTRUE(use_continuous_x)) "GroupContinuous" else "Group"
       p <- ggplot2::ggplot(df, ggplot2::aes(x = .data[[x_var]], y = .data[[y_plot_col]], fill = Group)) +
         ggplot2::scale_y_continuous(
           labels = y_labels_fn,
-          expand = ggplot2::expansion(mult = c(0, 0.18))
+          expand = ggplot2::expansion(mult = c(0, 0.08))
         ) +
         ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(title = plot_title,
-                      x = if (is_secondary) secondary_col else input$group_var, y = y_label) +
+                      x = if (is_secondary) secondary_col else input$group_var, y = y_label,
+                      caption = if (!is.null(exclusion_note)) paste(exclusion_note, "Tests use all samples.", sep = "\n")) +
         ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
         ggplot2::theme(
           plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
@@ -1054,7 +1087,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           dplyr::filter(dplyr::n_distinct(AbundancePlot) >= 2L) %>%
           dplyr::ungroup()
         p <- p +
-          ggplot2::geom_violin(data = violin_data, color = NA, alpha = 0.65, trim = TRUE, scale = "width") +
+          ggplot2::geom_violin(data = violin_data, color = NA, alpha = 0.65, trim = FALSE, scale = "width") +
           ggplot2::geom_boxplot(width = 0.18, outlier.shape = NA, alpha = 0.35, box.linewidth = 0.45)
       }
       if (plot_type != "scatter") {
@@ -1098,7 +1131,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       }
 
       if (isTRUE(input$show_trend_line)) {
-        trend_df <- df
+        trend_df <- test_df
         trend_group_type <- input$trend_group_type
         if (is.null(trend_group_type) || !trend_group_type %in% c("categorical", "continuous")) {
           trend_group_type <- "categorical"
@@ -1120,7 +1153,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           }
           smooth_method <- if (identical(trend_method, "spearman")) "loess" else "lm"
           p <- p + ggplot2::geom_smooth(
-            data = trend_df,
+            data = trend_df[!trend_df$.plot_outlier, , drop = FALSE],
             mapping = ggplot2::aes(x = TrendX, y = .data[[y_plot_col]], group = 1),
             inherit.aes = FALSE,
             method = smooth_method,
@@ -1159,8 +1192,9 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
 
             x_min <- suppressWarnings(min(x_vals[ok], na.rm = TRUE))
             x_max <- suppressWarnings(max(x_vals[ok], na.rm = TRUE))
-            y_min <- suppressWarnings(min(y_vals[ok], na.rm = TRUE))
-            y_max <- suppressWarnings(max(y_vals[ok], na.rm = TRUE))
+            displayed <- ok & !sub_data$.plot_outlier
+            y_min <- suppressWarnings(min(y_vals[displayed], na.rm = TRUE))
+            y_max <- suppressWarnings(max(y_vals[displayed], na.rm = TRUE))
             if (!is.finite(x_min) || !is.finite(x_max)) next
             if (!is.finite(y_min) || !is.finite(y_max)) next
             x_span <- max(1e-9, x_max - x_min)
@@ -1212,7 +1246,6 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
       }
 
       if (has_subject) {
-        df$LongitudinalSubject <- as.character(df[[subject_col]])
         group_levels <- levels(factor(df$Group))
         df$LongitudinalOrder <- as.numeric(factor(df$Group, levels = group_levels))
 
@@ -1262,7 +1295,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         if (is.null(p_adjust_method) || !p_adjust_method %in% c("none", "holm", "BH", "bonferroni")) {
           p_adjust_method <- "none"
         }
-        pairwise_vjust <- if (sig_as_marks) 0.25 else -0.15
+        pairwise_vjust <- if (sig_as_marks) 0.50 else -0.15
 
         compute_pairwise_p <- function(sub_data, comp_levels) {
           if (!all(comp_levels %in% unique(as.character(sub_data$Group)))) {
@@ -1334,8 +1367,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         }
 
         facet_vars <- if (is_secondary) c("PrimaryGroup", "Taxa") else c("Taxa")
-        facet_split <- interaction(df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
-        facet_data <- split(df, facet_split)
+        facet_split <- interaction(test_df[, facet_vars, drop = FALSE], drop = TRUE, lex.order = TRUE)
+        facet_data <- split(test_df, facet_split)
         annotation_rows <- vector("list", length(facet_data))
         row_idx <- 0L
 
@@ -1357,9 +1390,13 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           if (sig_only) valid_idx <- valid_idx[adj_p[valid_idx] < 0.05]
           if (length(valid_idx) == 0) next
 
-          y_range <- range(sub_data[[y_plot_col]], finite = TRUE)
-          if (!all(is.finite(y_range)) || diff(y_range) <= 0) next
+          y_range <- range(sub_data[[y_plot_col]][!sub_data$.plot_outlier], finite = TRUE)
+          if (!all(is.finite(y_range))) next
           y_span <- diff(y_range)
+          if (y_span == 0) {
+            if (!any(sub_data$.plot_outlier)) next
+            y_span <- max(0.1, 0.1 * abs(y_range[2L]))
+          }
           base_gap <- if (sig_as_marks) 0.12 else 0.20
           step_mult <- if (sig_as_marks) 0.08 else 0.12
 
@@ -1371,6 +1408,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           )
           ann_df$p.signif <- vapply(ann_df$p.adj, signif_mark, character(1))
           ann_df$p.format <- vapply(ann_df$p.adj, format_p_value, character(1))
+          ann_df$observed_top <- y_range[2L]
           ann_df$y.position <- y_range[2L] +
             y_span * (base_gap + step_mult * (seq_len(nrow(ann_df)) - 1))
           for (fv in facet_vars) {
@@ -1384,6 +1422,21 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
         annotation_rows <- annotation_rows[seq_len(row_idx)]
         if (length(annotation_rows) > 0) {
           annotation_df <- do.call(rbind, annotation_rows)
+          if (plot_type == "violin") {
+            # Untrimmed violin tails can extend beyond the highest observed value.
+            built <- ggplot2::ggplot_build(p)
+            violin <- built$data[[1L]]
+            if (nrow(violin) > 0L) {
+              violin_tops <- tapply(violin$y, violin$PANEL, max, na.rm = TRUE)
+              panels <- built$layout$layout
+              panels$violin_top <- unname(violin_tops[as.character(panels$PANEL)])
+              annotation_df <- dplyr::left_join(
+                annotation_df, panels[, c(facet_vars, "violin_top"), drop = FALSE], by = facet_vars
+              )
+              annotation_df$y.position <- annotation_df$y.position +
+                pmax(0, annotation_df$violin_top - annotation_df$observed_top, na.rm = TRUE)
+            }
+          }
           p <- p + ggpubr::stat_pvalue_manual(
             annotation_df,
             label = if (sig_as_marks) "p.signif" else "p.format",
@@ -1391,7 +1444,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
             xmax = "group2",
             y.position = "y.position",
             tip.length = 0.01,
-            size = max(2, base_size / 3.2),
+            size = max(2, base_size / 3.2) * (if (sig_as_marks) 1.25 else 1),
+            fontface = if (sig_as_marks) "bold" else "plain",
             bracket.size = 0.3,
             vjust = pairwise_vjust,
             hide.ns = FALSE,
@@ -1503,7 +1557,16 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL)
           paste0("Comparison mode: ", if (has_subject) "Paired / repeated" else "Independent groups"),
           paste0("Pairwise test: ", method_label, if (has_subject) " with paired = TRUE" else ""),
           paste0("Pairwise correction: ", p_adjust_method),
-          paste0("Overall test: ", overall_label)
+          paste0("Overall test: ", overall_label),
+          if (isTRUE(input$exclude_plot_outliers)) {
+            c(
+              "Plot outlier exclusion: On",
+              "For each taxon and group within a panel, values below Q1 - 1.5 x IQR",
+              "or above Q3 + 1.5 x IQR are excluded from the plot. IQR = Q3 - Q1.",
+              "All values are plotted when the group has fewer than 5 samples or IQR = 0.",
+              "Statistical tests use the full data before plot outlier exclusion."
+            )
+          }
         ),
         collapse = "\n"
       )

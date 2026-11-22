@@ -116,8 +116,8 @@ mod_biplot_ui <- function(id) {
         h4(icon("up-right-and-down-left-from-center"), "Plot Settings"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        numericInput(ns("dot_size"), "Dot Size (point size):", value = 3, min = 0.5, max = 10, step = 0.5),
+        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (point size):", value = 5, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_taxa_vectors"), "Show taxa vectors", value = TRUE),
         checkboxInput(ns("show_group_vectors"), "Show group vectors", value = TRUE),
@@ -579,11 +579,11 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       payload <- display_biplot_payload()
       base_size <- input$base_size
       if (is.null(base_size) || !is.finite(base_size)) {
-        base_size <- 11
+        base_size <- 14
       }
       dot_size <- input$dot_size
       if (is.null(dot_size) || !is.finite(dot_size)) {
-        dot_size <- 3
+        dot_size <- 5
       }
       text_size_taxa <- max(2.2, base_size / 3.6)
       text_size_group_vector <- max(2.3, base_size / 3.4)
@@ -614,15 +614,16 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
         )
       if (isTRUE(input$show_dot_outline)) {
-        outline_size <- dot_size + 0.4
         p <- p + ggplot2::geom_point(
-          color = "black",
-          size = outline_size,
-          alpha = 0.9,
-          show.legend = FALSE
+          ggplot2::aes(
+            colour = ggplot2::stage(start = Group, after_scale = "#262626"),
+            fill = ggplot2::after_scale(colour)
+          ),
+          shape = 21, size = dot_size, stroke = 0.7
         )
+      } else {
+        p <- p + ggplot2::geom_point(size = dot_size, alpha = 0.9)
       }
-      p <- p + ggplot2::geom_point(size = dot_size, alpha = 0.9)
 
       if (isTRUE(input$show_group_centroid)) {
         centroid_df <- site_df %>%

@@ -56,6 +56,10 @@ mod_beta_ui <- function(id) {
           ),
           selected = "bray"
         ),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == 'jaccard'", ns("distance_metric")),
+          textOutput(ns("jaccard_rarefaction_depth"))
+        ),
         selectInput(
           ns("beta_tax_level"),
           "Taxonomic level:",
@@ -67,10 +71,10 @@ mod_beta_ui <- function(id) {
         hr(),
         
         h4(icon("sliders"), "Plot Settings"),
-        numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 600, min = 300, max = 1500, step = 50),
+        numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 700, min = 300, max = 1500, step = 50),
         numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 500, min = 300, max = 1500, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
-        numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
+        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (point size):", value = 5, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
         checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
@@ -79,6 +83,27 @@ mod_beta_ui <- function(id) {
         checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
         selectInput(ns("primary_color_palette"), "Primary Group Color Palette:",
                     choices = c("Set2" = "set2", additional_plot_palettes), selected = "set2"),
+        tags$details(
+          tags$summary(strong("Sample Color Overlay")),
+          br(),
+          selectInput(
+            ns("sample_color_by"), "Color by:",
+            choices = c("None" = "none", "Alpha Diversity" = "alpha",
+                        "Taxon Relative Abundance" = "taxon")
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'alpha'", ns("sample_color_by")),
+            selectInput(
+              ns("sample_alpha_metric"), "Alpha metric:",
+              choices = c("Shannon", "Observed", "Chao1", "Simpson (1-D)" = "Simpson")
+            )
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'taxon'", ns("sample_color_by")),
+            uiOutput(ns("sample_color_tax_rank_ui")),
+            selectizeInput(ns("sample_color_taxon"), "Taxon:", choices = NULL)
+          )
+        ),
         uiOutput(ns("primary_color_controls")),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("Axis Limits")),
@@ -92,6 +117,28 @@ mod_beta_ui <- function(id) {
         hr(),
         h4(icon("layer-group"), "Post-Ordination Analyses"),
 
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("PERMANOVA")),
+          br(),
+          textOutput(ns("permanova_test_group")),
+          conditionalPanel(
+            condition = sprintf("!input['%s']", ns("enable_within_subject_pairing")),
+            checkboxInput(ns("permanova_adjust"), "Adjust for covariates", value = FALSE),
+            conditionalPanel(
+              condition = sprintf("input['%s']", ns("permanova_adjust")),
+              selectizeInput(ns("permanova_covariates"), "Covariates:", choices = NULL, multiple = TRUE)
+            )
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s']", ns("enable_within_subject_pairing")),
+            helpText("Covariate adjustment is available for independent samples.")
+          )
+        ),
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("PERMDISP")),
+          br(),
+          checkboxInput(ns("show_permdisp"), "Show PERMDISP results", value = FALSE)
+        ),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("Clustering")),
           br(),
@@ -111,7 +158,10 @@ mod_beta_ui <- function(id) {
             numericInput(ns("cluster_k_max"), "Auto k max:", value = 10, min = 3, max = 30, step = 1)
           ),
           checkboxInput(ns("show_cluster_labels"), "Show cluster labels on plot", value = TRUE),
-          checkboxInput(ns("overlay_cluster_colors"), "Overlay cluster colors on dots", value = FALSE),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'none'", ns("sample_color_by")),
+            checkboxInput(ns("overlay_cluster_colors"), "Overlay cluster colors on dots", value = FALSE)
+          ),
           tags$div(
             style = "display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
             actionButton(ns("run_clustering"), "Run Clustering", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
@@ -206,7 +256,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
   moduleServer(id, function(input, output, session) {
     observe({
       width_px <- suppressWarnings(as.integer(input$plot_width_px))
-      if (!is.finite(width_px) || is.na(width_px) || width_px <= 0) width_px <- 600L
+      if (length(width_px) != 1L || !is.finite(width_px) || width_px <= 0) width_px <- 700L
       session$sendCustomMessage(
         "set-tab-container-width",
         list(id = session$ns("beta_tab_container"), width = paste0(width_px, "px"))
@@ -590,6 +640,93 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     nmds_dimensions <- 2L
     nmds_trymax <- 20L
 
+    sample_color_mode <- reactive({
+      if (is.null(input$sample_color_by)) "none" else input$sample_color_by
+    })
+
+    output$sample_color_tax_rank_ui <- renderUI({
+      req(sample_color_mode() == "taxon", ps_obj())
+      taxonomy <- phyloseq::tax_table(ps_obj(), errorIfNULL = FALSE)
+      ranks <- c("ASV", intersect(c("Species", "Genus"), colnames(taxonomy)))
+      selectInput(session$ns("sample_color_tax_rank"), "Taxonomic level:", choices = ranks)
+    })
+
+    sample_color_tax_counts <- reactive({
+      req(sample_color_mode() == "taxon", ps_obj(), input$sample_color_tax_rank)
+      ps <- ps_obj()
+      counts <- as(phyloseq::otu_table(ps), "matrix")
+      if (!phyloseq::taxa_are_rows(ps)) {
+        counts <- t(counts)
+      }
+      rank <- input$sample_color_tax_rank
+      if (rank == "ASV") {
+        return(counts)
+      }
+      taxonomy <- phyloseq::tax_table(ps, errorIfNULL = FALSE)
+      req(rank %in% colnames(taxonomy))
+      taxonomy <- phyloseq::tax_table(apply_disambiguated_taxrank(ps, rank))
+      taxa <- as.character(taxonomy[rownames(counts), rank])
+      missing <- is.na(taxa) | !nzchar(trimws(taxa))
+      taxa[missing] <- rownames(counts)[missing]
+      rowsum(counts, taxa)
+    })
+
+    observe({
+      counts <- sample_color_tax_counts()
+      choices <- sort(rownames(counts))
+      updateSelectizeInput(session, "sample_color_taxon",
+                           choices = c("Choose a taxon" = "", choices), selected = "", server = TRUE)
+    })
+
+    sample_color_alpha <- reactive({
+      req(ps_obj(), input$sample_alpha_metric)
+      ps <- ps_obj()
+      depth <- min(phyloseq::sample_sums(ps), 100000)
+      if (!is.finite(depth) || depth <= 0) {
+        return(NULL)
+      }
+      ps <- phyloseq::rarefy_even_depth(
+        ps, sample.size = depth, rngseed = 42, replace = FALSE, verbose = FALSE
+      )
+      metric <- input$sample_alpha_metric
+      richness <- phyloseq::estimate_richness(ps, measures = metric)
+      list(values = setNames(richness[[metric]], rownames(richness)),
+           label = if (metric == "Simpson") "Simpson (1-D)" else metric)
+    })
+
+    sample_color_data <- reactive({
+      mode <- sample_color_mode()
+      if (mode == "alpha" && !is.null(input$sample_alpha_metric)) {
+        return(sample_color_alpha())
+      }
+      if (mode != "taxon" || !isTruthy(input$sample_color_taxon) ||
+          !isTruthy(input$sample_color_tax_rank)) {
+        return(NULL)
+      }
+      counts <- sample_color_tax_counts()
+      taxon <- input$sample_color_taxon
+      if (!taxon %in% rownames(counts)) {
+        return(NULL)
+      }
+      values <- 100 * counts[taxon, ] / colSums(counts)
+      values[!is.finite(values)] <- NA_real_
+      list(values = values, label = paste0(taxon, " (%)"))
+    })
+
+    jaccard_rarefaction <- reactive({
+      req(identical(input$distance_metric, "jaccard"), ps_obj())
+      ps <- ps_obj()
+      reads <- phyloseq::sample_sums(ps)
+      validate(need(length(reads) > 0L && all(is.finite(reads) & reads >= 1),
+                    "Jaccard rarefaction requires selected samples with positive read counts."))
+      list(depth = min(reads), subsample = any(reads > min(reads)))
+    })
+
+    output$jaccard_rarefaction_depth <- renderText({
+      info <- jaccard_rarefaction()
+      paste0("Jaccard rarefaction depth: ", scales::comma(info$depth), " reads per sample.")
+    })
+
     ps_normalized_local <- reactive({
       req(ps_obj(), input$distance_metric, input$beta_tax_level)
       ps_data <- ps_obj()
@@ -597,6 +734,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         need(phyloseq::nsamples(ps_data) > 0, "No samples available for beta diversity."),
         need(phyloseq::ntaxa(ps_data) > 0, "No taxa available for beta diversity.")
       )
+
+      if (identical(input$distance_metric, "jaccard")) {
+        info <- jaccard_rarefaction()
+        if (info$subsample) {
+          ps_data <- withr::with_preserve_seed(phyloseq::rarefy_even_depth(
+            ps_data, sample.size = info$depth, rngseed = 42, replace = FALSE,
+            trimOTUs = TRUE, verbose = FALSE
+          ))
+        }
+      }
 
       tax_level <- input$beta_tax_level
       if (!identical(tax_level, "ASV")) {
@@ -649,6 +796,11 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       dist_mat <- phyloseq::distance(ps_data, method = dist_method())
       metadata <- as(phyloseq::sample_data(ps_data), "data.frame")
       list(ps = ps_data, dist_mat = dist_mat, metadata = metadata, dist_method = dist_method())
+    })
+
+    ordination_distance <- reactive({
+      method <- dist_method()
+      if (identical(method, "jaccard")) data_prepared()$dist_mat else method
     })
 
     phyloseq_signature <- function(ps) {
@@ -1122,7 +1274,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       pcoa_ord <- tryCatch(pcoa_ordination_reactive(), error = function(e) NULL)
       if (is.null(pcoa_ord)) {
         pcoa_ord <- tryCatch(
-          phyloseq::ordinate(ps_for_envfit, method = "PCoA", distance = dist_method()),
+          phyloseq::ordinate(ps_for_envfit, method = "PCoA", distance = ordination_distance()),
           error = function(e) NULL
         )
       }
@@ -1130,7 +1282,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       nmds_ord <- tryCatch(nmds_ordination_reactive(), error = function(e) NULL)
       if (is.null(nmds_ord)) {
         nmds_ord <- tryCatch(
-          phyloseq::ordinate(ps_for_envfit, method = "NMDS", distance = dist_method()),
+          run_beta_nmds(ps_for_envfit),
           error = function(e) NULL
         )
       }
@@ -1227,6 +1379,71 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       return(ps_data)
     })
+
+    add_sample_points <- function(p) {
+      overlay <- sample_color_data()
+      dot_size <- input$dot_size
+      shape_var <- plot_shape_var()
+      shape_levels <- if (!is.null(shape_var)) levels(droplevels(factor(p$data[[shape_var]])))
+      p$layers <- list()
+      if (is.null(overlay)) {
+        if (!isTRUE(input$show_dot_outline)) {
+          return(p + ggplot2::geom_point(size = dot_size))
+        }
+        if (length(shape_levels) > 5L) {
+          # Preserve the default shape palette when the five fillable shapes are insufficient.
+          return(p + ggplot2::geom_point(color = "black", size = dot_size + 0.4, show.legend = FALSE) +
+            ggplot2::geom_point(size = dot_size))
+        }
+        group_var <- primary_group_var()
+        point_mapping <- ggplot2::aes(
+          colour = ggplot2::stage(start = .data[[group_var]], after_scale = "#262626"),
+          fill = ggplot2::after_scale(colour)
+        )
+        if (is.null(shape_var)) {
+          return(p + ggplot2::geom_point(point_mapping, shape = 21, size = dot_size, stroke = 0.7))
+        }
+        return(p + ggplot2::geom_point(point_mapping, size = dot_size, stroke = 0.7) +
+          ggplot2::scale_shape_manual(values = setNames(20L + seq_along(shape_levels), shape_levels)))
+      }
+
+      point_data <- p$data
+      point_data$.sample_overlay_value <- unname(overlay$values[rownames(point_data)])
+      stroke <- if (isTRUE(input$show_dot_outline)) 1.2 else 0.7
+      if (is.null(shape_var)) {
+        p <- p + ggplot2::geom_point(
+          ggplot2::aes(fill = .data$.sample_overlay_value),
+          data = point_data, shape = 21, size = dot_size, stroke = stroke
+        )
+      } else {
+        if (length(shape_levels) <= 5L) {
+          p <- p + ggplot2::geom_point(
+            ggplot2::aes(fill = .data$.sample_overlay_value),
+            data = point_data, size = dot_size, stroke = stroke
+          ) + ggplot2::scale_shape_manual(values = setNames(20L + seq_along(shape_levels), shape_levels))
+        } else {
+          # Keep the secondary shapes when there are more groups than fillable symbols.
+          p <- p + ggplot2::geom_point(size = dot_size, stroke = stroke) +
+            ggplot2::geom_point(
+              ggplot2::aes(fill = .data$.sample_overlay_value),
+              data = point_data, shape = 21, color = NA, size = dot_size / 2, stroke = 0
+            )
+        }
+      }
+      values <- point_data$.sample_overlay_value
+      max_value <- max(c(0, values[is.finite(values)]))
+      legend_max <- if (max_value > 0) max(pretty(c(0, max_value), n = 2)) else 0
+      legend_breaks <- if (legend_max > 0) seq(0, legend_max, length.out = 3) else 0
+      p + ggplot2::scale_fill_gradient(
+        name = overlay$label, low = "#DEEBF7", high = "#08519C", na.value = "#BDBDBD",
+        limits = c(0, legend_max), breaks = legend_breaks,
+        guide = ggplot2::guide_colourbar(theme = ggplot2::theme(
+          legend.title = ggplot2::element_text(face = "bold", margin = ggplot2::margin(b = 10)),
+          legend.key.height = grid::unit(17, "mm"),
+          legend.key.width = grid::unit(4, "mm")
+        ))
+      )
+    }
     
     output$pcoa_plot_ui <- renderUI({ 
       req(input$plot_width_px, input$plot_height_px)
@@ -1279,6 +1496,20 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       dplyr::bind_rows(out)
     }
 
+    add_centroid_labels <- function(p, centroids, label_size) {
+      if (!isTRUE(input$show_centroids) || is.null(centroids) || nrow(centroids) == 0L) {
+        return(p)
+      }
+      group_var <- primary_group_var()
+      p + ggplot2::geom_label(
+        ggplot2::aes(x = x, y = y, label = .data[[group_var]], colour = I(CentroidColor)),
+        data = centroids, inherit.aes = FALSE, show.legend = FALSE,
+        fill = "white", text.colour = "#262626", fontface = "bold",
+        size = label_size, linewidth = 0.45,
+        label.padding = grid::unit(0.18, "lines")
+      )
+    }
+
     build_centroid_df <- function(df, x_col, y_col, group_col) {
       if (is.null(df) || nrow(df) == 0 || !all(c(x_col, y_col, group_col) %in% colnames(df))) {
         return(data.frame())
@@ -1298,7 +1529,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
     
     pcoa_ordination_reactive <- reactive({
       req(ps_plot_obj())
-      phyloseq::ordinate(ps_plot_obj(), method = "PCoA", distance = dist_method())
+      phyloseq::ordinate(ps_plot_obj(), method = "PCoA", distance = ordination_distance())
     })
     
     pcoa_plot_reactive <- reactive({
@@ -1306,7 +1537,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       ps_data_for_plot <- ps_plot_obj()
       base_size <- input$base_size
       if (is.null(base_size) || !is.finite(base_size)) {
-        base_size <- 11
+        base_size <- 14
       }
       text_size_sample <- max(2.2, base_size / 3.6)
       text_size_cluster <- max(2.0, base_size / 4.1)
@@ -1330,15 +1561,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       } else {
         p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var(), shape = plot_shape_var())
       }
-      if (isTRUE(input$show_dot_outline)) {
-        outline_size <- input$dot_size + 0.4
-        p <- p + ggplot2::geom_point(
-          color = "black",
-          size = outline_size,
-          show.legend = FALSE
-        )
-      }
-      p <- p + ggplot2::geom_point(size = input$dot_size)
+      p <- add_sample_points(p)
       p <- p + ggplot2::scale_color_manual(values = primary_color_map())
       
       if (input$show_ellipses) {
@@ -1354,7 +1577,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         ggplot2::theme(
           plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
           axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
-          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
+          legend.title = ggplot2::element_text(face = "bold")
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
@@ -1381,13 +1605,12 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           hull_df$HullFill[is.na(hull_df$HullFill)] <- "#BDBDBD"
           p <- p + ggplot2::geom_polygon(
             data = hull_df,
-            mapping = ggplot2::aes_string(x = "Axis.1", y = "Axis.2", group = primary_group_var(), fill = "HullFill"),
+            mapping = ggplot2::aes_string(x = "Axis.1", y = "Axis.2", group = primary_group_var(), fill = "I(HullFill)"),
             inherit.aes = FALSE,
             alpha = 0.14,
             color = NA,
             show.legend = FALSE
-          ) +
-            ggplot2::scale_fill_identity()
+          )
         }
       }
       if (isTRUE(input$show_centroid_lines) && !is.null(centroid_line_df) && nrow(centroid_line_df) > 0) {
@@ -1410,27 +1633,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           )
         }
       }
-      if (isTRUE(input$show_centroids) && !is.null(centroid_df) && nrow(centroid_df) > 0) {
-        for (group_name in unique(as.character(centroid_df[[primary_group_var()]]))) {
-          group_df <- centroid_df[as.character(centroid_df[[primary_group_var()]]) == group_name, , drop = FALSE]
-          group_color <- unique(group_df$CentroidColor)
-          if (length(group_color) == 0 || is.na(group_color[1])) {
-            group_color <- "#333333"
-          } else {
-            group_color <- group_color[1]
-          }
-          p <- p + ggplot2::geom_point(
-            data = group_df,
-            ggplot2::aes(x = x, y = y),
-            inherit.aes = FALSE,
-            shape = 4,
-            stroke = 1.2,
-            size = input$dot_size + 1.2,
-            color = group_color
-          )
-        }
-      }
-      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
+      if (sample_color_mode() == "none" && isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
           plot_data$SampleID <- as.character(plot_data$SampleID)
@@ -1611,6 +1814,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       
       
+      p <- add_centroid_labels(p, centroid_df, text_size_sample)
       limits <- axis_limits()
       if (!is.null(limits$x) || !is.null(limits$y)) {
         p <- p + ggplot2::coord_cartesian(xlim = limits$x, ylim = limits$y)
@@ -1656,17 +1860,26 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
     )
     
+    run_beta_nmds <- function(ps) {
+      distance <- ordination_distance()
+      if (inherits(distance, "dist")) {
+        # phyloseq::ordinate() drops NMDS settings when given a distance object.
+        return(vegan::metaMDS(distance, k = nmds_dimensions, trymax = nmds_trymax))
+      }
+      phyloseq::ordinate(
+        ps,
+        method = "NMDS",
+        distance = distance,
+        k = nmds_dimensions,
+        trymax = nmds_trymax
+      )
+    }
+
     nmds_ordination_reactive <- reactive({
       req(ps_plot_obj(), dist_method())
       redraw_index <- if (is.null(input$redraw_nmds)) 0L else as.integer(input$redraw_nmds)
       set.seed(42L + redraw_index)
-      phyloseq::ordinate(
-        ps_plot_obj(),
-        method = "NMDS",
-        distance = dist_method(),
-        k = nmds_dimensions,
-        trymax = nmds_trymax
-      )
+      run_beta_nmds(ps_plot_obj())
     })
 
     nmds_run_info <- reactive({
@@ -1709,7 +1922,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       ps_data_for_plot <- ps_plot_obj()
       base_size <- input$base_size
       if (is.null(base_size) || !is.finite(base_size)) {
-        base_size <- 11
+        base_size <- 14
       }
       text_size_sample <- max(2.2, base_size / 3.6)
       text_size_cluster <- max(2.0, base_size / 4.1)
@@ -1721,15 +1934,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       } else {
         p <- phyloseq::plot_ordination(ps_data_for_plot, ord, color = primary_group_var(), shape = plot_shape_var())
       }
-      if (isTRUE(input$show_dot_outline)) {
-        outline_size <- input$dot_size + 0.4
-        p <- p + ggplot2::geom_point(
-          color = "black",
-          size = outline_size,
-          show.legend = FALSE
-        )
-      }
-      p <- p + ggplot2::geom_point(size = input$dot_size)
+      p <- add_sample_points(p)
       p <- p + ggplot2::scale_color_manual(values = primary_color_map())
       
       if (input$show_ellipses) {
@@ -1743,7 +1948,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         ggplot2::theme(
           plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
           axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
-          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
+          axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
+          legend.title = ggplot2::element_text(face = "bold")
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
@@ -1770,13 +1976,12 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           hull_df$HullFill[is.na(hull_df$HullFill)] <- "#BDBDBD"
           p <- p + ggplot2::geom_polygon(
             data = hull_df,
-            mapping = ggplot2::aes_string(x = "NMDS1", y = "NMDS2", group = primary_group_var(), fill = "HullFill"),
+            mapping = ggplot2::aes_string(x = "NMDS1", y = "NMDS2", group = primary_group_var(), fill = "I(HullFill)"),
             inherit.aes = FALSE,
             alpha = 0.14,
             color = NA,
             show.legend = FALSE
-          ) +
-            ggplot2::scale_fill_identity()
+          )
         }
       }
       if (isTRUE(input$show_centroid_lines) && !is.null(centroid_line_df) && nrow(centroid_line_df) > 0) {
@@ -1798,27 +2003,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
           )
         }
       }
-      if (isTRUE(input$show_centroids) && !is.null(centroid_df) && nrow(centroid_df) > 0) {
-        for (group_name in unique(as.character(centroid_df[[primary_group_var()]]))) {
-          group_df <- centroid_df[as.character(centroid_df[[primary_group_var()]]) == group_name, , drop = FALSE]
-          group_color <- unique(group_df$CentroidColor)
-          if (length(group_color) == 0 || is.na(group_color[1])) {
-            group_color <- "#333333"
-          } else {
-            group_color <- group_color[1]
-          }
-          p <- p + ggplot2::geom_point(
-            data = group_df,
-            ggplot2::aes(x = x, y = y),
-            inherit.aes = FALSE,
-            shape = 4,
-            stroke = 1.2,
-            size = input$dot_size + 1.2,
-            color = group_color
-          )
-        }
-      }
-      if (isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
+      if (sample_color_mode() == "none" && isTRUE(input$overlay_cluster_colors) && !is.null(cluster_result_val()$result) && !cluster_results_stale()) {
         clu_df <- tryCatch(cluster_lookup(), error = function(e) NULL)
         if (!is.null(clu_df)) {
           plot_data$SampleID <- as.character(plot_data$SampleID)
@@ -1999,6 +2184,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
       
       
+      p <- add_centroid_labels(p, centroid_df, text_size_sample)
       limits <- axis_limits()
       if (!is.null(limits$x) || !is.null(limits$y)) {
         p <- p + ggplot2::coord_cartesian(xlim = limits$x, ylim = limits$y)
@@ -2044,6 +2230,79 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
     )
     
+    beta_test_group_var <- reactive({
+      secondary_col <- secondary_group_var()
+      if (!is.null(secondary_col) && !identical(secondary_col, "None")) {
+        secondary_col
+      } else {
+        primary_group_var()
+      }
+    })
+
+    output$permanova_test_group <- renderText({
+      paste("Test group:", beta_test_group_var())
+    })
+
+    permanova_covariate_choices <- reactive({
+      req(ps_obj(), beta_test_group_var())
+      columns <- colnames(phyloseq::sample_data(ps_obj()))
+      sample_ids <- columns[gsub("[^a-z0-9]", "", tolower(columns)) == "sampleid"]
+      subject_id <- resolve_meta_colname(input$subject_id_var, columns)
+      setdiff(columns, c(sample_ids, beta_test_group_var(), subject_id))
+    })
+
+    observe({
+      choices <- permanova_covariate_choices()
+      selected <- isolate(input$permanova_covariates)
+      updateSelectizeInput(session, "permanova_covariates", choices = choices,
+                           selected = intersect(selected, choices), server = TRUE)
+    })
+
+    adjusted_permanova <- function(dist, metadata, group_var, covariates) {
+      variables <- c(group_var, covariates)
+      model_data <- metadata[attr(dist, "Labels"), variables, drop = FALSE]
+      keep <- complete.cases(model_data)
+      for (column in model_data) {
+        valid <- if (is.numeric(column)) is.finite(column) else nzchar(trimws(as.character(column)))
+        keep <- keep & valid
+      }
+      model_data <- droplevels(model_data[keep, , drop = FALSE])
+      valid_terms <- vapply(model_data, function(column) length(unique(column)) >= 2L, logical(1))
+      validate(need(all(valid_terms), paste(
+        "At least two observed values are required for each model variable:",
+        paste(variables[!valid_terms], collapse = ", ")
+      )))
+      if (!all(keep)) {
+        dist <- stats::as.dist(as.matrix(dist)[keep, keep, drop = FALSE])
+      }
+      validate(need(all(is.finite(dist)) && any(dist > 0),
+                    "Adjusted PERMANOVA requires finite distances with some variation."))
+
+      # Internal names allow metadata labels with spaces or punctuation.
+      terms <- c("Group", paste0("Covariate", seq_along(covariates)))
+      names(model_data) <- terms
+      formula <- stats::reformulate(terms, response = "dist")
+      design <- stats::model.matrix(stats::delete.response(stats::terms(formula)), data = model_data)
+      validate(
+        need(qr(design)$rank == ncol(design),
+             "Some model variables are confounded or redundant. Select a different set of covariates."),
+        need(nrow(design) > ncol(design),
+             "There are too few complete samples for this model. Select fewer covariates.")
+      )
+      permutations <- withr::with_seed(42L, permute::shuffleSet(nrow(model_data), nset = 999))
+      statistics <- c("R2", "F", "Pr(>F)")
+      test <- vegan::adonis2(formula, data = model_data, permutations = permutations, by = "margin")
+      results <- test[terms, statistics, drop = FALSE]
+      validate(need(all(is.finite(as.matrix(results))),
+                    "The adjusted model could not produce finite test results."))
+      unadjusted <- vegan::adonis2(dist ~ Group, data = model_data, permutations = permutations)
+      comparison <- rbind(Unadjusted = unadjusted["Model", statistics, drop = FALSE],
+                          Adjusted = results["Group", , drop = FALSE])
+      rownames(comparison) <- c("Unadjusted", "Adjusted")
+      list(grouping_var = group_var, variables = variables, results = results, comparison = comparison,
+           n = sum(keep), n_excluded = sum(!keep), n_permutations = nrow(permutations))
+    }
+
     permanova_reactive <- reactive({
       req(data_prepared(), primary_group_var())
       data <- data_prepared()
@@ -2053,10 +2312,15 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       }
 
       metadata <- data$metadata
-      primary_col <- primary_group_var()
-      secondary_col <- secondary_group_var()
-      is_secondary <- !is.null(secondary_col) && !identical(secondary_col, "None")
-      x_axis_col <- if (is_secondary) secondary_col else primary_col
+      x_axis_col <- beta_test_group_var()
+      if (isTRUE(input$permanova_adjust) && !isTRUE(input$enable_within_subject_pairing)) {
+        covariates <- intersect(input$permanova_covariates, permanova_covariate_choices())
+        validate(need(length(covariates) > 0L, "Select at least one covariate for adjusted PERMANOVA."))
+        sample_data <- phyloseq::sample_data(ps_obj())
+        metadata_original <- as(sample_data, "data.frame")
+        names(metadata_original) <- colnames(sample_data)
+        return(adjusted_permanova(data$dist_mat, metadata_original, x_axis_col, covariates))
+      }
       subject_col <- if (isTRUE(input$enable_within_subject_pairing)) resolve_meta_colname(input$subject_id_var, colnames(metadata)) else NULL
       set.seed(42L)
 
@@ -2083,14 +2347,119 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       list(
         R2 = R2,
         Pval = Pval,
+        n = nrow(metadata),
         paired = isTRUE(paired_ready()),
         pairing_var = if (isTRUE(paired_ready()) && !is.null(subject_col)) subject_col else NULL,
         grouping_var = x_axis_col
       )
     })
+
+    permdisp_reactive <- reactive({
+      req(isTRUE(input$show_permdisp))
+      data <- data_prepared()
+      group_var <- beta_test_group_var()
+      dist <- data$dist_mat
+      sample_ids <- attr(dist, "Labels")
+      group <- data$metadata[sample_ids, group_var]
+      keep <- !is.na(group) & nzchar(trimws(as.character(group)))
+      group <- droplevels(factor(group[keep]))
+      group_sizes <- table(group)
+      validate(
+        need(length(group_sizes) >= 2L, "PERMDISP requires at least two groups."),
+        need(all(group_sizes >= 2L), "PERMDISP requires at least two samples in each group.")
+      )
+      if (!all(keep)) {
+        dist <- stats::as.dist(as.matrix(dist)[keep, keep, drop = FALSE])
+      }
+      validate(need(all(is.finite(dist)), "PERMDISP requires finite sample distances."))
+      dispersion <- vegan::betadisper(dist, group, type = "median")
+      repeated <- isTRUE(input$enable_within_subject_pairing)
+      test <- NULL
+      if (!repeated && length(unique(dispersion$distances)) > 1L) {
+        test <- withr::with_seed(42L, vegan::permutest(dispersion, permutations = 999))$tab
+      }
+      list(
+        group_var = group_var, group_sizes = group_sizes, repeated = repeated,
+        points = data.frame(Group = group, Distance = unname(dispersion$distances)),
+        test = test
+      )
+    })
+
+    output$permdisp_results_out <- renderUI({
+      result <- permdisp_reactive()
+      test <- result$test
+      test_summary <- if (result$repeated) {
+        "Within-subject pairing is enabled. Only descriptive dispersion is shown."
+      } else if (is.null(test) || !is.finite(test[1L, "F"]) || !is.finite(test[1L, "Pr(>F)"])) {
+        "The permutation test could not produce a finite result."
+      } else {
+        sprintf("Permutations: %d | F: %.3f | p-value: %.4g",
+                test[1L, "N.Perm"], test[1L, "F"], test[1L, "Pr(>F)"])
+      }
+      tagList(
+        tags$div(tags$strong("Grouping variable: "), result$group_var),
+        tags$div(tags$strong("Distance metric: "), distance_label()),
+        tags$div(tags$strong("Taxonomic level: "), input$beta_tax_level),
+        tags$div(tags$strong("Samples: "), nrow(result$points)),
+        tags$div(test_summary),
+        plotOutput(session$ns("permdisp_plot"), height = "300px")
+      )
+    })
+
+    output$permdisp_plot <- renderPlot({
+      result <- permdisp_reactive()
+      colors <- if (identical(result$group_var, primary_group_var())) {
+        primary_color_map()
+      } else {
+        setNames(group_plot_colors(length(result$group_sizes), input$primary_color_palette),
+                 names(result$group_sizes))
+      }
+      ggplot2::ggplot(result$points, ggplot2::aes(Group, Distance, fill = Group)) +
+        ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+        ggplot2::geom_point(
+          shape = 21, colour = "#262626", size = 2,
+          position = ggplot2::position_jitter(width = 0.12, height = 0, seed = 42)
+        ) +
+        ggplot2::scale_fill_manual(values = colors, guide = "none") +
+        ggplot2::scale_x_discrete(labels = function(groups) {
+          paste0(groups, "\n(n = ", result$group_sizes[groups], ")")
+        }) +
+        ggplot2::labs(x = result$group_var, y = "Distance to group spatial median") +
+        ggplot2::theme_bw()
+    })
     
     output$permanova_results_out <- renderUI({
       req(permanova_result <- permanova_reactive(), primary_group_var())
+      if (!is.null(permanova_result$results)) {
+        variables <- permanova_result$variables
+        result_table <- function(results, heading, labels) {
+          tags$table(
+            class = "table table-condensed",
+            tags$thead(tags$tr(tags$th(heading), tags$th("R-squared"), tags$th("Pseudo-F"), tags$th("p-value"))),
+            tags$tbody(lapply(seq_along(labels), function(i) {
+              tags$tr(
+                tags$td(labels[[i]]),
+                tags$td(sprintf("%.3f", results[i, "R2"])),
+                tags$td(sprintf("%.3f", results[i, "F"])),
+                tags$td(sprintf("%.4g", results[i, "Pr(>F)"]))
+              )
+            }))
+          )
+        }
+        return(tagList(
+          tags$div(tags$strong("Test group: "), permanova_result$grouping_var),
+          tags$div(tags$strong("Distance metric: "), distance_label()),
+          tags$div(tags$strong("Adjusted model: "), paste("Distance ~", paste(variables, collapse = " + "))),
+          tags$div(sprintf("Samples used: %d | Excluded for missing or invalid values: %d",
+                           permanova_result$n, permanova_result$n_excluded)),
+          tags$div(sprintf("Shared permutations: %d", permanova_result$n_permutations)),
+          tags$h6("Group effect before and after adjustment"),
+          result_table(permanova_result$comparison, "Model", rownames(permanova_result$comparison)),
+          tags$h6("Adjusted model by variable"),
+          result_table(permanova_result$results, "Variable",
+                       c(list(tags$strong(variables[1L])), as.list(variables[-1L])))
+        ))
+      }
       pairing_line <- if (isTRUE(permanova_result$paired) && !is.null(permanova_result$pairing_var)) {
         paste0(
           "<strong>Pairing:</strong> within-subject pairing enabled using <strong>",
@@ -2110,6 +2479,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         "<strong>Tool:</strong> vegan::adonis2 (PERMANOVA)<br>",
         "<strong>Grouping Variable:</strong> ", permanova_result$grouping_var, "<br>",
         "<strong>Distance Metric:</strong> ", distance_label(), "<br>",
+        "<strong>Samples:</strong> ", permanova_result$n, "<br>",
         pairing_line,
         "---<br>",
         "<strong>R-squared:</strong> ", format(permanova_result$R2, digits = 3, nsmall = 3), "<br>",
@@ -2160,6 +2530,14 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
       metric_label <- distance_label()
       metric_phrase <- if (grepl("Aitchison", metric_label, fixed = TRUE)) metric_label else paste0(metric_label, " distance")
       tax_level_label <- tolower(input$beta_tax_level)
+      rarefaction_sentence <- ""
+      if (identical(input$distance_metric, "jaccard")) {
+        info <- jaccard_rarefaction()
+        rarefaction_sentence <- paste0(
+          " Jaccard rarefaction depth: ", scales::comma(info$depth), " reads per sample.",
+          if (!info$subsample) " Input samples were already at equal depth." else ""
+        )
+      }
       pairing_sentence <- if (isTRUE(input$enable_within_subject_pairing) && isTRUE(paired_ready()) && !is.null(input$subject_id_var) && nzchar(input$subject_id_var)) {
         paste0(" PERMANOVA uses ", input$subject_id_var, " as the within-subject blocking variable.")
       } else if (isTRUE(input$enable_within_subject_pairing)) {
@@ -2201,6 +2579,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
             " level. Points represent samples and are colored by group. ",
             if (isTRUE(input$show_ellipses)) "Group ellipses show 80% confidence regions. " else "",
             if (isTRUE(input$show_group_hulls)) "Group hulls show convex envelopes (chull). " else "",
+            rarefaction_sentence,
             pairing_sentence,
             nmds_sentence
           )
@@ -2244,9 +2623,20 @@ mod_beta_server <- function(id, ps_obj, meta_cols) {
         tags$h5(icon("flask"), "Statistical Test: PERMANOVA Results"),
         tags$div(
           class = "beta-result-card",
-          style = paste0("width: ", box_width, "px; max-width: 100%;"),
+          style = paste0("width: ", box_width, "px; max-width: 100%;",
+                         if (isTRUE(input$permanova_adjust) &&
+                             !isTRUE(input$enable_within_subject_pairing)) "height: auto;"),
           htmlOutput(session$ns("permanova_results_out"))
         ),
+        if (isTRUE(input$show_permdisp)) {
+          tagList(
+            tags$h5(icon("flask"), "PERMDISP Results"),
+            tags$div(
+              style = paste0("width: ", box_width, "px; max-width: 100%; margin-bottom: 8px;"),
+              uiOutput(session$ns("permdisp_results_out"))
+            )
+          )
+        },
         tags$h5(icon("object-group"), "Clustering Results"),
         tags$div(
           class = "beta-result-card",

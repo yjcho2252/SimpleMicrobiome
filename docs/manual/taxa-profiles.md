@@ -5,6 +5,8 @@ Taxa Profiles includes two menus:
 - **Taxa Bar plot**: composition overview
 - **Taxa Comparison**: group-wise statistical comparison
 
+Taxa Bar Plot subsamples samples above 2,000 reads to that depth. Samples at or below 2,000 reads retain their counts.
+
 This document explains what each left-panel parameter does and how different settings change interpretation.
 
 ---
@@ -253,6 +255,7 @@ This document explains what each left-panel parameter does and how different set
   - Standardize layout across figures for publication consistency.
 
 ### 3.16 Plot Width / Height / Base Font Size
+- **Exclude outliers from plot** applies the 1.5 × IQR rule within each group and panel. The plot is recalculated from retained observations, and statistical tests use all observations. The Comparison Status box describes the rule when it is active.
 - **Recommendation**:
   - Multi-taxa comparisons typically need larger width.
   - Increase base font for presentation exports.

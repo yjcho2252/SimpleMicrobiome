@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-22] v1.1.2
+
+- Beta Diversity adds PERMDISP, covariate-adjusted PERMANOVA with comparisons on the same samples, and sample color overlays.
+- Rarefaction is handled by individual modules. Jaccard uses the lowest selected read depth, and Taxa Bar Plot caps each sample at 2,000 reads.
+- Taxa Comparison adds plot-only outlier exclusion. Diversity and association plots improve point outlines, labels, and significance annotations.
+- MaAsLin3 improves the Results Table and Association Detail layout and corrects coefficient interval labels. See the [release notes](docs/releases/2026-11-22-v1.1.2.md).
+
 ## [2026-11-22] v1.1.1
 
 - Preprocessing now uses the lowest selected read count as its optional rarefaction depth.

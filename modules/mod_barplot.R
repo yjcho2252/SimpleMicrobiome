@@ -176,8 +176,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
         return(ps)
       }
       sample_depths <- phyloseq::sample_sums(ps)
-      rarefaction_depth <- min(3000L, sample_depths)
-      validate(need(rarefaction_depth > 0, "Deselect samples with zero reads in Preprocessing."))
+      rarefaction_depth <- 2000L
+      validate(need(all(sample_depths > 0), "Deselect samples with zero reads in Preprocessing."))
       counts <- as(phyloseq::otu_table(ps), "matrix")
       if (!phyloseq::taxa_are_rows(ps)) counts <- t(counts)
       sample_depths <- sample_depths[colnames(counts)]
@@ -1086,19 +1086,19 @@ mod_barplot_server <- function(id, ps_obj, meta_cols) {
             }
           }
         }
-        group_borders <- lapply(axis_names, function(axis_name) {
-          axis <- layout[[axis_name]]
-          y_axis_name <- sub("^y", "yaxis", axis$anchor)
-          y_domain <- layout[[y_axis_name]]$domain
-          list(
-            type = "rect", xref = "paper", yref = "paper",
-            x0 = axis$domain[1L], x1 = axis$domain[2L],
-            y0 = y_domain[1L], y1 = y_domain[2L],
-            line = list(color = "#595959", width = 1), layer = "above"
-          )
-        })
-        layout$shapes <- c(layout$shapes, group_borders)
       }
+      group_borders <- lapply(axis_names, function(axis_name) {
+        axis <- layout[[axis_name]]
+        y_axis_name <- sub("^y", "yaxis", axis$anchor)
+        y_domain <- layout[[y_axis_name]]$domain
+        list(
+          type = "rect", xref = "paper", yref = "paper",
+          x0 = axis$domain[1L], x1 = axis$domain[2L],
+          y0 = y_domain[1L], y1 = y_domain[2L],
+          line = list(color = "#595959", width = 1), layer = "above"
+        )
+      })
+      layout$shapes <- c(layout$shapes, group_borders)
       layout$hovermode <- "closest"
       layout$showlegend <- FALSE
       layout$autosize <- FALSE

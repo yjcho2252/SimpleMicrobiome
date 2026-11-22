@@ -508,7 +508,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
           ggplot2::geom_boxplot(color = "black", outlier.shape = NA, alpha = 0.7, box.linewidth = 0.45)
       } else if (plot_type == "violin") {
         p <- p +
-          ggplot2::geom_violin(color = NA, alpha = 0.65, trim = TRUE) +
+          ggplot2::geom_violin(color = NA, alpha = 0.65, trim = FALSE, scale = "width") +
           ggplot2::geom_boxplot(width = 0.18, outlier.shape = NA, alpha = 0.35, box.linewidth = 0.45)
       }
       p <- p + ggplot2::geom_point(
@@ -737,9 +737,10 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL) {
               xmax = "group2",
               y.position = "y.position",
               tip.length = 0.01,
-              size = max(2, base_size / 3.2),
+              size = max(2, base_size / 3.2) * (if (sig_as_marks) 1.25 else 1),
+              fontface = if (sig_as_marks) "bold" else "plain",
               bracket.size = 0.3,
-              vjust = if (sig_as_marks) 0.25 else -0.15,
+              vjust = if (sig_as_marks) 0.50 else -0.15,
               hide.ns = FALSE,
               inherit.aes = FALSE
             )

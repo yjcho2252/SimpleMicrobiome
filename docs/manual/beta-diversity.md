@@ -17,6 +17,7 @@ The distance choice is the most important modeling decision in this module.
 
 #### Jaccard
 - **What it captures**: presence/absence turnover.
+- Samples are automatically rarefied to the lowest selected read count before conversion to presence/absence. The applied depth appears below the plot.
 - **Ignores**: abundance magnitude.
 - **Use when**: detection pattern matters more than abundance scale.
 
@@ -62,8 +63,11 @@ The distance choice is the most important modeling decision in this module.
   - `Genus`: more stable, often easier to interpret group trends.
 
 ### 2.6 Plot Settings
+- The default plot is 700 × 500 px with a 14 pt base font and dot size 5.
 - **Dot Size**: larger points improve visibility but can hide overlap.
 - **Show Dot Outline**: improves separation between overlapping groups.
+- **Show Centroids** displays group names at their centers.
+- **Sample Color Overlay** shades points by alpha diversity or by the relative abundance of one taxon.
 - **Show Group Ellipses**: adds centroid/spread cues; helpful for group-level pattern reading.
 - **Show Group Hulls**: draws a convex hull (`chull`) polygon per group in ordination space.
   - Hulls require at least 3 samples per group.
@@ -80,6 +84,8 @@ The distance choice is the most important modeling decision in this module.
 ### 3.1 PERMANOVA
 PERMANOVA is the main hypothesis test shown in the results box.
 
+- **Adjust for covariates** fits a model for independent samples. The results compare adjusted and unadjusted group effects using the same complete samples and permutations.
+- **PERMDISP** compares within-group dispersion using the same distance metric and grouping variable. In pairing mode, only the dispersion plot is shown.
 - **Tool used**: `vegan::adonis2()`
 - **Display fields**:
   - Grouping variable

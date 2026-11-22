@@ -23,21 +23,6 @@ mod_preprocessing_ui <- function(id) {
               verbatimTextOutput(ns("sample_count_info"))
           ),
           hr(),
-          h5(icon("random"), "Rarefaction"),
-          checkboxInput(
-            ns("enable_subsampling"),
-            "Enable rarefaction",
-            value = FALSE
-          ),
-          conditionalPanel(
-            condition = sprintf("input['%s']", ns("enable_subsampling")),
-            p(
-              "Reads are drawn without replacement to match the lowest read count among selected samples.",
-              style = "color: #4b5563; font-size: 11px; margin-top: -5px;"
-            ),
-            textOutput(ns("subsampling_info"))
-          ),
-          hr(),
           h5(icon("layer-group"), "Group-based Toggle"),
           selectInput(ns("toggle_group_var"), "Group Variable", choices = NULL),
           selectizeInput(
@@ -106,9 +91,8 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     
     ps_filtered <- reactiveVal(NULL)
     ps_selected_raw <- reactiveVal(NULL)
-    last_applied_settings <- reactiveVal(NULL)
+    last_applied_selection <- reactiveVal(NULL)
     default_min_reads <- 2000
-    subsampling_seed <- 42
     
     meta_df_for_dt <- reactive({
       req(ps_obj_initial())
@@ -190,7 +174,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
     })
 
     observeEvent(ps_obj_initial(), {
-      last_applied_settings(NULL)
+      last_applied_selection(NULL)
       ps_filtered(ps_obj_initial())
       ps_selected_raw(ps_obj_initial())
     }, ignoreInit = FALSE, ignoreNULL = FALSE)
@@ -312,12 +296,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
         selected_indices <- sort(unique(as.integer(selected_indices)))
       }
       
-      subsampling_enabled <- isTRUE(input$enable_subsampling)
-      current_settings <- list(
-        selected_indices = selected_indices,
-        subsampling_enabled = subsampling_enabled
-      )
-      if (identical(current_settings, last_applied_settings())) {
+      if (identical(selected_indices, last_applied_selection())) {
         return(invisible(NULL))
       }
 
@@ -329,40 +308,12 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       }
       ps_selected_raw(ps_new)
 
-      if (!is.null(ps_new) && subsampling_enabled) {
-        sample_reads <- phyloseq::sample_sums(ps_new)
-        subsampling_depth <- min(sample_reads)
-        if (!is.finite(subsampling_depth) || subsampling_depth < 1) {
-          ps_filtered(NULL)
-          last_applied_settings(NULL)
-          showNotification(
-            "Deselect samples with zero or invalid read counts to apply rarefaction.",
-            type = "error",
-            duration = 10
-          )
-          return(invisible(NULL))
-        }
-
-        if (any(sample_reads > subsampling_depth)) {
-          ps_new <- suppressMessages(
-            phyloseq::rarefy_even_depth(
-              ps_new,
-              sample.size = subsampling_depth,
-              rngseed = subsampling_seed,
-              replace = FALSE,
-              trimOTUs = TRUE,
-              verbose = FALSE
-            )
-          )
-        }
-      }
-      
       if (!is.null(ps_new) && phyloseq::nsamples(ps_new) > 0) {
         ps_new <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps_new) > 0, ps_new)
       }
       
       ps_filtered(ps_new)
-      last_applied_settings(current_settings)
+      last_applied_selection(selected_indices)
       invisible(NULL)
     }
     
@@ -389,22 +340,6 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       )
     })
 
-    output$subsampling_info <- renderText({
-      req(meta_df_for_dt())
-      selected_indices <- selected_indices_for_apply()
-      if (length(selected_indices) == 0L) return("Select at least one sample.")
-      selected_reads <- meta_df_for_dt()$`Read Count`[selected_indices]
-      depth <- min(selected_reads)
-      if (!is.finite(depth) || depth < 1) {
-        return("Deselect samples with zero or invalid read counts to apply rarefaction.")
-      }
-
-      sprintf(
-        "Rarefaction depth: %s reads per sample.",
-        format(depth, big.mark = ",", scientific = FALSE)
-      )
-    })
-    
     return(list(
       ps_filtered_raw = ps_filtered,
       ps_selected_raw = ps_selected_raw

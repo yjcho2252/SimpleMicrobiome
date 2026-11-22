@@ -46,7 +46,7 @@ mod_maaslin3_ui <- function(id) {
       h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
       numericInput(ns("summary_width"), "Plot width (px)", 1200, min = 400, max = 4000, step = 50),
       numericInput(ns("summary_height"), "Plot height (px)", 1000, min = 400, max = 4000, step = 50),
-      numericInput(ns("summary_font"), "Base font size (pt)", 14, min = 6, max = 30, step = 1),
+      numericInput(ns("summary_font"), "Base font size (pt)", 10, min = 6, max = 30, step = 1),
       actionButton(ns("run"), "Run MaAsLin3", class = "btn-danger maaslin3-run-btn",
                    style = "font-size: 12px;"),
       tags$script(HTML("
@@ -76,12 +76,19 @@ mod_maaslin3_ui <- function(id) {
         tabPanel("Summary Plot", uiOutput(ns("summary"))),
         tabPanel("Volcano Plot",
           checkboxInput(ns("volcano_primary_only"), "Show only the primary variable", TRUE),
-          downloadButton(ns("volcano_download"), "Download volcano PNG"),
+          downloadButton(
+            ns("volcano_download"),
+            "Download volcano PNG",
+            style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+          ),
           div(style = "overflow-x: auto;", plotOutput(ns("volcano"), height = "auto"))
         ),
-        tabPanel("Results Table",
+        tabPanel(
+          "Results Table",
+          uiOutput(ns("results_width_style")),
           div(
-            style = "width: 700px; max-width: 100%; margin-top: 12px; margin-bottom: 18px;",
+            id = ns("results_content"),
+            style = "width: var(--results-width, 1200px); max-width: 100%; margin-top: 12px; margin-bottom: 18px;",
             p("Abundance effects are relative fold changes among detected samples. Prevalence effects are detection odds ratios. Individual q-values apply to each model. Joint q-values combine evidence across both models."),
             fluidRow(
               column(6,
@@ -95,9 +102,9 @@ mod_maaslin3_ui <- function(id) {
             ),
             downloadButton(ns("tsv"), "Download full TSV"),
             p("Select a result row to inspect its abundance and prevalence."),
-            DT::DTOutput(ns("results"))
-          ),
-          uiOutput(ns("association_detail"))
+            DT::DTOutput(ns("results")),
+            uiOutput(ns("association_detail"))
+          )
         )
       ),
       div(
@@ -529,6 +536,16 @@ mod_maaslin3_server <- function(id, ps_obj) {
         strip.text = ggplot2::element_text(size = font)
       )
       style_panel <- function(panel) {
+        fill_scale <- panel$scales$get_scales("fill")
+        if (!is.null(fill_scale) && identical(fill_scale$name, "Beta coefficient")) {
+          panel$scales <- panel$scales$clone()
+          fill_scale <- panel$scales$get_scales("fill")
+          fill_scale$labels <- function(breaks) {
+            # MaAsLin3 assigns boundary values to the interval starting at that boundary.
+            labels <- sub("^\\((?!-Inf,)(?=[^,]+,)", "[", breaks, perl = TRUE)
+            sub("\\]$", ")", labels)
+          }
+        }
         # The heatmap hides its y-axis labels when a coefficient panel is present.
         if (!inherits(panel$theme$axis.text.y, "element_blank")) {
           panel <- panel + ggplot2::theme(axis.text.y = ggplot2::element_text(size = font))
@@ -639,10 +656,10 @@ mod_maaslin3_server <- function(id, ps_obj) {
     })
 
     output$volcano <- renderPlot(volcano_plot(),
-                                 width = function() detail_dimensions()$width,
-                                 height = function() detail_dimensions()$height)
+                                 width = function() volcano_dimensions()$width,
+                                 height = function() volcano_dimensions()$height)
     output$volcano_download <- downloadHandler("maaslin3-volcano.png", function(file) {
-      size <- detail_dimensions()
+      size <- volcano_dimensions()
       ggplot2::ggsave(file, plot = volcano_plot(), device = ragg::agg_png, units = "px",
                       width = size$width, height = size$height, dpi = summary_dpi, bg = "white")
     }, contentType = "image/png")
@@ -666,6 +683,12 @@ mod_maaslin3_server <- function(id, ps_obj) {
       q_col <- if (identical(input$test, "Joint")) "qval_joint" else "qval_individual"
       if (isTRUE(input$significant)) tab <- tab[which(tab[[q_col]] <= run$settings$q), , drop = FALSE]
       tab[order(tab[[q_col]], na.last = TRUE), , drop = FALSE]
+    })
+
+    output$results_width_style <- renderUI({
+      width <- input$summary_width
+      req(length(width) == 1L, is.finite(width), width >= 400, width <= 4000)
+      tags$style(sprintf("#%s { --results-width: %dpx; }", session$ns("results_content"), as.integer(width)))
     })
 
     output$results <- DT::renderDT({
@@ -733,16 +756,12 @@ mod_maaslin3_server <- function(id, ps_obj) {
               format(effect, digits = 3), q, warning)
     }
 
-    detail_dimensions <- reactive({
+    volcano_dimensions <- reactive({
       width <- input$summary_width
       height <- input$summary_height
       req(isTruthy(width), isTruthy(height), is.finite(width), is.finite(height),
           width >= 400, width <= 4000, height >= 400, height <= 4000)
-      width <- as.integer(width)
-      height <- as.integer(height)
-      abundance_width <- floor((width - 16) / 2)
-      list(width = width, height = height, abundance = abundance_width,
-           prevalence = width - 16 - abundance_width)
+      list(width = as.integer(width), height = as.integer(height))
     })
 
     detail_theme <- function() {
@@ -755,26 +774,21 @@ mod_maaslin3_server <- function(id, ps_obj) {
 
     output$association_detail <- renderUI({
       detail <- selected_association()
-      size <- detail_dimensions()
       heading <- paste(detail$feature, "—", detail$variable)
       if (!is.na(detail$contrast) && nzchar(detail$contrast) && is.factor(detail$data$predictor)) {
         reference <- if (nzchar(detail$reference)) detail$reference else levels(detail$data$predictor)[1]
         heading <- paste0(heading, " (", detail$contrast, " vs ", reference, ")")
       }
-      tagList(
-        hr(), h4("Association Detail"), h5(heading),
+      div(
+        style = "max-width: 100%; margin-top: 16px; padding: 16px; border: 1px solid #d9e2ec; border-radius: 8px;",
+        h4("Association Detail"), h5(heading),
         p("Plots show observed samples. Effect sizes and individual q-values come from the adjusted model. Continuous predictor effects are per standard deviation."),
-        div(style = "overflow-x: auto;",
-          div(
-            style = sprintf(
-              "display: grid; grid-template-columns: %dpx %dpx; gap: 16px; width: %dpx;",
-              size$abundance, size$prevalence, size$width
-            ),
-            div(h5("Abundance"), p(association_fit_label(detail, "abundance")),
-                plotOutput(session$ns("detail_abundance"), height = paste0(size$height, "px"))),
-            div(h5("Prevalence"), p(association_fit_label(detail, "prevalence")),
-                plotOutput(session$ns("detail_prevalence"), height = paste0(size$height, "px")))
-          )
+        div(
+          style = "display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px;",
+          div(style = "min-width: 0;", h5("Abundance"), p(association_fit_label(detail, "abundance")),
+              plotOutput(session$ns("detail_abundance"), height = "300px")),
+          div(style = "min-width: 0;", h5("Prevalence"), p(association_fit_label(detail, "prevalence")),
+              plotOutput(session$ns("detail_prevalence"), height = "300px"))
         )
       )
     })
@@ -797,8 +811,7 @@ mod_maaslin3_server <- function(id, ps_obj) {
       }
       plot + ggplot2::labs(x = detail$variable, y = "Log-transformed relative abundance") +
         detail_theme()
-    }, width = function() detail_dimensions()$abundance,
-       height = function() detail_dimensions()$height)
+    })
 
     output$detail_prevalence <- renderPlot({
       detail <- selected_association()
@@ -833,7 +846,6 @@ mod_maaslin3_server <- function(id, ps_obj) {
           ggplot2::labs(x = "Detection status", y = detail$variable)
       }
       plot + detail_theme()
-    }, width = function() detail_dimensions()$prevalence,
-       height = function() detail_dimensions()$height)
+    })
   })
 }
