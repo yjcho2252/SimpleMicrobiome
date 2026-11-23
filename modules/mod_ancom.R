@@ -63,20 +63,20 @@ mod_ancom_ui <- function(id) {
         h4(icon("vial-circle-check"), "ANCOM-BC2"),
         hr(),
 
-        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
+        selectInput(ns("group_var"), "1. Primary explanatory variable", choices = NULL),
 
-        checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
+        checkboxInput(ns("use_subgroup"), "Select subgroup of primary explanatory variable", value = FALSE),
 
         conditionalPanel(
           condition = "input.use_subgroup",
           ns = ns,
-          selectInput(ns("primary_level"), "Primary level to include", choices = NULL),
+          selectInput(ns("primary_level"), "Primary explanatory level to include", choices = NULL),
           selectInput(ns("secondary_var"), "Secondary grouping variable", choices = NULL)
         ),
 
         selectizeInput(
           ns("group_levels"),
-          "2. Comparison groups (levels)",
+          "2. Explanatory variable levels to compare",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -145,7 +145,7 @@ mod_ancom_ui <- function(id) {
           verbatimTextOutput(ns("formula_preview"))
         ),
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+        h4(icon("up-right-and-down-left-from-center"), "Display Options"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2000, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 400, min = 300, max = 2000, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
@@ -605,10 +605,10 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
 
       lines <- c(
         "Selected Sample Counts",
-        if (isTRUE(info$using_secondary)) paste0("Primary filter: ", info$primary_var, " = ", info$primary_level) else "Primary-only comparison mode",
-        if (isTRUE(info$using_secondary)) paste0("Secondary variable: ", info$group_var) else paste0("Grouping variable: ", info$group_var),
+        if (isTRUE(info$using_secondary)) paste0("Primary explanatory variable filter: ", info$primary_var, " = ", info$primary_level) else "Primary explanatory variable comparison mode",
+        if (isTRUE(info$using_secondary)) paste0("Secondary grouping variable: ", info$group_var) else paste0("Primary explanatory variable: ", info$group_var),
         paste0("Ordered trend test: ", if (isTRUE(input$enable_trend_test)) "Enabled" else "Disabled"),
-        paste0("Included levels: ", paste(info$selected_levels, collapse = ", ")),
+        paste0("Explanatory variable levels to compare: ", paste(info$selected_levels, collapse = ", ")),
         paste0("Total selected samples: ", length(info$selected_ids)),
         paste0("Prevalence filter: > ", input$prevalence_filter_pct, "%"),
         "Zero-variance taxa: removed before ANCOM-BC2 fitting",

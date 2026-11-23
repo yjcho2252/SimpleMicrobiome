@@ -69,7 +69,7 @@ ui <- page_navbar(
         alt = "SimpleMicrobiome",
         style = "height: 30px; width: auto; display: block;"
       ),
-      tags$span("v.1.1.4", class = "navbar-app-version")
+      tags$span("v.1.1.5", class = "navbar-app-version")
     ),
     style = "display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; padding: 0;"
   ),
@@ -168,7 +168,7 @@ ui <- page_navbar(
   nav_menu(
     title = "Taxa Profiles",
     icon = icon("chart-line"),
-    nav_panel("Taxa Bar plot", icon = icon("chart-bar"), mod_barplot_ui("mod_barplot")),
+    nav_panel("Taxa Bar Plot", icon = icon("chart-bar"), mod_barplot_ui("mod_barplot")),
     nav_panel("Taxa Comparison", icon = icon("square-poll-vertical"), mod_taxa_comparison_ui("mod_taxa_comparison"))
   ),
   
@@ -193,7 +193,7 @@ ui <- page_navbar(
     title = "Network",
     icon = icon("diagram-project"),
     nav_panel("SparCC", icon = icon("share-nodes"), mod_sparcc_ui("mod_sparcc")),
-    nav_panel("SpiecEasi", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi"))
+    nav_panel("SPIEC-EASI", icon = icon("diagram-project"), mod_spieceasi_ui("mod_spieceasi"))
   ),
   nav_menu(
     title = "Association",

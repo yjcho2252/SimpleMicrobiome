@@ -7,7 +7,7 @@ It is used to interpret how variables align with major ordination axes.
 ## 2. Left Panel Parameters (Detailed)
 
 ### 2.1 Primary and Additional Model Variables
-- **Primary grouping variable** defines sample color and the primary centroid labels.
+- **Primary explanatory variable** defines the main constrained-model term, sample color, and primary centroid labels when categorical.
 - **Additional explanatory variables** extend the constrained model with continuous environmental measurements or categorical metadata.
 - **Conditioning variables** are included through `Condition()` to adjust for nuisance structure without drawing them as fitted vectors.
 - Continuous model variables can be standardized before fitting, which is recommended when their measurement scales differ.
@@ -51,9 +51,9 @@ It is used to interpret how variables align with major ordination axes.
 - `vegan::vif.cca` values are displayed to help identify collinearity among model terms.
 - Permutation-based tests use 999 permutations, with the random-number generator initialized using seed 42.
 
-### 2.8 Variable Arrow / Loading Display Options
-- Taxa arrows are species scores from the fitted constrained ordination.
-- Continuous explanatory variables can be drawn as green dashed biplot vectors.
+### 2.8 Explanatory Vectors and Taxa Scores
+- Taxa arrows are taxa scores from the fitted constrained ordination; individual taxa p-values are not calculated.
+- Continuous explanatory variables can be drawn as green dashed explanatory vectors.
 - Environmental-vector labels can include marginal permutation p-values, and vectors can be filtered by significance or maximum count.
 - Categorical variables are represented by centroid labels instead of directional arrows.
 - Dense vector display can obscure sample pattern.
@@ -80,7 +80,7 @@ It is used to interpret how variables align with major ordination axes.
 ### 3.2 Arrows (variables)
 - Direction: increasing gradient of the variable in ordination space.
 - Length: relative contribution/association strength in displayed axes.
-- Taxa and environmental vectors have different meanings: taxa use species scores, while environmental arrows use fitted continuous-variable biplot scores.
+- Taxa scores and explanatory vectors have different meanings: taxa use fitted feature scores, while explanatory arrows use continuous-variable biplot scores.
 
 ### 3.3 Angle between arrows
 - Small angle: positive co-direction tendency.

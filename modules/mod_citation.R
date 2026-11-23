@@ -61,7 +61,7 @@ mod_citation_server <- function(id) {
       "Data Loading / Preprocessing" = c(
         "McMurdie, P. J., & Holmes, S. (2013). phyloseq: An R package for reproducible interactive analysis and graphics of microbiome census data. PLOS ONE, 8(4), e61217. https://doi.org/10.1371/journal.pone.0061217"
       ),
-      "Taxa Bar plot" = c(
+      "Taxa Bar Plot" = c(
         "Wickham, H. (2016). ggplot2: Elegant graphics for data analysis. Springer. https://ggplot2.tidyverse.org"
       ),
       "Taxa Comparison" = c(
@@ -91,7 +91,7 @@ mod_citation_server <- function(id) {
         "Moe, Y. M., Jullum, M., & Loland, A. (2024). shapr: Explaining machine learning models with dependence-aware Shapley values (R package). https://CRAN.R-project.org/package=shapr",
         "Gu, Z., Eils, R., & Schlesner, M. (2016). Complex heatmaps reveal patterns and correlations in multidimensional genomic data. Bioinformatics, 32(18), 2847-2849. https://doi.org/10.1093/bioinformatics/btw313"
       ),
-      "SpiecEasi" = c(
+      "SPIEC-EASI" = c(
         "Kurtz, Z. D., Muller, C. L., Miraldi, E. R., Littman, D. R., Blaser, M. J., & Bonneau, R. A. (2015). Sparse and compositionally robust inference of microbial ecological networks. PLOS Computational Biology, 11(5), e1004226. https://doi.org/10.1371/journal.pcbi.1004226",
         "Peschel, S., Muller, C. L., von Mutius, E., Boulesteix, A.-L., Depner, M., & NetCoMi Development Team. (2021). NetCoMi: Network construction and comparison for microbiome data in R. Briefings in Bioinformatics, 22(4), bbaa290. https://doi.org/10.1093/bib/bbaa290"
       ),

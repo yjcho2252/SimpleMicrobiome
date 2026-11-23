@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-24] v1.1.5
+
+- Improved taxa and explanatory-variable overlays in Beta Diversity and Constrained Ordination, including clearer labels and optional group hulls.
+- Corrected EnvFit taxa result mapping so effect sizes and permutation p-values are reported and displayed consistently.
+- Aligned differential-abundance terminology and added subgroup analysis to MaAsLin3 with clearer status and waiting states.
+- Standardized display-section and module naming across the interface. See the [release notes](docs/releases/2026-11-24-v1.1.5.md).
+
 ## [2026-11-23] v1.1.4
 
 - Separated Beta Diversity and Constrained Ordination under the Diversity menu and renamed Correlation Heatmap to Association Heatmap.

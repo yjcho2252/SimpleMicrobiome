@@ -62,7 +62,7 @@ The distance choice is the most important modeling decision in this module.
   - `ASV`: highest resolution, often noisier/sparser.
   - `Genus`: more stable, often easier to interpret group trends.
 
-### 2.6 Plot Settings
+### 2.6 Display Options
 - The default plot is 700 × 500 px with a 14 pt base font and dot size 5.
 - **Dot Size**: larger points improve visibility but can hide overlap.
 - **Show Dot Outline**: improves separation between overlapping groups.

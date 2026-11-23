@@ -37,7 +37,7 @@ mod_alpha_ui <- function(id) {
         checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
         uiOutput(ns("subject_id_selector")),
         hr(),
-        h4(icon("sliders"), "Plot Settings"),
+        h4(icon("sliders"), "Plot Style"),
         selectInput(
           ns("plot_type"),
           "Plot Type:",
@@ -58,7 +58,7 @@ mod_alpha_ui <- function(id) {
         checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
         
         hr(),
-        h4(icon("sliders"), "P-value Options"),
+        h4(icon("sliders"), "Statistical Testing"),
         tags$style(HTML(sprintf(
           "#%s { margin-bottom: 2px; } #%s, #%s { margin-top: 0; margin-bottom: 4px; }",
           ns("show_p_val"), ns("show_sig_only"), ns("show_sig_as_marks")
@@ -89,7 +89,7 @@ mod_alpha_ui <- function(id) {
         ),
         
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+        h4(icon("up-right-and-down-left-from-center"), "Display Options"),
         numericInput(ns("plot_width"), "Plot Width:", value = 600, min = 300, step = 50),
         numericInput(ns("plot_height"), "Plot Height:", value = 500, min = 300, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),

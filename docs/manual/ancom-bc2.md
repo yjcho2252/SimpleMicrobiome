@@ -6,16 +6,16 @@ This module compares selected metadata levels and reports taxon-level log2 fold-
 
 ## 2. Left Panel Parameters
 
-### 2.1 Primary grouping variable
+### 2.1 Primary explanatory variable
 - Defines the main metadata variable used for comparison.
 - If subgroup mode is off, this variable is also the comparison variable.
 
-### 2.2 Select subgroup / primary level to include
+### 2.2 Select subgroup of primary explanatory variable
 - Restricts the analysis to one selected primary level before fitting ANCOM-BC2.
 - When subgroup mode is enabled, the selected secondary grouping variable becomes the comparison variable.
 - Narrow subsets reduce sample count and can destabilize model estimates.
 
-### 2.3 Comparison groups (levels)
+### 2.3 Explanatory variable levels to compare
 - Selects the group levels included in the ANCOM-BC2 model.
 - At least one non-reference level is required.
 - Up to five levels can be selected in the current UI.

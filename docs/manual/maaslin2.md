@@ -6,16 +6,16 @@ The module supports group contrasts and continuous primary predictors, with opti
 
 ## 2. Left Panel Parameters
 
-### 2.1 Primary variable
+### 2.1 Primary explanatory variable
 - Defines the main metadata variable used for analysis. Selecting a numeric variable opens **Treat as**, with **Continuous** selected by default.
 - **Continuous** estimates the coefficient per one-unit increase. The subgroup, comparison groups, and reference controls are hidden.
 - **Categorical** treats numeric values such as `0` and `5` as group labels. Text variables are treated as categorical.
 
-### 2.2 Select subgroup / primary level to include
+### 2.2 Select subgroup of primary explanatory variable
 - Restricts the analysis to a selected primary level before model fitting.
 - When subgroup mode is enabled, the secondary grouping variable becomes the comparison variable.
 
-### 2.3 Comparison groups (levels)
+### 2.3 Explanatory variable levels to compare
 - Selects levels included in the model.
 - Select at least two levels, including the reference. A warning appears when the comparison variable has more than 10 observed levels. The variable remains selectable.
 - The reference level must be one of the selected levels.
@@ -73,7 +73,7 @@ The module supports group contrasts and continuous primary predictors, with opti
 
 ### 3.3 Association Heatmap
 - Rows show taxa and columns show model terms or contrasts. Tile colors represent model coefficients. A star marks a cell meeting the selected q-value threshold, and gray indicates an unavailable estimate.
-- Set the q-value threshold and maximum taxa, then click a cell to see its coefficient and q-value. The preview and PNG download follow the left-panel **Plot Dimensions** settings.
+- Set the q-value threshold and maximum taxa, then click a cell to see its coefficient and q-value. The preview and PNG download follow the left-panel **Display Options** settings.
 
 ### 3.4 Table and Association Detail
 - The table reports coefficient estimates, significance values, and taxonomy fields. Group results also include contrast labels and transformed effect sizes.

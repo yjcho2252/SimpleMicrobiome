@@ -92,7 +92,7 @@ mod_beta_ui <- function(id) {
         ),
         hr(),
         
-        h4(icon("sliders"), "Plot Settings"),
+        h4(icon("sliders"), "Display Options"),
         numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 700, min = 300, max = 1500, step = 50),
         numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 500, min = 300, max = 1500, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
@@ -1121,6 +1121,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
           data.frame(row.names = common_samples)
         }
         env_sub <- as.data.frame(env_sub, stringsAsFactors = FALSE)
+        taxa_name_map <- character(0)
 
         if (length(taxa_selected) > 0) {
           otu_mat <- as(phyloseq::otu_table(ps_normalized_local()), "matrix")
@@ -1133,7 +1134,13 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
             taxa_df$SampleID <- rownames(taxa_df)
             taxa_df <- taxa_df[match(common_samples, taxa_df$SampleID), , drop = FALSE]
             taxa_df$SampleID <- NULL
-            colnames(taxa_df) <- paste0("Taxa::", colnames(taxa_df))
+            proposed_taxa_names <- paste0("EnvFitTaxa_", seq_along(taxa_selected_safe))
+            taxa_internal_names <- tail(
+              make.unique(c(colnames(env_sub), proposed_taxa_names), sep = "_"),
+              length(proposed_taxa_names)
+            )
+            taxa_name_map <- stats::setNames(taxa_selected_safe, taxa_internal_names)
+            colnames(taxa_df) <- taxa_internal_names
             env_sub <- cbind(env_sub, taxa_df)
           }
         }
@@ -1190,8 +1197,11 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
 
         if (nrow(vec_num) > 0) {
           vec_num$variable <- rownames(vec_num)
-          vec_num$r2 <- as.numeric(fit$vectors$r[vec_num$variable])
-          vec_num$p_value <- as.numeric(fit$vectors$pvals[vec_num$variable])
+          vector_names <- names(fit$vectors$r)
+          vector_r2 <- stats::setNames(as.numeric(fit$vectors$r), vector_names)
+          vector_p <- stats::setNames(as.numeric(fit$vectors$pvals), vector_names)
+          vec_num$r2 <- unname(vector_r2[vec_num$variable])
+          vec_num$p_value <- unname(vector_p[vec_num$variable])
           names(vec_num)[1:2] <- c("v1", "v2")
           vec_num$type <- "numeric"
           out_parts[[length(out_parts) + 1]] <- vec_num
@@ -1199,7 +1209,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
 
         if (nrow(vec_fac) > 0) {
           vec_fac$level <- rownames(vec_fac)
-          factor_vars <- names(fit$factors$pvals)
+          factor_vars <- names(fit$factors$r)
+          factor_r2 <- stats::setNames(as.numeric(fit$factors$r), factor_vars)
+          factor_p <- stats::setNames(as.numeric(fit$factors$pvals), factor_vars)
           resolve_factor_var <- function(level_name) {
             colon_var <- sub("^([^:]+):.*$", "\\1", level_name)
             if (colon_var %in% factor_vars) return(colon_var)
@@ -1215,8 +1227,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
             NA_character_
           }
           vec_fac$variable <- vapply(vec_fac$level, resolve_factor_var, character(1))
-          vec_fac$r2 <- as.numeric(fit$factors$r[vec_fac$variable])
-          vec_fac$p_value <- as.numeric(fit$factors$pvals[vec_fac$variable])
+          vec_fac$r2 <- unname(factor_r2[vec_fac$variable])
+          vec_fac$p_value <- unname(factor_p[vec_fac$variable])
           names(vec_fac)[1:2] <- c("v1", "v2")
           vec_fac$type <- "factor"
           out_parts[[length(out_parts) + 1]] <- vec_fac
@@ -1238,7 +1250,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
           return(vec)
         }
 
-        vec$is_taxa <- startsWith(as.character(vec$variable), "Taxa::")
+        vec$is_taxa <- as.character(vec$variable) %in% names(taxa_name_map)
         scale_ref <- vec[!vec$is_taxa, , drop = FALSE]
         if (nrow(scale_ref) == 0) {
           scale_ref <- vec
@@ -1258,7 +1270,12 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
         vec$y <- 0
         vec$xend <- vec$v1 * scale_factor
         vec$yend <- vec$v2 * scale_factor
-        vec$variable_label <- gsub("^Taxa::", "", as.character(vec$variable))
+        vec$variable_label <- as.character(vec$variable)
+        if (any(vec$is_taxa)) {
+          vec$variable_label[vec$is_taxa] <- unname(
+            taxa_name_map[as.character(vec$variable[vec$is_taxa])]
+          )
+        }
         if ("level" %in% colnames(vec)) {
           vec$level_label <- as.character(vec$level)
 
@@ -1278,9 +1295,13 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
         }
 
         vec$label <- ifelse(
-          vec$type == "factor" & "level_label" %in% colnames(vec),
-          paste0(vec$variable_label, " (", vec$level_label, ")"),
-          paste0(vec$variable_label, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")")
+          vec$is_taxa,
+          vec$variable_label,
+          ifelse(
+            vec$type == "factor" & "level_label" %in% colnames(vec),
+            paste0(vec$variable_label, " (", vec$level_label, ")"),
+            paste0(vec$variable_label, " (p=", format(round(vec$p_value, 3), nsmall = 3), ")")
+          )
         )
         vec
       }
@@ -1731,7 +1752,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
           taxa_flag <- if ("is_taxa" %in% colnames(vec_df)) as.logical(vec_df$is_taxa) else rep(FALSE, nrow(vec_df))
           taxa_flag[is.na(taxa_flag)] <- FALSE
           vec_arrow <- vec_df[!taxa_flag, , drop = FALSE]
-          vec_point <- vec_df[taxa_flag, , drop = FALSE]
+          vec_taxa <- vec_df[taxa_flag, , drop = FALSE]
 
           if (nrow(vec_arrow) > 0) {
             vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
@@ -1782,45 +1803,72 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
             }
           }
 
-          if (nrow(vec_point) > 0) {
-            vec_point$x_plot <- pmin(pmax(vec_point$xend, x_min), x_max)
-            vec_point$y_plot <- pmin(pmax(vec_point$yend, y_min), y_max)
+          if (nrow(vec_taxa) > 0) {
+            vec_taxa$x_plot <- pmin(pmax(vec_taxa$xend, x_min), x_max)
+            vec_taxa$y_plot <- pmin(pmax(vec_taxa$yend, y_min), y_max)
+            taxa_repel_df <- data.frame(
+              x_plot = vec_taxa$x_plot,
+              y_plot = vec_taxa$y_plot,
+              label = vec_taxa$label,
+              repel_point_size = 1,
+              stringsAsFactors = FALSE
+            )
+            if (isTRUE(input$show_centroids) && !is.null(centroid_df) && nrow(centroid_df) > 0) {
+              taxa_repel_df <- dplyr::bind_rows(
+                taxa_repel_df,
+                data.frame(
+                  x_plot = centroid_df$x,
+                  y_plot = centroid_df$y,
+                  label = "",
+                  repel_point_size = 12,
+                  stringsAsFactors = FALSE
+                )
+              )
+            }
 
             p <- p +
-              ggplot2::geom_point(
-                data = vec_point,
-                ggplot2::aes(x = x_plot, y = y_plot),
+              ggplot2::geom_segment(
+                data = vec_taxa,
+                ggplot2::aes(x = 0, y = 0, xend = x_plot, yend = y_plot),
                 inherit.aes = FALSE,
-                shape = 21,
-                fill = "#7B1FA2",
-                color = "white",
-                stroke = 0.4,
-                size = 2.8
+                arrow = grid::arrow(length = grid::unit(0.22, "cm")),
+                color = "#7B1FA2",
+                linewidth = 0.9
               )
             if (requireNamespace("ggrepel", quietly = TRUE)) {
-              p <- p + ggrepel::geom_text_repel(
-                data = vec_point,
-                ggplot2::aes(x = x_plot, y = y_plot, label = label),
+              p <- p + ggrepel::geom_label_repel(
+                data = taxa_repel_df,
+                ggplot2::aes(
+                  x = x_plot,
+                  y = y_plot,
+                  label = label,
+                  point.size = repel_point_size
+                ),
                 inherit.aes = FALSE,
+                show.legend = FALSE,
                 color = "#4A148C",
+                fill = "white",
                 size = text_size_env_point,
                 fontface = "bold",
+                label.size = 0.25,
                 min.segment.length = 0,
-                box.padding = 0.2,
-                point.padding = 0.15,
-                max.overlaps = Inf
+                box.padding = 0.3,
+                point.padding = 0.25,
+                max.overlaps = Inf,
+                seed = 1002
               )
             } else {
-              p <- p + ggplot2::geom_text(
-                data = vec_point,
+              p <- p + ggplot2::geom_label(
+                data = vec_taxa,
                 ggplot2::aes(x = x_plot, y = y_plot, label = label),
                 inherit.aes = FALSE,
                 color = "#4A148C",
+                fill = "white",
                 size = text_size_env_point,
                 fontface = "bold",
+                label.size = 0.25,
                 hjust = -0.05,
-                vjust = -0.2,
-                check_overlap = TRUE
+                vjust = -0.2
               )
             }
           }
@@ -2101,7 +2149,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
           taxa_flag <- if ("is_taxa" %in% colnames(vec_df)) as.logical(vec_df$is_taxa) else rep(FALSE, nrow(vec_df))
           taxa_flag[is.na(taxa_flag)] <- FALSE
           vec_arrow <- vec_df[!taxa_flag, , drop = FALSE]
-          vec_point <- vec_df[taxa_flag, , drop = FALSE]
+          vec_taxa <- vec_df[taxa_flag, , drop = FALSE]
 
           if (nrow(vec_arrow) > 0) {
             vec_arrow$xend_plot <- pmin(pmax(vec_arrow$xend, x_min), x_max)
@@ -2152,45 +2200,72 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
             }
           }
 
-          if (nrow(vec_point) > 0) {
-            vec_point$x_plot <- pmin(pmax(vec_point$xend, x_min), x_max)
-            vec_point$y_plot <- pmin(pmax(vec_point$yend, y_min), y_max)
+          if (nrow(vec_taxa) > 0) {
+            vec_taxa$x_plot <- pmin(pmax(vec_taxa$xend, x_min), x_max)
+            vec_taxa$y_plot <- pmin(pmax(vec_taxa$yend, y_min), y_max)
+            taxa_repel_df <- data.frame(
+              x_plot = vec_taxa$x_plot,
+              y_plot = vec_taxa$y_plot,
+              label = vec_taxa$label,
+              repel_point_size = 1,
+              stringsAsFactors = FALSE
+            )
+            if (isTRUE(input$show_centroids) && !is.null(centroid_df) && nrow(centroid_df) > 0) {
+              taxa_repel_df <- dplyr::bind_rows(
+                taxa_repel_df,
+                data.frame(
+                  x_plot = centroid_df$x,
+                  y_plot = centroid_df$y,
+                  label = "",
+                  repel_point_size = 12,
+                  stringsAsFactors = FALSE
+                )
+              )
+            }
 
             p <- p +
-              ggplot2::geom_point(
-                data = vec_point,
-                ggplot2::aes(x = x_plot, y = y_plot),
+              ggplot2::geom_segment(
+                data = vec_taxa,
+                ggplot2::aes(x = 0, y = 0, xend = x_plot, yend = y_plot),
                 inherit.aes = FALSE,
-                shape = 21,
-                fill = "#7B1FA2",
-                color = "white",
-                stroke = 0.4,
-                size = 2.8
+                arrow = grid::arrow(length = grid::unit(0.22, "cm")),
+                color = "#7B1FA2",
+                linewidth = 0.9
               )
             if (requireNamespace("ggrepel", quietly = TRUE)) {
-              p <- p + ggrepel::geom_text_repel(
-                data = vec_point,
-                ggplot2::aes(x = x_plot, y = y_plot, label = label),
+              p <- p + ggrepel::geom_label_repel(
+                data = taxa_repel_df,
+                ggplot2::aes(
+                  x = x_plot,
+                  y = y_plot,
+                  label = label,
+                  point.size = repel_point_size
+                ),
                 inherit.aes = FALSE,
+                show.legend = FALSE,
                 color = "#4A148C",
+                fill = "white",
                 size = text_size_env_point,
                 fontface = "bold",
+                label.size = 0.25,
                 min.segment.length = 0,
-                box.padding = 0.2,
-                point.padding = 0.15,
-                max.overlaps = Inf
+                box.padding = 0.3,
+                point.padding = 0.25,
+                max.overlaps = Inf,
+                seed = 1002
               )
             } else {
-              p <- p + ggplot2::geom_text(
-                data = vec_point,
+              p <- p + ggplot2::geom_label(
+                data = vec_taxa,
                 ggplot2::aes(x = x_plot, y = y_plot, label = label),
                 inherit.aes = FALSE,
                 color = "#4A148C",
+                fill = "white",
                 size = text_size_env_point,
                 fontface = "bold",
+                label.size = 0.25,
                 hjust = -0.05,
-                vjust = -0.2,
-                check_overlap = TRUE
+                vjust = -0.2
               )
             }
           }
@@ -2721,10 +2796,12 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       env_note <- env_obj$note
 
       pcoa_taxa <- if (!is.null(env_obj$pcoa) && nrow(env_obj$pcoa) > 0) {
-        env_obj$pcoa[startsWith(as.character(env_obj$pcoa$variable), "Taxa::"), c("variable", "r2", "p_value"), drop = FALSE]
+        env_obj$pcoa[isTRUE(any(env_obj$pcoa$is_taxa)) & env_obj$pcoa$is_taxa,
+                         c("variable_label", "r2", "p_value"), drop = FALSE]
       } else data.frame()
       nmds_taxa <- if (!is.null(env_obj$nmds) && nrow(env_obj$nmds) > 0) {
-        env_obj$nmds[startsWith(as.character(env_obj$nmds$variable), "Taxa::"), c("variable", "r2", "p_value"), drop = FALSE]
+        env_obj$nmds[isTRUE(any(env_obj$nmds$is_taxa)) & env_obj$nmds$is_taxa,
+                         c("variable_label", "r2", "p_value"), drop = FALSE]
       } else data.frame()
 
       fmt_taxa_lines <- function(df, title) {
@@ -2735,7 +2812,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
         top_df <- head(df, 10)
         lines <- paste0(
           "- ",
-          gsub("^Taxa::", "", as.character(top_df$variable)),
+          as.character(top_df$variable_label),
           " | r2=",
           format(round(as.numeric(top_df$r2), 4), nsmall = 4),
           " | p=",

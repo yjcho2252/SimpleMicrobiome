@@ -56,22 +56,22 @@ mod_biplot_ui <- function(id) {
         width = 2,
         h4(icon("arrows-up-down-left-right"), "Constrained Ordination"),
         hr(),
-        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
+        selectInput(ns("group_var"), "Primary explanatory variable", choices = NULL),
         selectInput(
           ns("tax_level"),
-          "2. Taxonomic level",
+          "Taxonomic level",
           choices = c("ASV", "Genus", "Species", "Strain"),
           selected = "Genus"
         ),
         selectInput(
           ns("analysis_method"),
-          "3. Analysis method",
+          "Analysis method",
           choices = c("dbRDA (capscale)" = "dbrda", "CCA" = "cca"),
           selected = "dbrda"
         ),
         selectInput(
           ns("distance_metric"),
-          "4. Distance metric",
+          "Distance metric",
           choices = c(
             "Bray-Curtis" = "bray",
             "Jaccard" = "jaccard",
@@ -112,7 +112,7 @@ mod_biplot_ui <- function(id) {
             " Taxa Settings"
           ),
           br(),
-          checkboxInput(ns("show_taxa_vectors"), "Show taxa vectors", value = FALSE),
+          checkboxInput(ns("show_taxa_vectors"), "Show taxa scores", value = FALSE),
           numericInput(
             ns("prevalence_filter_pct"),
             "Prevalence filter (%)",
@@ -131,7 +131,7 @@ mod_biplot_ui <- function(id) {
           ),
           numericInput(
             ns("top_taxa_vectors"),
-            "Top taxa vectors",
+            "Top taxa scores",
             value = 15,
             min = 0,
             max = 100,
@@ -144,7 +144,7 @@ mod_biplot_ui <- function(id) {
             selected = NULL,
             multiple = TRUE,
             options = list(
-              placeholder = "Selected taxa are drawn instead of top taxa vectors",
+              placeholder = "Selected taxa are drawn instead of top taxa scores",
               plugins = list("remove_button")
             )
           )
@@ -154,13 +154,13 @@ mod_biplot_ui <- function(id) {
           tags$summary(
             style = "font-size: 16px; font-weight: 500; margin-bottom: 8px;",
             icon("leaf"),
-            " Environmental Variables"
+            " Explanatory Vectors"
           ),
           br(),
-          checkboxInput(ns("show_environment_vectors"), "Show environmental vectors", value = TRUE),
+          checkboxInput(ns("show_environment_vectors"), "Show explanatory vectors", value = TRUE),
           selectizeInput(
             ns("environment_vector_vars"),
-            "Variables to display",
+            "Explanatory vectors to display",
             choices = NULL,
             multiple = TRUE,
             options = list(plugins = list("remove_button"))
@@ -171,12 +171,13 @@ mod_biplot_ui <- function(id) {
           numericInput(ns("max_environment_vectors"), "Maximum vectors", value = 10, min = 1, max = 50, step = 1)
         ),
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Settings"),
+        h4(icon("up-right-and-down-left-from-center"), "Display Options"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 5, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
+        checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
         checkboxInput(ns("show_group_centroid"), "Show primary-group centroids", value = TRUE),
         checkboxInput(ns("show_additional_centroids"), "Show centroids for additional categorical variables", value = FALSE),
         checkboxInput(ns("show_sample_names"), "Show sample names", value = FALSE),
@@ -908,6 +909,31 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
           axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
         )
+      if (isTRUE(input$show_group_hulls) && isTRUE(payload$primary_is_categorical)) {
+        hull_parts <- lapply(split(site_df, as.character(site_df$Group)), function(group_df) {
+          group_df <- group_df[
+            is.finite(group_df$Axis1) & is.finite(group_df$Axis2),
+            ,
+            drop = FALSE
+          ]
+          if (nrow(group_df) < 3L || nrow(unique(group_df[, c("Axis1", "Axis2"), drop = FALSE])) < 3L) {
+            return(NULL)
+          }
+          group_df[grDevices::chull(group_df$Axis1, group_df$Axis2), , drop = FALSE]
+        })
+        hull_parts <- hull_parts[!vapply(hull_parts, is.null, logical(1))]
+        if (length(hull_parts) > 0L) {
+          hull_df <- dplyr::bind_rows(hull_parts)
+          p <- p + ggplot2::geom_polygon(
+            data = hull_df,
+            ggplot2::aes(x = Axis1, y = Axis2, group = Group, fill = Group, colour = Group),
+            inherit.aes = FALSE,
+            alpha = 0.14,
+            linewidth = 0.5,
+            show.legend = FALSE
+          )
+        }
+      }
       if (isTRUE(input$show_dot_outline)) {
         p <- p + ggplot2::geom_point(
           ggplot2::aes(
@@ -920,6 +946,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         p <- p + ggplot2::geom_point(size = dot_size, alpha = 0.9)
       }
 
+      centroid_df <- data.frame()
       if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) {
         centroid_df <- site_df %>%
           dplyr::group_by(Group) %>%
@@ -957,35 +984,76 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
       if (isTRUE(input$show_taxa_vectors) && nrow(taxa_df) > 0) {
         scale_mult <- 0.8
+        taxa_repel_df <- data.frame(
+          Axis1 = taxa_df$Axis1 * scale_mult,
+          Axis2 = taxa_df$Axis2 * scale_mult,
+          Taxon = taxa_df$Taxon,
+          repel_point_size = 1,
+          stringsAsFactors = FALSE
+        )
+        centroid_obstacles <- list()
+        if (nrow(centroid_df) > 0L) {
+          centroid_obstacles[[length(centroid_obstacles) + 1L]] <- data.frame(
+            Axis1 = centroid_df$Axis1,
+            Axis2 = centroid_df$Axis2,
+            Taxon = "",
+            repel_point_size = 12,
+            stringsAsFactors = FALSE
+          )
+        }
+        if (isTRUE(input$show_additional_centroids) && nrow(payload$additional_centroid_df) > 0L) {
+          centroid_obstacles[[length(centroid_obstacles) + 1L]] <- data.frame(
+            Axis1 = payload$additional_centroid_df$Axis1,
+            Axis2 = payload$additional_centroid_df$Axis2,
+            Taxon = "",
+            repel_point_size = 12,
+            stringsAsFactors = FALSE
+          )
+        }
+        if (length(centroid_obstacles) > 0L) {
+          taxa_repel_df <- dplyr::bind_rows(taxa_repel_df, dplyr::bind_rows(centroid_obstacles))
+        }
         p <- p +
           ggplot2::geom_segment(
             data = taxa_df,
             ggplot2::aes(x = 0, y = 0, xend = Axis1 * scale_mult, yend = Axis2 * scale_mult),
             inherit.aes = FALSE,
-            color = "#8C2D04",
-            linewidth = 0.5,
-            arrow = grid::arrow(length = grid::unit(0.15, "cm"))
+            color = "#7B1FA2",
+            linewidth = 0.9,
+            arrow = grid::arrow(length = grid::unit(0.22, "cm"))
           )
         if (requireNamespace("ggrepel", quietly = TRUE)) {
-          p <- p + ggrepel::geom_text_repel(
-            data = taxa_df,
-            ggplot2::aes(x = Axis1 * scale_mult, y = Axis2 * scale_mult, label = Taxon),
+          p <- p + ggrepel::geom_label_repel(
+            data = taxa_repel_df,
+            ggplot2::aes(
+              x = Axis1,
+              y = Axis2,
+              label = Taxon,
+              point.size = repel_point_size
+            ),
             inherit.aes = FALSE,
-            color = "#6A1B9A",
+            show.legend = FALSE,
+            color = "#4A148C",
+            fill = "white",
             size = text_size_taxa,
+            fontface = "bold",
+            label.size = 0.25,
             min.segment.length = 0,
-            box.padding = 0.2,
-            point.padding = 0.1,
-            max.overlaps = Inf
+            box.padding = 0.3,
+            point.padding = 0.25,
+            max.overlaps = Inf,
+            seed = 1002
           )
         } else {
-          p <- p + ggplot2::geom_text(
+          p <- p + ggplot2::geom_label(
             data = taxa_df,
             ggplot2::aes(x = Axis1 * scale_mult, y = Axis2 * scale_mult, label = Taxon),
             inherit.aes = FALSE,
-            color = "#6A1B9A",
+            color = "#4A148C",
+            fill = "white",
             size = text_size_taxa,
-            check_overlap = TRUE
+            fontface = "bold",
+            label.size = 0.25
           )
         }
       }
@@ -1106,17 +1174,30 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       } else {
         nrow(payload$species_df)
       }
+      continuous_model_vars <- names(payload$variable_types)[payload$variable_types == "Continuous"]
+      standardization_line <- if (
+        isTRUE(input$standardize_continuous) && length(continuous_model_vars) > 0L
+      ) {
+        paste0(
+          "Continuous-variable standardization: mean 0 and standard deviation 1 (",
+          paste(continuous_model_vars, collapse = ", "),
+          ")"
+        )
+      } else {
+        NULL
+      }
       paste(
         c(
           paste0("Model: ", payload$model_label),
           paste0("Distance metric: ", payload$metric_label),
           paste0("Transformation: ", payload$transformation_label),
+          standardization_line,
           paste0("Formula: ", payload$model_formula_label),
           paste0("Primary variable: ", input$group_var),
           paste0("Samples used: ", payload$n_samples, " / ", payload$n_samples_total),
           paste0("Samples excluded for missing values: ", payload$n_samples_excluded),
           paste0("Taxa used: ", payload$n_taxa),
-          paste0("Taxa vectors shown: ", taxa_vectors_shown),
+          paste0("Taxa scores shown: ", taxa_vectors_shown),
           paste0(
             "Permutation setup: ",
             payload$permutation_count,
@@ -1214,6 +1295,29 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         jsd = "Jensen-Shannon",
         "Bray-Curtis"
       )
+      taxa_scores_shown <- isTRUE(input$show_taxa_vectors) && if (
+        length(input$selected_taxa) > 0L && nrow(payload$species_all_df) > 0L
+      ) {
+        any(payload$species_all_df$Taxon %in% input$selected_taxa)
+      } else {
+        nrow(payload$species_df) > 0L
+      }
+      group_hulls_shown <- isTRUE(input$show_group_hulls) &&
+        isTRUE(payload$primary_is_categorical) &&
+        any(table(payload$site_df$Group) >= 3L)
+      continuous_model_vars <- names(payload$variable_types)[payload$variable_types == "Continuous"]
+      standardization_sentence <- if (
+        isTRUE(input$standardize_continuous) && length(continuous_model_vars) > 0L
+      ) {
+        paste0(
+          " Continuous model variables (",
+          paste(continuous_model_vars, collapse = ", "),
+          ") were standardized to mean 0 and standard deviation 1 before model fitting; ",
+          "categorical variables were not standardized."
+        )
+      } else {
+        ""
+      }
       body_text <- if (identical(input$analysis_method, "cca")) {
         paste0(
           "CCA constrained ordination projects sample relationships on CCA1 and CCA2 at ",
@@ -1223,8 +1327,15 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           ". Points are samples colored by ",
           input$group_var,
           ". ",
-          if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
+          if (taxa_scores_shown) {
+            paste0(
+              "Purple arrows represent taxa scores from the fitted constrained ordination; ",
+              "their directions and relative lengths describe associations with the displayed axes, ",
+              "and individual taxa p-values are not calculated. "
+            )
+          } else "",
           if (isTRUE(input$show_environment_vectors)) "Green dashed arrows show fitted continuous environmental variables. " else "",
+          if (group_hulls_shown) "Shaded polygons show convex hulls for primary-group samples. " else "",
           if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) "Boxed labels indicate primary-group centroids. " else "",
           if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
         )
@@ -1239,14 +1350,22 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           ". Points are samples colored by ",
           input$group_var,
           ". ",
-          if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
+          if (taxa_scores_shown) {
+            paste0(
+              "Purple arrows represent taxa scores from the fitted constrained ordination; ",
+              "their directions and relative lengths describe associations with the displayed axes, ",
+              "and individual taxa p-values are not calculated. "
+            )
+          } else "",
           if (isTRUE(input$show_environment_vectors)) "Green dashed arrows show fitted continuous environmental variables. " else "",
+          if (group_hulls_shown) "Shaded polygons show convex hulls for primary-group samples. " else "",
           if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) "Boxed labels indicate primary-group centroids. " else "",
           if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
         )
       }
       body_text <- paste0(
         body_text,
+        standardization_sentence,
         " Permutation-based tests use ",
         payload$permutation_count,
         " permutations with initial seed ",

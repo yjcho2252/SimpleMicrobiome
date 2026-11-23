@@ -1,9 +1,9 @@
 ﻿# SimpleMicrobiome Guide
 
-## v1.1.4 Highlights
-- Diversity now separates Alpha Diversity, Beta Diversity, and Constrained Ordination.
-- Constrained Ordination supports expanded model variables, dbRDA distance choices, and optional taxa/environmental displays.
-- Association Heatmap naming and 300 dpi PNG exports are used consistently across the app.
+## v1.1.5 Highlights
+- Beta Diversity and Constrained Ordination provide clearer taxa and explanatory-variable overlays.
+- EnvFit taxa statistics and differential-abundance subgroup workflows are more consistent.
+- Display controls and module terminology are standardized across the app.
 
 ## Module Guides
 - [Data Loading](/manual/data-loading.html)
@@ -17,7 +17,7 @@
 - [MaAsLin3](/manual/maaslin3.html)
 - [Random Forest](/manual/random-forest.html)
 - [SparCC](/manual/sparcc.html)
-- [SpiecEasi](/manual/spieceasi.html)
+- [SPIEC-EASI](/manual/spieceasi.html)
 - [Association Heatmap](/manual/correlation-heatmap.html)
 
 ## Quick Goal-Based Path
@@ -28,7 +28,7 @@
 - **Prediction focus**:
   - Random Forest
 - **Network focus**:
-  - SparCC + SpiecEasi
+  - SparCC + SPIEC-EASI
 - **Association visualization focus**:
   - Association Heatmap
 - **Constrained community analysis**:

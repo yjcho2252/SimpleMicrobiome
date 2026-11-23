@@ -12,7 +12,7 @@ SimpleMicrobiome is an R Shiny application for downstream microbiome analysis wi
 It integrates data loading, preprocessing, taxa profiling, diversity, differential abundance, network analysis, and association analysis in a single workflow.
 Public app: https://simplemicrobiome.mglab.org/
 
-Current source version: **v1.1.4**. See the [release notes](docs/releases/2026-11-23-v1.1.4.md), [changelog](CHANGELOG.md), and [user manual](docs/manual/README.md).
+Current source version: **v1.1.5**. See the [release notes](docs/releases/2026-11-24-v1.1.5.md), [changelog](CHANGELOG.md), and [user manual](docs/manual/README.md).
 
 ## About the App
 
@@ -40,7 +40,7 @@ Na, S.-I., Kim, J., Kim, S.-Y., Park, J., & Cho, Y.-J. (2026). SimpleMicrobiome:
 - **Diversity**
   - **Alpha Diversity** compares richness and diversity indices, with within-subject pairing available.
   - **Beta Diversity** provides PCoA and NMDS, automatic rarefaction for Jaccard, sample color overlays, clustering, and EnvFit. The results include PERMDISP and a comparison of adjusted and unadjusted PERMANOVA on the same samples.
-  - **Constrained Ordination** uses dbRDA or CCA to model community composition with primary, additional, and conditioning variables and displays taxa and continuous environmental vectors.
+  - **Constrained Ordination** uses dbRDA or CCA to model community composition with primary, additional, and conditioning variables and displays taxa scores and continuous explanatory vectors.
 - **Differential Abundance**
   - **ANCOM-BC2** tests differential abundance and provides forest plots, contrast heatmaps, and sample-level plots linked to the results.
   - **MaAsLin2** tests multivariable associations with categorical or continuous predictors and provides association heatmaps and sample-level plots.

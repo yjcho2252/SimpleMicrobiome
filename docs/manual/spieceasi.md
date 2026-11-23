@@ -1,10 +1,10 @@
-# SpiecEasi Manual
+# SPIEC-EASI Manual
 
 ## 1. What This Module Does
-SpiecEasi infers sparse microbial association networks using graphical-model approaches.
+SPIEC-EASI infers sparse microbial association networks using graphical-model approaches.
 This module uses NetCoMi with `measure = "spieceasi"` to estimate taxon association networks.
 
-Compared with SparCC, SpiecEasi focuses on sparse conditional-dependency structure rather than correlation-like association alone.
+Compared with SparCC, SPIEC-EASI focuses on sparse conditional-dependency structure rather than correlation-like association alone.
 
 The module supports:
 - `Single network`: estimate one or more group-specific networks.
@@ -27,7 +27,7 @@ The module supports:
 
 ### 2.4 Analysis mode
 - `Single network`: estimates networks for the selected eligible group levels.
-- `Compare two groups`: estimates one SpiecEasi network per selected group, then compares shared and group-specific edges.
+- `Compare two groups`: estimates one SPIEC-EASI network per selected group, then compares shared and group-specific edges.
 - Compare mode is descriptive. It does not run a separate edge-level statistical test between groups.
 
 ### 2.5 Taxonomic level
@@ -100,7 +100,7 @@ The module supports:
 ## 4. Interpretation Guide
 
 ### 4.1 Edge meaning
-- Edges represent sparse conditional-dependency structure under the SpiecEasi model.
+- Edges represent sparse conditional-dependency structure under the SPIEC-EASI model.
 - This is stronger than simple correlation but still not causal proof.
 
 ### 4.2 Graph sparsity

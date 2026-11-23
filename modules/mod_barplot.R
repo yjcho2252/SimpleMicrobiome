@@ -41,7 +41,7 @@ mod_barplot_ui <- function(id) {
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("chart-bar"), "Taxa Bar plot"),
+        h4(icon("chart-bar"), "Taxa Bar Plot"),
         hr(),
         
         uiOutput(ns("local_group_selector")), 
@@ -74,7 +74,7 @@ mod_barplot_ui <- function(id) {
           )
         ),
         hr(),
-        h4(icon("sliders"), "Plot Settings"),
+        h4(icon("sliders"), "Profile Settings"),
         selectInput(ns("plot_mode"), "Plot Display Mode:",
                     choices = c("Sample Level" = "Sample",
                                 "Group Mean" = "Group_Mean"),
@@ -114,7 +114,7 @@ mod_barplot_ui <- function(id) {
                     choices = palette_choices,
                     selected = "Paired"),
         hr(),
-        h4(icon("sliders"), "Plot Dimensions"),
+        h4(icon("sliders"), "Display Options"),
         checkboxInput(ns("auto_plot_width"), "Fit plot to screen", value = TRUE),
         conditionalPanel(
           condition = sprintf("!input['%s']", ns("auto_plot_width")),
@@ -145,7 +145,7 @@ mod_barplot_ui <- function(id) {
       ),
       mainPanel(
         width = 9,
-        h4("Taxa Bar plot"),
+        h4("Taxa Bar Plot"),
         div(
           class = "taxa-barplot-view",
           style = "width: max-content;",

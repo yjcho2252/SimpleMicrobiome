@@ -56,12 +56,12 @@ mod_randomforest_ui <- function(id) {
         width = 2,
         h4(icon("tree"), "Random Forest"),
         hr(),
-        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
-        checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
+        selectInput(ns("group_var"), "1. Primary explanatory variable", choices = NULL),
+        checkboxInput(ns("use_subgroup"), "Select subgroup of primary explanatory variable", value = FALSE),
         conditionalPanel(
           condition = "input.use_subgroup",
           ns = ns,
-          selectInput(ns("primary_level"), "Primary level to include", choices = NULL),
+          selectInput(ns("primary_level"), "Primary explanatory level to include", choices = NULL),
           selectInput(ns("outcome_var"), "Secondary grouping variable", choices = NULL)
         ),
         selectInput(
@@ -112,7 +112,7 @@ mod_randomforest_ui <- function(id) {
           numericInput(ns("seed"), "14. Random seed", value = 1234, min = 1, max = 999999, step = 1)
         ),
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+        h4(icon("up-right-and-down-left-from-center"), "Display Options"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 1160, min = 600, max = 3200, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),

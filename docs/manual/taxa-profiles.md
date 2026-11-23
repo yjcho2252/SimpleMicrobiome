@@ -2,7 +2,7 @@
 
 ## 1. Scope
 Taxa Profiles includes two menus:
-- **Taxa Bar plot**: composition overview
+- **Taxa Bar Plot**: composition overview
 - **Taxa Comparison**: group-wise statistical comparison
 
 Taxa Bar Plot subsamples samples above 2,000 reads to that depth. Samples at or below 2,000 reads retain their counts.
@@ -11,7 +11,7 @@ This document explains what each left-panel parameter does and how different set
 
 ---
 
-## 2. Taxa Bar plot: Left Panel Parameters
+## 2. Taxa Bar Plot: Left Panel Parameters
 
 ### 2.1 Primary Group (Facet)
 - **What it controls**: Main metadata grouping used to split panels.
@@ -269,7 +269,7 @@ For this example, set **Primary grouping variable** to `Timepoint`, leave **Seco
 ## 4. Minimal Recommended Presets
 
 ### Preset A: Fast exploratory scan
-- Taxa Bar plot:
+- Taxa Bar Plot:
   - Plot mode = `Sample Level`
   - Taxonomic level = `Genus`
   - Top N = `15`
@@ -280,7 +280,7 @@ For this example, set **Primary grouping variable** to `Timepoint`, leave **Seco
   - Correction = `BH`
 
 ### Preset B: Report-ready summary
-- Taxa Bar plot:
+- Taxa Bar Plot:
   - Plot mode = `Group Mean`
   - Top N = `10-15`
   - Full hierarchy labels for disambiguation

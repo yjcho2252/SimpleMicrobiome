@@ -14,8 +14,10 @@ mod_maaslin3_ui <- function(id) {
       div(
         id = required_select_id,
         div(class = "maaslin3-required",
-            selectInput(ns("primary"), "1. Primary variable", choices = c("Select a variable" = ""))),
+            selectInput(ns("primary"), "1. Primary explanatory variable", choices = c("Select a variable" = ""))),
         uiOutput(ns("primary_type_ui")),
+        checkboxInput(ns("use_subgroup"), "Select subgroup of primary explanatory variable", value = FALSE),
+        uiOutput(ns("subgroup_ui")),
         uiOutput(ns("comparison_ui")),
         uiOutput(ns("reference_ui")),
         div(class = "maaslin3-required",
@@ -43,7 +45,7 @@ mod_maaslin3_ui <- function(id) {
         verbatimTextOutput(ns("model"))
       ),
       hr(),
-      h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+      h4(icon("up-right-and-down-left-from-center"), "Display Options"),
       numericInput(ns("summary_width"), "Plot width (px)", 1200, min = 400, max = 4000, step = 50),
       numericInput(ns("summary_height"), "Plot height (px)", 1000, min = 400, max = 4000, step = 50),
       numericInput(ns("summary_font"), "Base font size (pt)", 10, min = 6, max = 30, step = 1),
@@ -124,6 +126,14 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     running <- reactiveVal(FALSE)
     next_run_at <- -Inf
 
+    draw_wait_message <- function(message_text) {
+      old_par <- graphics::par(no.readonly = TRUE)
+      on.exit(graphics::par(old_par), add = TRUE)
+      graphics::par(mar = c(0, 0, 0, 0))
+      graphics::plot.new()
+      graphics::text(0.5, 0.5, message_text, cex = 0.85)
+    }
+
     metadata <- reactive({
       req(ps_obj())
       as(phyloseq::sample_data(ps_obj()), "data.frame")
@@ -134,10 +144,20 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       ranks <- if (!is.null(taxonomy)) colnames(taxonomy)
       meta <- metadata()
       variables <- setdiff(names(meta), "SampleID")
+      rank_choices <- c("Feature level" = "__feature_level__", stats::setNames(ranks, ranks))
+      current_rank <- isolate(input$rank)
+      selected_rank <- if (isTruthy(current_rank) && current_rank %in% unname(rank_choices)) {
+        current_rank
+      } else if ("Genus" %in% ranks) {
+        "Genus"
+      } else {
+        "__feature_level__"
+      }
+      selected_primary <- if (length(variables) > 0L) variables[1L] else ""
       updateSelectInput(session, "rank",
-                        choices = c("Select a taxonomic level" = "", "Feature level" = "__feature_level__", ranks),
-                        selected = "")
-      updateSelectInput(session, "primary", choices = c("Select a variable" = "", variables))
+                        choices = rank_choices,
+                        selected = selected_rank)
+      updateSelectInput(session, "primary", choices = variables, selected = selected_primary)
       updateSelectizeInput(session, "covariates", choices = variables, server = TRUE)
       updateSelectizeInput(session, "subject", choices = variables, server = TRUE)
       updateSelectInput(session, "strata", choices = c("None" = "", variables))
@@ -158,11 +178,74 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       !numeric_primary() || identical(input$primary_type, "categorical")
     })
 
+    output$subgroup_ui <- renderUI({
+      req(input$primary, input$primary %in% names(metadata()))
+      if (!isTRUE(input$use_subgroup)) return(NULL)
+      if (!categorical_primary()) {
+        return(helpText("Treat the primary explanatory variable as categorical to select a subgroup."))
+      }
+
+      primary_values <- as.character(metadata()[[input$primary]])
+      primary_levels <- levels(factor(primary_values[!is.na(primary_values) & nzchar(primary_values)]))
+      categorical_variables <- setdiff(
+        names(metadata())[!vapply(metadata(), is.numeric, logical(1))],
+        c("SampleID", input$primary)
+      )
+      tagList(
+        selectInput(session$ns("primary_level"), "Primary explanatory level to include",
+                    choices = primary_levels,
+                    selected = if (isTruthy(isolate(input$primary_level)) &&
+                                  isolate(input$primary_level) %in% primary_levels) {
+                      isolate(input$primary_level)
+                    } else {
+                      head(primary_levels, 1L)
+                    }),
+        selectInput(session$ns("secondary"), "Secondary grouping variable",
+                    choices = categorical_variables,
+                    selected = if (isTruthy(isolate(input$secondary)) &&
+                                  isolate(input$secondary) %in% categorical_variables) {
+                      isolate(input$secondary)
+                    } else {
+                      head(categorical_variables, 1L)
+                    })
+      )
+    })
+
+    subgroup_active <- reactive({
+      isTRUE(input$use_subgroup) && categorical_primary()
+    })
+
+    analysis_primary <- reactive({
+      if (subgroup_active() && isTruthy(input$secondary)) input$secondary else input$primary
+    })
+
+    analysis_numeric <- reactive({
+      variable <- analysis_primary()
+      isTruthy(variable) && variable %in% names(metadata()) && is.numeric(metadata()[[variable]])
+    })
+
+    analysis_categorical <- reactive({
+      if (subgroup_active()) TRUE else categorical_primary()
+    })
+
+    observe({
+      req(ps_obj())
+      excluded <- if (subgroup_active()) input$primary else character()
+      choices <- setdiff(setdiff(names(metadata()), "SampleID"), excluded)
+      updateSelectizeInput(session, "covariates", choices = choices,
+                           selected = intersect(isolate(input$covariates), choices), server = TRUE)
+      updateSelectizeInput(session, "subject", choices = choices,
+                           selected = intersect(isolate(input$subject), choices), server = TRUE)
+      current_strata <- isolate(input$strata)
+      updateSelectInput(session, "strata", choices = c("None" = "", choices),
+                        selected = if (isTruthy(current_strata) && current_strata %in% choices) current_strata else "")
+    })
+
     special_effect_choices <- reactive({
       meta <- metadata()
-      fixed <- intersect(names(meta), unique(c(input$primary, input$covariates)))
+      fixed <- intersect(names(meta), unique(c(analysis_primary(), input$covariates)))
       categorical <- !vapply(meta[fixed], is.numeric, logical(1))
-      fixed[categorical | (fixed %in% input$primary & categorical_primary())]
+      fixed[categorical | (fixed %in% analysis_primary() & analysis_categorical())]
     })
 
     observe({
@@ -176,10 +259,11 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     })
 
     primary_levels <- reactive({
-      req(input$primary, input$primary %in% names(metadata()))
-      primary <- metadata()[[input$primary]]
-      if (categorical_primary()) {
-        values <- as.character(primary)
+      primary <- analysis_primary()
+      req(primary, primary %in% names(metadata()))
+      values_raw <- metadata()[[primary]]
+      if (analysis_categorical()) {
+        values <- as.character(values_raw)
         levels(factor(values[!is.na(values) & nzchar(values)]))
       } else {
         character()
@@ -187,10 +271,22 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     })
 
     output$comparison_ui <- renderUI({
+      if (is.null(ps_obj()) || !isTruthy(input$primary)) {
+        return(selectizeInput(
+          session$ns("comparison_groups"),
+          "2. Explanatory variable levels to compare",
+          choices = NULL,
+          multiple = TRUE,
+          options = list(
+            placeholder = "Select two or more levels to compare",
+            plugins = list("remove_button")
+          )
+        ))
+      }
       available <- primary_levels()
       if (length(available)) {
         tagList(
-          selectizeInput(session$ns("comparison_groups"), "2. Comparison groups (levels)",
+          selectizeInput(session$ns("comparison_groups"), "2. Explanatory variable levels to compare",
                          choices = available, selected = available, multiple = TRUE,
                          options = list(plugins = list("remove_button"))),
           if (length(available) > 10L) {
@@ -207,7 +303,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     output$ordered_levels_ui <- renderUI({
       req(input$ordered, input$ordered %in% special_effect_choices())
       available <- levels(factor(metadata()[[input$ordered]]))
-      if (identical(input$ordered, input$primary)) {
+      if (identical(input$ordered, analysis_primary())) {
         available <- intersect(available, input$comparison_groups)
       }
       selectizeInput(session$ns("ordered_levels"), "Select levels from lowest to highest",
@@ -218,7 +314,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
 
     interaction_pairs <- reactive({
       variables <- names(metadata())
-      fixed <- intersect(variables, unique(c(input$primary, input$covariates)))
+      fixed <- intersect(variables, unique(c(analysis_primary(), input$covariates)))
       if (length(fixed) < 2L) return(list())
       pairs <- utils::combn(fixed, 2, simplify = FALSE)
       keys <- vapply(pairs, function(pair) paste(match(pair, variables), collapse = ":"), character(1))
@@ -235,19 +331,29 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     })
 
     output$reference_ui <- renderUI({
-      req(input$primary, input$primary %in% names(metadata()))
-      if (categorical_primary() && !input$primary %in% c(input$group, input$ordered)) {
+      if (is.null(ps_obj()) || !isTruthy(input$primary)) {
+        return(selectInput(session$ns("reference"), "3. Reference level", choices = NULL))
+      }
+      primary <- analysis_primary()
+      req(primary, primary %in% names(metadata()))
+      if (analysis_categorical() && !primary %in% c(input$group, input$ordered)) {
         choices <- intersect(primary_levels(), input$comparison_groups)
         previous <- isolate(input$reference)
         selectInput(session$ns("reference"), "3. Reference level", choices = choices,
                     selected = if (isTruthy(previous) && previous %in% choices) previous else head(choices, 1L))
+      } else {
+        selectInput(session$ns("reference"), "3. Reference level", choices = NULL)
       }
     })
 
     settings <- reactive(list(
-      ps = ps_obj(), rank = input$rank, primary = input$primary,
-      numeric_as_category = numeric_primary() && categorical_primary(),
-      comparison_groups = if (isTruthy(input$primary) && !is.null(ps_obj())) {
+      ps = ps_obj(), rank = input$rank, primary = analysis_primary(),
+      use_subgroup = subgroup_active(),
+      secondary = if (subgroup_active()) input$secondary else "",
+      filter_variable = if (subgroup_active()) input$primary else "",
+      filter_level = if (subgroup_active()) input$primary_level else "",
+      numeric_as_category = analysis_numeric() && analysis_categorical(),
+      comparison_groups = if (isTruthy(analysis_primary()) && !is.null(ps_obj())) {
         intersect(primary_levels(), input$comparison_groups)
       },
       reference = input$reference, covariates = input$covariates,
@@ -264,6 +370,9 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     prepare_model <- function(config) {
       ps <- config$ps
       if (is.null(ps) || !isTruthy(config$primary)) stop("Load data and select a primary variable.")
+      if (isTRUE(config$use_subgroup) && !isTruthy(config$secondary)) {
+        stop("Select a secondary grouping variable for the subgroup analysis.")
+      }
       meta <- as(phyloseq::sample_data(ps), "data.frame")
       if (config$numeric_as_category) {
         meta[[config$primary]] <- as.character(meta[[config$primary]])
@@ -289,13 +398,21 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
 
       ids <- phyloseq::sample_names(ps)
       depth <- phyloseq::sample_sums(ps)[ids]
+      in_subgroup <- rep(TRUE, length(ids))
+      if (isTruthy(config$filter_variable)) {
+        if (!config$filter_variable %in% names(meta) || !isTruthy(config$filter_level)) {
+          stop("Select a valid primary explanatory variable subgroup.")
+        }
+        in_subgroup <- as.character(meta[ids, config$filter_variable]) == config$filter_level
+        in_subgroup[is.na(in_subgroup)] <- FALSE
+      }
       meta <- meta[ids, variables, drop = FALSE]
       in_comparison <- rep(TRUE, nrow(meta))
       if (!is.numeric(meta[[config$primary]])) {
-        if (length(config$comparison_groups) < 2L) stop("Select at least two comparison groups.")
+        if (length(config$comparison_groups) < 2L) stop("Select at least two explanatory variable levels to compare.")
         in_comparison <- meta[[config$primary]] %in% config$comparison_groups
       }
-      keep <- in_comparison & stats::complete.cases(meta) & is.finite(depth) & depth > 0
+      keep <- in_subgroup & in_comparison & stats::complete.cases(meta) & is.finite(depth) & depth > 0
       if (sum(keep) < 3L) stop("At least three samples with complete metadata and positive read counts are required.")
       meta <- meta[keep, , drop = FALSE]
       for (name in variables) {
@@ -360,6 +477,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
            group = unname(safe_names[group]), ordered = unname(safe_names[ordered]),
            fixed_effects = setdiff(fixed, special), random_effects = subject, strata = strata,
            reference = if (use_reference) config$reference else "",
+           filter_variable = config$filter_variable, filter_level = config$filter_level,
            excluded = sum(!keep), adjusted_depth = adjusted_depth)
     }
 
@@ -373,9 +491,14 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
           if (length(terms)) paste(terms, collapse = " + ") else "NULL"
         }
         lines <- c(
+          if (isTruthy(spec$filter_variable)) {
+            paste0("Primary explanatory variable filter: ", spec$filter_variable, " = ", spec$filter_level)
+          },
+          paste(if (isTruthy(spec$filter_variable)) "Secondary grouping variable:" else "Primary explanatory variable:",
+                config$primary),
           paste("Applied fixed_effects:", format_terms(spec$fixed_effects)),
           if (length(config$comparison_groups)) {
-            paste("Comparison groups:", paste(config$comparison_groups, collapse = ", "))
+            paste("Explanatory variable levels to compare:", paste(config$comparison_groups, collapse = ", "))
           },
           if (length(config$interactions)) {
             interactions <- vapply(config$interactions, paste, character(1), collapse = " × ")
@@ -491,6 +614,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     })
 
     output$status <- renderText({
+      req(ps_obj())
       run <- result()
       message <- status()
       if (startsWith(message, "MaAsLin3:")) return(message)
@@ -502,13 +626,23 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       }
       rank <- run$settings$rank
       if (identical(rank, "__feature_level__")) rank <- "Feature level"
-      paste(
+      lines <- c(
         message,
+        if (isTruthy(run$model$filter_variable)) {
+          paste0("Primary explanatory variable filter: ", run$model$filter_variable,
+                 " = ", run$model$filter_level)
+        },
+        paste(if (isTruthy(run$model$filter_variable)) "Secondary grouping variable:" else "Primary explanatory variable:",
+              run$settings$primary),
+        if (length(run$settings$comparison_groups)) {
+          paste("Explanatory variable levels to compare:",
+                paste(run$settings$comparison_groups, collapse = ", "))
+        },
         paste("Samples used:", nrow(run$model$metadata)),
         paste("Taxonomic level:", rank),
-        sprintf("Prevalence filter: %g%%", run$settings$prevalence),
-        sep = "\n"
+        sprintf("Prevalence filter: %g%%", run$settings$prevalence)
       )
+      paste(lines, collapse = "\n")
     })
 
     styled_summary <- reactive({
@@ -577,6 +711,9 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       render_summary_png(display_dpi)
     })
     output$summary <- renderUI({
+      if (is.null(result())) {
+        return(plotOutput(session$ns("summary_wait"), height = "200px"))
+      }
       run <- current()
       if (is.null(run$summary_plot)) {
         return(p(sprintf("No summary plot was produced at q ≤ %g. Check the results table and fit status.",
@@ -589,6 +726,13 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
             imageOutput(session$ns("summary_image"), height = "auto"))
       )
     })
+    output$summary_wait <- renderPlot({
+      if (isTRUE(running())) {
+        draw_wait_message("MaAsLin3 is running. Please wait...")
+      } else {
+        draw_wait_message("Click 'Run MaAsLin3' to start analysis.")
+      }
+    }, height = 200)
     output$summary_image <- renderImage({
       png <- summary_png()
       file <- tempfile(fileext = ".png")
@@ -660,9 +804,19 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
         ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"), legend.position = "bottom")
     })
 
-    output$volcano <- renderPlot(volcano_plot(),
+    output$volcano <- renderPlot({
+                                   if (is.null(result())) {
+                                     if (isTRUE(running())) {
+                                       draw_wait_message("MaAsLin3 is running. Please wait...")
+                                     } else {
+                                       draw_wait_message("Click 'Run MaAsLin3' to start analysis.")
+                                     }
+                                     return(invisible(NULL))
+                                   }
+                                   volcano_plot()
+                                 },
                                  width = function() volcano_dimensions()$width,
-                                 height = function() volcano_dimensions()$height)
+                                 height = function() if (is.null(result())) 200 else volcano_dimensions()$height)
     output$volcano_download <- downloadHandler("maaslin3-volcano.png", function(file) {
       size <- volcano_dimensions()
       ggplot2::ggsave(file, plot = volcano_plot(), device = ragg::agg_png, units = "in",

@@ -21,15 +21,15 @@ Current result tabs:
 
 ## 2. Left Panel Parameters (Detailed)
 
-### 2.1 Primary grouping variable
+### 2.1 Primary explanatory variable
 - Defines the main metadata context for filtering and subgroup workflow.
 - Use a biologically meaningful grouping column.
 
-### 2.2 Select subgroup
+### 2.2 Select subgroup of primary explanatory variable
 - Enables nested analysis mode.
 - When enabled, model is trained on a restricted subset (primary level + secondary grouping context).
 
-### 2.3 Primary level to include
+### 2.3 Primary explanatory level to include
 - Active only when subgroup mode is on.
 - Restricts samples to one level before modeling.
 - Too narrow subset can cause unstable metrics.

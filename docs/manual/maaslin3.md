@@ -6,8 +6,9 @@ MaAsLin3 tests microbial abundance and prevalence associations with metadata. Ab
 
 ## 2. Left Panel
 
-1. **Primary variable**. Choose the metadata variable of interest. For a numeric variable, **Treat as** defaults to **Continuous**. Choose **Categorical** for numeric group codes such as 0 and 5.
-2. **Comparison groups (levels)**. For categorical predictors, all observed levels start selected. Keep at least two. A warning appears above 10 observed levels, and you can still select and analyze the variable.
+1. **Primary explanatory variable**. Choose the metadata variable of interest. For a numeric variable, **Treat as** defaults to **Continuous**. Choose **Categorical** for numeric group codes such as 0 and 5.
+   - Enable **Select subgroup of primary explanatory variable** to restrict the analysis to one primary-variable level. Then choose the **Primary explanatory level to include** and a categorical **Secondary grouping variable**. The primary variable is used only as a sample filter, and the secondary variable becomes the variable tested by MaAsLin3.
+2. **Explanatory variable levels to compare**. For categorical predictors, all observed levels start selected. Keep at least two. A warning appears above 10 observed levels, and you can still select and analyze the variable.
 3. **Reference level**. Choose a baseline from the included levels for ordinary categorical contrasts. Group tests and ordered contrasts use their own comparison rules.
 4. **Taxonomic level**. Choose a taxonomic rank or **Feature level** to analyze individual input features.
 5. **Significance threshold (q)**. Sets the significance threshold for the summary plot and the table's significance filter. The default is 0.1.
@@ -23,9 +24,9 @@ MaAsLin3 tests microbial abundance and prevalence associations with metadata. Ab
 12. **Ordered contrasts**. Select a categorical fixed effect and supply its levels from lowest to highest. The model compares adjacent levels.
 13. **Matched strata**. Select one matching variable. The primary predictor must vary within at least one retained stratum. This setting cannot be combined with random intercepts.
 
-The preview lists selected terms, read depth adjustment, and the sample count used for analysis. The module uses TSS normalization, log transformation, and standardized numeric covariates. Abundance tests use a median coefficient comparison, and prevalence tests use zero as the null.
+The preview lists any primary-variable subgroup filter, the explanatory variable being tested, selected terms, read depth adjustment, and the sample count used for analysis. The module uses TSS normalization, log transformation, and standardized numeric covariates. Abundance tests use a median coefficient comparison, and prevalence tests use zero as the null.
 
-### Plot Dimensions
+### Display Options
 
 Set the width and height for Summary Plot and Volcano Plot. Plot width also sets the maximum width of the Results Table and Association Detail. The base font defaults to 10 pt.
 

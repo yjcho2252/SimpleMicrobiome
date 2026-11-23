@@ -159,7 +159,7 @@ mod_heatmap_ui <- function(id) {
           numericInput(ns("q_cutoff"), "FDR cutoff (q)", value = 0.05, min = 0.0001, max = 1, step = 0.01)
         ),
         hr(),
-        h4(icon("sliders"), "Plot Dimensions"),
+        h4(icon("sliders"), "Display Options"),
         numericInput(ns("cell_width"), "Cell width (px)", value = 30, min = 6, max = 80, step = 1),
         numericInput(ns("cell_height"), "Cell height (px)", value = 10, min = 6, max = 80, step = 1),
         numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),

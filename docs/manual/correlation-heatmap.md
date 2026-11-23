@@ -47,7 +47,7 @@ The module supports abundance-based associations and prevalence-based binary ass
 - `Mask non-significant cells (FDR)`: hides cells that do not pass the selected FDR cutoff.
 - `FDR cutoff (q)`: q-value threshold used when masking is enabled.
 
-### 2.8 Plot dimensions
+### 2.8 Display Options
 - `Cell width`, `Cell height`, and `Base Font Size` control readability.
 - Increase cell size for long labels or dense matrices.
 

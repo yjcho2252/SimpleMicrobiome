@@ -103,7 +103,7 @@ mod_taxa_comparison_ui <- function(id) {
           )
         ),
         hr(),
-        h4(icon("sliders"), "Plot Settings"),
+        h4(icon("sliders"), "Analysis & Plot Settings"),
         selectInput(
           ns("tax_level"),
           "Taxonomic Level:",
@@ -149,7 +149,7 @@ mod_taxa_comparison_ui <- function(id) {
         ),
         checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
         hr(),
-        h4(icon("sliders"), "P-value Options"),
+        h4(icon("sliders"), "Statistical Testing"),
         checkboxInput(ns("show_p_val"), "Show p-value bars", value = TRUE),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_p_val")),
@@ -177,7 +177,7 @@ mod_taxa_comparison_ui <- function(id) {
           selected = "BH"
         ),
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+        h4(icon("up-right-and-down-left-from-center"), "Display Options"),
         checkboxInput(ns("manual_facet_layout"), "Manual facet rows/cols", value = FALSE),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("manual_facet_layout")),

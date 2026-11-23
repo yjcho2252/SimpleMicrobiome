@@ -77,7 +77,7 @@ mod_spieceasi_ui <- function(id) {
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("diagram-project"), "SpiecEasi"),
+        h4(icon("diagram-project"), "SPIEC-EASI"),
         hr(),
         selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
         checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
@@ -116,7 +116,7 @@ mod_spieceasi_ui <- function(id) {
           numericInput(ns("seed"), "10. Seed", value = 1001, min = 1, step = 1)
         ),
         hr(),
-        h4(icon("up-right-and-down-left-from-center"), "Plot Dimensions"),
+        h4(icon("up-right-and-down-left-from-center"), "Display Options"),
         numericInput(ns("plot_width"), "Plot width (px)", value = 800, min = 400, max = 2400, step = 50),
         numericInput(ns("plot_height"), "Plot height (px)", value = 550, min = 300, max = 2400, step = 50),
         tags$div(
@@ -128,7 +128,7 @@ mod_spieceasi_ui <- function(id) {
             `data-val` = 0,
             style = "font-size: 12px;",
             tags$span(class = "spieceasi-run-icon", icon("spinner", class = "fa-spin")),
-            tags$span(class = "spieceasi-run-label", "Run SpiecEasi")
+            tags$span(class = "spieceasi-run-label", "Run SPIEC-EASI")
           ),
           tags$span("May take a long time.", style = "font-size: 11px; color: #b94a48;")
         ),
@@ -150,7 +150,7 @@ mod_spieceasi_ui <- function(id) {
         ))
       ),
       mainPanel(
-        h4("SpiecEasi Network"),
+        h4("SPIEC-EASI Network"),
         tags$div(
           id = ns("spieceasi_tab_container"),
           style = "max-width: 100%;",
@@ -210,7 +210,7 @@ mod_spieceasi_ui <- function(id) {
         ),
         uiOutput(ns("spieceasi_legend_box")),
         uiOutput(ns("spieceasi_status_separator")),
-        h5(icon("circle-info"), "SpiecEasi Status"),
+        h5(icon("circle-info"), "SPIEC-EASI Status"),
         uiOutput(ns("spieceasi_status_box"))
       )
     )
@@ -567,7 +567,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       now_ts <- Sys.time()
       next_allowed <- network_next_allowed_at()
       if (isTRUE(network_running())) {
-        showNotification("SpiecEasi is already running. Please wait for completion.", type = "message", duration = 3)
+        showNotification("SPIEC-EASI is already running. Please wait for completion.", type = "message", duration = 3)
         return(invisible(NULL))
       }
       if (!is.na(next_allowed) && now_ts < next_allowed) {
@@ -592,7 +592,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, running = TRUE, label = "Running..."))
       on.exit({
         network_running(FALSE)
-        session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, running = FALSE, label = "Run SpiecEasi"))
+        session$sendCustomMessage("toggle-spieceasi-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, running = FALSE, label = "Run SPIEC-EASI"))
       }, add = TRUE)
 
       set.seed(as.integer(input$seed))
@@ -604,7 +604,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       effective_group_var <- if (is.null(secondary_var_resolved)) primary_var_resolved else secondary_var_resolved
 
       result <- tryCatch({
-        withProgress(message = "Running NetCoMi SpiecEasi...", value = 0, {
+        withProgress(message = "Running NetCoMi SPIEC-EASI...", value = 0, {
           sample_ids <- colnames(otu_mat)
           if (!is.null(primary_var_resolved) && primary_var_resolved %in% colnames(sample_df)) {
             primary_values <- as.character(sample_df[[primary_var_resolved]])
@@ -694,14 +694,14 @@ mod_spieceasi_server <- function(id, ps_obj) {
                 msg <- conditionMessage(e)
                 is_parallel_worker_error <- grepl("jobs failed", msg, ignore.case = TRUE) && grepl("sparseiCov", msg, ignore.case = TRUE)
                 if (!is_parallel_worker_error) stop(e)
-                showNotification("SpiecEasi parallel run failed due to worker export issue. Retrying with 1 core.", type = "warning", duration = 8)
+                showNotification("SPIEC-EASI parallel run failed due to worker export issue. Retrying with 1 core.", type = "warning", duration = 8)
                 run_spieceasi(1)
               }
             )
 
             adja <- net_obj$adjaMat1
             if (is.null(adja)) adja <- net_obj$adjaMat
-            validate(need(!is.null(adja), paste("NetCoMi returned no adjacency matrix for SpiecEasi group:", group_name)))
+            validate(need(!is.null(adja), paste("NetCoMi returned no adjacency matrix for SPIEC-EASI group:", group_name)))
             adja_mat <- as.matrix(adja)
 
             assoc <- get_association_matrix(net_obj$assoMat1)
@@ -804,7 +804,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
           )
         })
       }, error = function(e) {
-        showNotification(paste("SpiecEasi execution failed:", e$message), type = "error", duration = NULL)
+        showNotification(paste("SPIEC-EASI execution failed:", e$message), type = "error", duration = NULL)
         NULL
       })
 
@@ -819,7 +819,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       validate(
         need(
           !results_stale(),
-          "Analysis settings changed after the last run. Click 'Run SpiecEasi' to update all result tabs."
+          "Analysis settings changed after the last run. Click 'Run SPIEC-EASI' to update all result tabs."
         )
       )
       res
@@ -866,7 +866,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
 
     output$comparison_status <- renderText({
       if (isTRUE(results_stale())) {
-        return("Status: Analysis settings changed after the last run. Click 'Run SpiecEasi' to update all result tabs.")
+        return("Status: Analysis settings changed after the last run. Click 'Run SPIEC-EASI' to update all result tabs.")
       }
       selected_group_var <- if (!is.null(input$secondary_var) && !identical(input$secondary_var, "None")) {
         input$secondary_var
@@ -1282,11 +1282,11 @@ mod_spieceasi_server <- function(id, ps_obj) {
 
     output$comparison_network_plot <- renderPlot({
       if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
-        draw_wait_message("Click 'Run SpiecEasi' to start analysis.")
+        draw_wait_message("Click 'Run SPIEC-EASI' to start analysis.")
         return(invisible(NULL))
       }
       if (isTRUE(network_running())) {
-        draw_wait_message("SpiecEasi analysis is running. Please wait...")
+        draw_wait_message("SPIEC-EASI analysis is running. Please wait...")
         return(invisible(NULL))
       }
       res <- display_network_result()
@@ -1349,7 +1349,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
     output$network_summary <- renderText({
       res <- display_network_result()
       lines <- c(
-        "SpiecEasi Network Summary",
+        "SPIEC-EASI Network Summary",
         paste0("Taxonomic level: ", res$run_settings$tax_level),
         paste0("Analysis mode: ", res$run_settings$analysis_mode),
         paste0("Prevalence cutoff: ", res$run_settings$prevalence_filter_pct, "%"),
@@ -1520,11 +1520,11 @@ mod_spieceasi_server <- function(id, ps_obj) {
 
     output$network_plot_all <- renderPlot({
       if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
-        draw_wait_message("Click 'Run SpiecEasi' to start analysis.")
+        draw_wait_message("Click 'Run SPIEC-EASI' to start analysis.")
         return(invisible(NULL))
       }
       if (isTRUE(network_running())) {
-        draw_wait_message("SpiecEasi analysis is running. Please wait...")
+        draw_wait_message("SPIEC-EASI analysis is running. Please wait...")
         return(invisible(NULL))
       }
       res <- display_network_result()
@@ -1545,11 +1545,11 @@ mod_spieceasi_server <- function(id, ps_obj) {
 
     output$network_plot_connected <- renderPlot({
       if (is.null(input$run_network_btn) || input$run_network_btn < 1) {
-        draw_wait_message("Click 'Run SpiecEasi' to start analysis.")
+        draw_wait_message("Click 'Run SPIEC-EASI' to start analysis.")
         return(invisible(NULL))
       }
       if (isTRUE(network_running())) {
-        draw_wait_message("SpiecEasi analysis is running. Please wait...")
+        draw_wait_message("SPIEC-EASI analysis is running. Please wait...")
         return(invisible(NULL))
       }
       res <- display_network_result()
@@ -1687,7 +1687,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       res <- display_network_result()
       run_settings <- res$run_settings
       active_tab <- if (is.null(input$spieceasi_active_tab) || !nzchar(input$spieceasi_active_tab)) "Network Plot (All)" else input$spieceasi_active_tab
-      title_text <- paste0("SpiecEasi ", active_tab)
+      title_text <- paste0("SPIEC-EASI ", active_tab)
       body_text <- if (identical(active_tab, "Network Plot (All)")) {
         "This panel shows all nodes and edges passing the minimum absolute edge-weight threshold. Edge color indicates sign (positive/negative), edge width indicates absolute weight, and node size reflects the selected node-size metric."
       } else if (identical(active_tab, "Network Plot (Connected)")) {
