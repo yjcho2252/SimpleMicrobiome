@@ -1599,7 +1599,8 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
       filename = function() { paste0("taxa_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") },
       content = function(file) {
         ggplot2::ggsave(file, plot = taxa_plot_reactive(), device = "png",
-                        width = input$plot_width/100, height = input$plot_height/100)
+                        width = input$plot_width/100, height = input$plot_height/100,
+                        dpi = 300)
       }
     )
     

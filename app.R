@@ -69,7 +69,7 @@ ui <- page_navbar(
         alt = "SimpleMicrobiome",
         style = "height: 30px; width: auto; display: block;"
       ),
-      tags$span("v.1.1.3", class = "navbar-app-version")
+      tags$span("v.1.1.4", class = "navbar-app-version")
     ),
     style = "display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; padding: 0;"
   ),
@@ -176,7 +176,8 @@ ui <- page_navbar(
     title = "Diversity",
     icon = icon("dna"),
     nav_panel("Alpha Diversity", icon = icon("circle-nodes"), mod_alpha_ui("mod_alpha")),
-    nav_panel("Beta Diversity", icon = icon("project-diagram"), mod_beta_ui("mod_beta"))
+    nav_panel("Beta Diversity", icon = icon("project-diagram"), mod_beta_ui("mod_beta")),
+    nav_panel("Constrained Ordination", icon = icon("arrows-up-down-left-right"), mod_biplot_ui("mod_biplot"))
   ),
   
   nav_menu(
@@ -197,8 +198,7 @@ ui <- page_navbar(
   nav_menu(
     title = "Association",
     icon = icon("diagram-next"),
-    nav_panel("Correlation Heatmap", icon = icon("table-cells"), mod_heatmap_ui("mod_heatmap")),
-    nav_panel("Association Biplot", icon = icon("arrows-up-down-left-right"), mod_biplot_ui("mod_biplot"))
+    nav_panel("Association Heatmap", icon = icon("table-cells"), mod_heatmap_ui("mod_heatmap"))
   ),
   nav_panel(
     title = "Citation",

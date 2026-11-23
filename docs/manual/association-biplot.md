@@ -1,14 +1,17 @@
-﻿# Association Biplot Manual
+# Constrained Ordination Manual
 
 ## 1. What This Module Does
-Association Biplot displays multivariate structure, jointly showing sample configuration and variable directionality.
+Constrained Ordination uses dbRDA or CCA to model multivariate community structure while jointly showing sample configuration and variable directionality.
 It is used to interpret how variables align with major ordination axes.
 
 ## 2. Left Panel Parameters (Detailed)
 
-### 2.1 Group / Metadata Variable
-- Defines the contextual grouping shown in biplot space.
-- Strongly affects visual interpretation of separation patterns.
+### 2.1 Primary and Additional Model Variables
+- **Primary grouping variable** defines sample color and the primary centroid labels.
+- **Additional explanatory variables** extend the constrained model with continuous environmental measurements or categorical metadata.
+- **Conditioning variables** are included through `Condition()` to adjust for nuisance structure without drawing them as fitted vectors.
+- Continuous model variables can be standardized before fitting, which is recommended when their measurement scales differ.
+- The formula preview reports the selected model structure and the number of complete samples before the analysis is run.
 
 ### 2.2 Feature / Taxa Scope
 - Selects which taxa/features are included in ordination context.
@@ -26,26 +29,33 @@ It is used to interpret how variables align with major ordination axes.
 ### 2.5 Distance Metric
 - Applies only when `dbRDA (capscale)` is selected.
 - `Bray-Curtis` is commonly used for relative abundance dissimilarity.
+- `Jaccard` compares presence/absence composition after equal-depth rarefaction.
+- `Jensen-Shannon` compares relative-abundance probability profiles.
 - `Aitchison` is based on log-ratio geometry and can be more robust for compositional structure.
 
 ### 2.6 Automatic Transformation and Filtering
 - Transformation is selected automatically according to the analysis method and distance:
   - `CCA`: TSS transformation (relative abundance).
   - `dbRDA + Bray-Curtis`: TSS transformation followed by Bray-Curtis distance.
+  - `dbRDA + Jaccard`: rarefaction to the minimum selected-sample depth before taxonomic aggregation, followed by presence/absence transformation and Jaccard distance.
+  - `dbRDA + Jensen-Shannon`: TSS transformation followed by Jensen-Shannon distance.
   - `dbRDA + Aitchison`: CLR transformation using `log(count + 1)`, centered within each sample, followed by Euclidean distance.
 - Prevalence filtering and the maximum-taxa selection are applied to aggregated counts before transformation.
 - Taxa with zero or non-finite variance after transformation are removed.
-- The selected transformation is reported in the Biplot Status panel and figure legend.
+- The selected transformation is reported in the Model Summary panel and figure legend.
 - These method-specific transformations are fixed to prevent unsupported combinations and ensure reproducible analysis settings.
 
 ### 2.7 Statistical Testing
-- dbRDA reports a PERMANOVA result from `vegan::adonis2`.
-- The constrained ordination model is also evaluated using `vegan::anova.cca`.
+- The constrained ordination model is evaluated using `vegan::anova.cca`.
+- Marginal permutation tests report each explanatory variable after accounting for the other selected variables.
+- `vegan::vif.cca` values are displayed to help identify collinearity among model terms.
 - Permutation-based tests use 999 permutations, with the random-number generator initialized using seed 42.
-- Report the PERMANOVA R2 as an effect-size measure together with its permutation p-value.
 
 ### 2.8 Variable Arrow / Loading Display Options
-- Controls whether and how variable vectors are drawn.
+- Taxa arrows are species scores from the fitted constrained ordination.
+- Continuous explanatory variables can be drawn as green dashed biplot vectors.
+- Environmental-vector labels can include marginal permutation p-values, and vectors can be filtered by significance or maximum count.
+- Categorical variables are represented by centroid labels instead of directional arrows.
 - Dense vector display can obscure sample pattern.
 - Use filtered vectors for presentation-focused views.
 
@@ -70,6 +80,7 @@ It is used to interpret how variables align with major ordination axes.
 ### 3.2 Arrows (variables)
 - Direction: increasing gradient of the variable in ordination space.
 - Length: relative contribution/association strength in displayed axes.
+- Taxa and environmental vectors have different meanings: taxa use species scores, while environmental arrows use fitted continuous-variable biplot scores.
 
 ### 3.3 Angle between arrows
 - Small angle: positive co-direction tendency.

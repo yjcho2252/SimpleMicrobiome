@@ -5,7 +5,8 @@ mod_top_ui <- function(id) {
 
   recent_count <- 5L
   version_history <- c(
-    "261123: v1.1.3 - Shared plot ordering and improved correlation heatmap styling.",
+    "261123: v1.1.4 - Reorganized diversity analyses, expanded constrained ordination, and standardized PNG exports.",
+    "261123: v1.1.3 - Shared plot ordering and improved association heatmap styling.",
     "261122: v1.1.2 - Expanded beta diversity tests, module-specific rarefaction, and clearer plots.",
     "261122: v1.1.1 - Automatic rarefaction, interactive Taxa Barplot, and new differential abundance plots.",
     "261121: v1.1 - MaAsLin3 added, with continuous predictors and expanded result visualizations in MaAsLin2.",

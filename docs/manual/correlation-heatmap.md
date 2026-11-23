@@ -1,7 +1,7 @@
-# Correlation Heatmap Manual
+# Association Heatmap Manual
 
 ## 1. What This Module Does
-Correlation Heatmap visualizes associations between taxa and metadata groups as a matrix.
+Association Heatmap visualizes associations between taxa and metadata groups as a matrix.
 The module supports abundance-based associations and prevalence-based binary associations.
 
 ## 2. Left Panel Parameters

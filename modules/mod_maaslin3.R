@@ -562,14 +562,19 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       list(plot = plot, width = width, height = height)
     })
 
-    summary_dpi <- 96
-    summary_png <- reactive({
+    display_dpi <- 96
+    export_dpi <- 300
+    render_summary_png <- function(dpi) {
       summary <- styled_summary()
       file <- tempfile(fileext = ".png")
       on.exit(unlink(file), add = TRUE)
-      ggplot2::ggsave(file, plot = summary$plot, device = ragg::agg_png, units = "px",
-                      width = summary$width, height = summary$height, dpi = summary_dpi, bg = "white")
+      ggplot2::ggsave(file, plot = summary$plot, device = ragg::agg_png, units = "in",
+                      width = summary$width / display_dpi, height = summary$height / display_dpi,
+                      dpi = dpi, bg = "white")
       readBin(file, "raw", n = file.size(file))
+    }
+    summary_png <- reactive({
+      render_summary_png(display_dpi)
     })
     output$summary <- renderUI({
       run <- current()
@@ -591,12 +596,12 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       list(src = file, contentType = "image/png", alt = "MaAsLin3 summary plot")
     }, deleteFile = TRUE)
     output$summary_download <- downloadHandler("maaslin3-summary.png", function(file) {
-      writeBin(summary_png(), file)
+      writeBin(render_summary_png(export_dpi), file)
     }, contentType = "image/png")
     output$summary_pdf <- downloadHandler("maaslin3-summary.pdf", function(file) {
       summary <- styled_summary()
       ggplot2::ggsave(file, plot = summary$plot, device = "pdf", units = "in",
-                      width = summary$width / summary_dpi, height = summary$height / summary_dpi,
+                      width = summary$width / display_dpi, height = summary$height / display_dpi,
                       bg = "white")
     }, contentType = "application/pdf")
     output$tsv <- downloadHandler("maaslin3-all-results.tsv", function(file) {
@@ -660,8 +665,9 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
                                  height = function() volcano_dimensions()$height)
     output$volcano_download <- downloadHandler("maaslin3-volcano.png", function(file) {
       size <- volcano_dimensions()
-      ggplot2::ggsave(file, plot = volcano_plot(), device = ragg::agg_png, units = "px",
-                      width = size$width, height = size$height, dpi = summary_dpi, bg = "white")
+      ggplot2::ggsave(file, plot = volcano_plot(), device = ragg::agg_png, units = "in",
+                      width = size$width / display_dpi, height = size$height / display_dpi,
+                      dpi = export_dpi, bg = "white")
     }, contentType = "image/png")
 
     visible_results <- reactive({

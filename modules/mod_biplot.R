@@ -54,9 +54,9 @@ mod_biplot_ui <- function(id) {
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("arrows-up-down-left-right"), "Association Biplot"),
+        h4(icon("arrows-up-down-left-right"), "Constrained Ordination"),
         hr(),
-        selectInput(ns("group_var"), "1. Group variable", choices = NULL),
+        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
         selectInput(
           ns("tax_level"),
           "2. Taxonomic level",
@@ -72,45 +72,103 @@ mod_biplot_ui <- function(id) {
         selectInput(
           ns("distance_metric"),
           "4. Distance metric",
-          choices = c("Bray-Curtis" = "bray", "Aitchison" = "aitchison"),
+          choices = c(
+            "Bray-Curtis" = "bray",
+            "Jaccard" = "jaccard",
+            "Jensen-Shannon" = "jsd",
+            "Aitchison" = "aitchison"
+          ),
           selected = "bray"
         ),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == 'jaccard'", ns("distance_metric")),
+          textOutput(ns("jaccard_rarefaction_depth"))
+        ),
+        tags$details(
+          tags$summary(strong("Advanced Model Settings")),
+          br(),
+          selectizeInput(
+            ns("additional_vars"),
+            "Additional explanatory variables",
+            choices = NULL,
+            multiple = TRUE,
+            options = list(plugins = list("remove_button"))
+          ),
+          selectizeInput(
+            ns("conditioning_vars"),
+            "Conditioning variables",
+            choices = NULL,
+            multiple = TRUE,
+            options = list(plugins = list("remove_button"))
+          ),
+          checkboxInput(ns("standardize_continuous"), "Standardize continuous variables", value = TRUE),
+          uiOutput(ns("model_formula_preview"))
+        ),
         hr(),
-        h4(icon("dna"), "Taxa Settings"),
-        numericInput(
-          ns("prevalence_filter_pct"),
-          "Prevalence filter (%)",
-          value = 10,
-          min = 0,
-          max = 100,
-          step = 1
-        ),
-        numericInput(
-          ns("max_taxa"),
-          "Max taxa",
-          value = 100,
-          min = 10,
-          max = 500,
-          step = 10
-        ),
-        numericInput(
-          ns("top_taxa_vectors"),
-          "Top taxa vectors",
-          value = 15,
-          min = 0,
-          max = 100,
-          step = 1
-        ),
-        selectizeInput(
-          ns("selected_taxa"),
-          "Selected taxa (optional)",
-          choices = NULL,
-          selected = NULL,
-          multiple = TRUE,
-          options = list(
-            placeholder = "Selected taxa are drawn instead of top taxa vectors",
-            plugins = list("remove_button")
+        tags$details(
+          tags$summary(
+            style = "font-size: 16px; font-weight: 500; margin-bottom: 8px;",
+            icon("dna"),
+            " Taxa Settings"
+          ),
+          br(),
+          checkboxInput(ns("show_taxa_vectors"), "Show taxa vectors", value = FALSE),
+          numericInput(
+            ns("prevalence_filter_pct"),
+            "Prevalence filter (%)",
+            value = 10,
+            min = 0,
+            max = 100,
+            step = 1
+          ),
+          numericInput(
+            ns("max_taxa"),
+            "Max taxa",
+            value = 100,
+            min = 10,
+            max = 500,
+            step = 10
+          ),
+          numericInput(
+            ns("top_taxa_vectors"),
+            "Top taxa vectors",
+            value = 15,
+            min = 0,
+            max = 100,
+            step = 1
+          ),
+          selectizeInput(
+            ns("selected_taxa"),
+            "Selected taxa (optional)",
+            choices = NULL,
+            selected = NULL,
+            multiple = TRUE,
+            options = list(
+              placeholder = "Selected taxa are drawn instead of top taxa vectors",
+              plugins = list("remove_button")
+            )
           )
+        ),
+        hr(),
+        tags$details(
+          tags$summary(
+            style = "font-size: 16px; font-weight: 500; margin-bottom: 8px;",
+            icon("leaf"),
+            " Environmental Variables"
+          ),
+          br(),
+          checkboxInput(ns("show_environment_vectors"), "Show environmental vectors", value = TRUE),
+          selectizeInput(
+            ns("environment_vector_vars"),
+            "Variables to display",
+            choices = NULL,
+            multiple = TRUE,
+            options = list(plugins = list("remove_button"))
+          ),
+          checkboxInput(ns("environment_only_significant"), "Show only significant variables", value = FALSE),
+          numericInput(ns("environment_p_cutoff"), "P-value cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
+          checkboxInput(ns("show_environment_pvalues"), "Show p-values in labels", value = FALSE),
+          numericInput(ns("max_environment_vectors"), "Maximum vectors", value = 10, min = 1, max = 50, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Plot Settings"),
@@ -119,9 +177,8 @@ mod_biplot_ui <- function(id) {
         numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 5, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
-        checkboxInput(ns("show_taxa_vectors"), "Show taxa vectors", value = TRUE),
-        checkboxInput(ns("show_group_vectors"), "Show group vectors", value = TRUE),
-        checkboxInput(ns("show_group_centroid"), "Show group centroids", value = TRUE),
+        checkboxInput(ns("show_group_centroid"), "Show primary-group centroids", value = TRUE),
+        checkboxInput(ns("show_additional_centroids"), "Show centroids for additional categorical variables", value = FALSE),
         checkboxInput(ns("show_sample_names"), "Show sample names", value = FALSE),
         tags$button(
           id = ns("run_biplot"),
@@ -130,7 +187,7 @@ mod_biplot_ui <- function(id) {
           `data-val` = 0,
           style = "font-size: 12px;",
           tags$span(class = "biplot-run-icon", icon("spinner", class = "fa-spin")),
-          tags$span(class = "biplot-run-label", "Run Biplot")
+          tags$span(class = "biplot-run-label", "Run Ordination")
         ),
         hr(),
         h5(icon("download"), "Download"),
@@ -170,12 +227,17 @@ mod_biplot_ui <- function(id) {
         ))
       ),
       mainPanel(
-        h4("Association Biplot"),
+        h4("Constrained Ordination"),
         plotOutput(ns("biplot_plot"), height = "auto"),
         uiOutput(ns("biplot_legend_box")),
         uiOutput(ns("biplot_status_separator")),
-        h5(icon("circle-info"), "Biplot Status"),
-        uiOutput(ns("biplot_status_box"))
+        tabsetPanel(
+          id = ns("biplot_results_tab"),
+          tabPanel("Model Summary", uiOutput(ns("biplot_status_box"))),
+          tabPanel("Term Tests", tableOutput(ns("biplot_term_tests"))),
+          tabPanel("Collinearity", tableOutput(ns("biplot_vif_table"))),
+          tabPanel("Sample Exclusions", tableOutput(ns("biplot_exclusions")))
+        )
       )
     )
   )
@@ -240,6 +302,23 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       ps_data
     }
 
+    jaccard_rarefaction <- reactive({
+      req(identical(input$distance_metric, "jaccard"), ps_obj())
+      reads <- phyloseq::sample_sums(ps_obj())
+      validate(
+        need(
+          length(reads) > 0L && all(is.finite(reads) & reads >= 1),
+          "Jaccard rarefaction requires selected samples with positive read counts."
+        )
+      )
+      list(depth = min(reads), subsample = any(reads > min(reads)))
+    })
+
+    output$jaccard_rarefaction_depth <- renderText({
+      info <- jaccard_rarefaction()
+      paste0("Jaccard rarefaction depth: ", scales::comma(info$depth), " reads per sample.")
+    })
+
     observeEvent(ps_obj(), {
       req(ps_obj())
       sd <- phyloseq::sample_data(ps_obj(), errorIfNULL = FALSE)
@@ -251,9 +330,104 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       group_choices <- setdiff(colnames(meta_df), "SampleID")
       sel <- if (!is.null(input$group_var) && input$group_var %in% group_choices) input$group_var else if (length(group_choices) > 0) group_choices[1] else NULL
       updateSelectInput(session, "group_var", choices = group_choices, selected = sel)
+      additional_selected <- intersect(isolate(input$additional_vars), setdiff(group_choices, sel))
+      conditioning_selected <- intersect(isolate(input$conditioning_vars), setdiff(group_choices, c(sel, additional_selected)))
+      updateSelectizeInput(
+        session, "additional_vars",
+        choices = setdiff(group_choices, sel),
+        selected = additional_selected,
+        server = TRUE
+      )
+      updateSelectizeInput(
+        session, "conditioning_vars",
+        choices = setdiff(group_choices, sel),
+        selected = conditioning_selected,
+        server = TRUE
+      )
     }, ignoreInit = FALSE)
 
-    biplot_running <- reactiveVal(FALSE)
+    observeEvent(input$group_var, {
+      req(ps_obj())
+      sd <- phyloseq::sample_data(ps_obj(), errorIfNULL = FALSE)
+      if (is.null(sd)) return()
+      meta_df <- as.data.frame(sd, stringsAsFactors = FALSE)
+      all_choices <- setdiff(colnames(meta_df), "SampleID")
+      primary <- input$group_var
+      additional <- setdiff(intersect(input$additional_vars, all_choices), primary)
+      conditioning <- setdiff(intersect(input$conditioning_vars, all_choices), c(primary, additional))
+      updateSelectizeInput(
+        session, "additional_vars",
+        choices = setdiff(all_choices, primary),
+        selected = additional,
+        server = TRUE
+      )
+      updateSelectizeInput(
+        session, "conditioning_vars",
+        choices = setdiff(all_choices, primary),
+        selected = conditioning,
+        server = TRUE
+      )
+    }, ignoreInit = TRUE)
+
+    observeEvent(list(input$additional_vars, input$conditioning_vars), {
+      additional <- unique(as.character(input$additional_vars))
+      conditioning <- unique(as.character(input$conditioning_vars))
+      conditioning_clean <- setdiff(conditioning, additional)
+      if (!identical(conditioning, conditioning_clean)) {
+        updateSelectizeInput(session, "conditioning_vars", selected = conditioning_clean, server = TRUE)
+      }
+    }, ignoreInit = TRUE)
+
+    observeEvent(list(input$group_var, input$additional_vars), {
+      req(ps_obj())
+      sd <- phyloseq::sample_data(ps_obj(), errorIfNULL = FALSE)
+      if (is.null(sd)) return()
+      meta_df <- as.data.frame(sd, stringsAsFactors = FALSE)
+      all_choices <- setdiff(colnames(meta_df), "SampleID")
+      primary <- input$group_var
+      additional <- setdiff(intersect(input$additional_vars, all_choices), primary)
+      explanatory <- unique(c(primary, additional))
+      continuous <- explanatory[vapply(meta_df[explanatory], function(x) is.numeric(x) || is.integer(x), logical(1))]
+      selected_vectors <- intersect(isolate(input$environment_vector_vars), continuous)
+      if (length(selected_vectors) == 0L) selected_vectors <- continuous
+      updateSelectizeInput(
+        session, "environment_vector_vars",
+        choices = continuous,
+        selected = selected_vectors,
+        server = TRUE
+      )
+    }, ignoreInit = FALSE)
+
+    selected_model_variables <- reactive({
+      primary <- input$group_var
+      additional <- setdiff(unique(input$additional_vars), primary)
+      conditioning <- setdiff(unique(input$conditioning_vars), c(primary, additional))
+      list(primary = primary, explanatory = unique(c(primary, additional)), conditioning = conditioning)
+    })
+
+    output$model_formula_preview <- renderUI({
+      vars <- selected_model_variables()
+      req(length(vars$primary) == 1L)
+      rhs <- paste(vars$explanatory, collapse = " + ")
+      if (length(vars$conditioning) > 0L) {
+        rhs <- paste(c(rhs, paste0("Condition(", vars$conditioning, ")")), collapse = " + ")
+      }
+      sample_line <- NULL
+      if (!is.null(ps_obj())) {
+        meta <- as.data.frame(phyloseq::sample_data(ps_obj()), stringsAsFactors = FALSE)
+        used <- unique(c(vars$explanatory, vars$conditioning))
+        if (length(used) > 0L && all(used %in% colnames(meta))) {
+          complete <- stats::complete.cases(meta[, used, drop = FALSE])
+          sample_line <- paste0("Complete samples: ", sum(complete), " / ", nrow(meta))
+        }
+      }
+      tags$div(
+        style = "font-size: 11px; padding: 8px; background: #f8fafc; border: 1px solid #d9e2ec; border-radius: 6px; margin-bottom: 8px;",
+        tags$strong("Model formula"),
+        tags$div(paste0("Community ~ ", rhs), style = "overflow-wrap: anywhere;"),
+        if (!is.null(sample_line)) tags$div(sample_line, style = "margin-top: 4px; color: #4b5563;")
+      )
+    })
 
     biplot_running <- reactiveVal(FALSE)
     biplot_run_nonce <- reactiveVal(0L)
@@ -287,6 +461,9 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       list(
         data = phyloseq_signature(ps_obj()),
         group_var = input$group_var,
+        additional_vars = sort(as.character(input$additional_vars)),
+        conditioning_vars = sort(as.character(input$conditioning_vars)),
+        standardize_continuous = isTRUE(input$standardize_continuous),
         tax_level = input$tax_level,
         analysis_method = input$analysis_method,
         distance_metric = input$distance_metric,
@@ -300,7 +477,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       now_ts <- Sys.time()
       next_allowed <- biplot_next_allowed_at()
       if (isTRUE(biplot_running())) {
-        showNotification("Biplot is already running. Please wait for completion.", type = "message", duration = 3)
+        showNotification("Constrained ordination is already running. Please wait for completion.", type = "message", duration = 3)
         return(invisible(NULL))
       }
       if (!is.na(next_allowed) && now_ts < next_allowed) {
@@ -323,7 +500,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           biplot_running(FALSE)
           session$sendCustomMessage(
             "toggle-biplot-run-btn",
-            list(id = session$ns("run_biplot"), disabled = FALSE, running = FALSE, label = "Run Biplot")
+            list(id = session$ns("run_biplot"), disabled = FALSE, running = FALSE, label = "Run Ordination")
           )
         },
         add = TRUE
@@ -337,6 +514,23 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         need(phyloseq::nsamples(ps_data) >= 4, "At least 4 samples are required."),
         need(phyloseq::ntaxa(ps_data) >= 3, "At least 3 taxa are required.")
       )
+
+      jaccard_info <- NULL
+      if (identical(input$analysis_method, "dbrda") && identical(input$distance_metric, "jaccard")) {
+        jaccard_info <- jaccard_rarefaction()
+        if (isTRUE(jaccard_info$subsample)) {
+          ps_data <- withr::with_preserve_seed(
+            phyloseq::rarefy_even_depth(
+              ps_data,
+              sample.size = jaccard_info$depth,
+              rngseed = 42,
+              replace = FALSE,
+              trimOTUs = TRUE,
+              verbose = FALSE
+            )
+          )
+        }
+      }
 
       if (!identical(input$tax_level, "ASV")) {
         validate(
@@ -373,6 +567,9 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         if (!is.matrix(otu_model)) otu_model <- matrix(otu_model, nrow = nrow(log_mat))
         rownames(otu_model) <- rownames(log_mat)
         colnames(otu_model) <- colnames(log_mat)
+      } else if (identical(input$analysis_method, "dbrda") && identical(input$distance_metric, "jaccard")) {
+        otu_model <- ifelse(otu > 0, 1, 0)
+        dimnames(otu_model) <- dimnames(otu)
       } else {
         totals <- colSums(otu, na.rm = TRUE)
         totals[totals <= 0 | is.na(totals)] <- 1
@@ -384,28 +581,65 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       validate(need(nrow(otu_model) >= 3, "Too few taxa remain after variance filtering."))
 
       sd <- phyloseq::sample_data(ps_data, errorIfNULL = FALSE)
-      validate(need(!is.null(sd), "Metadata is required for biplot."))
+      validate(need(!is.null(sd), "Metadata is required for constrained ordination."))
       meta_df <- as.data.frame(sd, stringsAsFactors = FALSE)
-      validate(need(input$group_var %in% colnames(meta_df), "Selected group variable is not available in metadata."))
+      selected_vars <- selected_model_variables()
+      explanatory_vars <- selected_vars$explanatory
+      conditioning_vars <- selected_vars$conditioning
+      all_model_vars <- unique(c(explanatory_vars, conditioning_vars))
+      validate(
+        need(length(explanatory_vars) > 0L, "Select at least one explanatory variable."),
+        need(all(all_model_vars %in% colnames(meta_df)), "One or more selected model variables are unavailable in metadata.")
+      )
 
       sample_ids <- colnames(otu_model)
       meta_df <- meta_df[sample_ids, , drop = FALSE]
-      group_raw <- meta_df[[input$group_var]]
-      group_chr <- as.character(group_raw)
-      keep_samples <- !is.na(group_raw) & nzchar(group_chr)
-      validate(need(sum(keep_samples) >= 4, "At least 4 samples with valid group values are required."))
+      model_source <- meta_df[, all_model_vars, drop = FALSE]
+      nonempty <- vapply(model_source, function(x) {
+        if (is.character(x) || is.factor(x)) !is.na(x) & nzchar(trimws(as.character(x))) else !is.na(x)
+      }, logical(nrow(model_source)))
+      if (is.null(dim(nonempty))) {
+        nonempty <- matrix(nonempty, ncol = 1L, dimnames = list(rownames(model_source), all_model_vars))
+      }
+      keep_samples <- if (is.null(dim(nonempty))) nonempty else apply(nonempty, 1, all)
+      excluded_samples <- data.frame(SampleID = character(0), MissingVariables = character(0))
+      if (any(!keep_samples)) {
+        excluded_samples <- data.frame(
+          SampleID = rownames(model_source)[!keep_samples],
+          MissingVariables = apply(nonempty[!keep_samples, , drop = FALSE], 1, function(x) {
+            paste(all_model_vars[!x], collapse = ", ")
+          }),
+          stringsAsFactors = FALSE
+        )
+      }
+      validate(need(sum(keep_samples) >= 4, "At least 4 complete samples are required for the selected model variables."))
       otu_model <- otu_model[, keep_samples, drop = FALSE]
       meta_df <- meta_df[keep_samples, , drop = FALSE]
-      group_raw <- meta_df[[input$group_var]]
-      group_model <- if (is.numeric(group_raw) || is.integer(group_raw)) {
-        as.numeric(group_raw)
-      } else {
-        group_chr <- as.character(group_raw)
-        group_chr[is.na(group_chr) | !nzchar(group_chr)] <- "(Missing)"
-        droplevels(as.factor(group_chr))
+
+      internal_names <- c(
+        paste0("term_", seq_along(explanatory_vars)),
+        paste0("condition_", seq_along(conditioning_vars))
+      )
+      names(internal_names) <- all_model_vars
+      model_df <- data.frame(row.names = rownames(meta_df))
+      variable_types <- character(length(all_model_vars))
+      names(variable_types) <- all_model_vars
+      for (variable in all_model_vars) {
+        value <- meta_df[[variable]]
+        internal <- internal_names[[variable]]
+        if (is.numeric(value) || is.integer(value)) {
+          value <- as.numeric(value)
+          validate(need(is.finite(stats::sd(value)) && stats::sd(value) > 0, paste0("Variable '", variable, "' has no usable variation.")))
+          if (isTRUE(input$standardize_continuous)) value <- as.numeric(scale(value))
+          model_df[[internal]] <- value
+          variable_types[[variable]] <- "Continuous"
+        } else {
+          value <- droplevels(as.factor(as.character(value)))
+          validate(need(nlevels(value) >= 2L, paste0("Variable '", variable, "' must contain at least two levels.")))
+          model_df[[internal]] <- value
+          variable_types[[variable]] <- "Categorical"
+        }
       }
-      model_df <- data.frame(group_model = group_model, stringsAsFactors = FALSE)
-      rownames(model_df) <- rownames(meta_df)
       comm_df <- as.data.frame(t(otu_model), stringsAsFactors = FALSE)
       validate(
         need(nrow(model_df) == nrow(comm_df), "Model data and community matrix row counts do not match."),
@@ -413,50 +647,63 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       )
 
       model_type <- input$analysis_method
-      permanova_p <- NA_real_
-      permanova_r2 <- NA_real_
-      metric_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis"
-      transformation_label <- if (
-        identical(model_type, "dbrda") &&
-          identical(input$distance_metric, "aitchison")
-      ) {
-        "CLR (log(count + 1), centered within each sample)"
+      metric_label <- switch(
+        input$distance_metric,
+        aitchison = "Aitchison",
+        jaccard = "Jaccard",
+        jsd = "Jensen-Shannon",
+        "Bray-Curtis"
+      )
+      transformation_label <- if (identical(model_type, "dbrda")) {
+        switch(
+          input$distance_metric,
+          aitchison = "CLR (log(count + 1), centered within each sample)",
+          jaccard = paste0(
+            "Rarefaction to ", scales::comma(jaccard_info$depth),
+            " reads per sample, followed by presence/absence"
+          ),
+          "TSS (relative abundance)"
+        )
       } else {
         "TSS (relative abundance)"
       }
+      explanatory_terms <- unname(internal_names[explanatory_vars])
+      condition_terms <- unname(internal_names[conditioning_vars])
+      rhs_terms <- explanatory_terms
+      if (length(condition_terms) > 0L) rhs_terms <- c(rhs_terms, paste0("Condition(", condition_terms, ")"))
+      response_name <- if (identical(model_type, "dbrda")) "dist_obj" else "comm_df"
+      model_formula <- stats::as.formula(paste(response_name, "~", paste(rhs_terms, collapse = " + ")))
       set.seed(42L)
       if (identical(model_type, "dbrda")) {
-        dist_method <- if (identical(input$distance_metric, "aitchison")) "euclidean" else "bray"
         dist_obj <- tryCatch(
-          vegan::vegdist(comm_df, method = dist_method),
+          {
+            if (input$distance_metric %in% c("jaccard", "jsd")) {
+              distance_ps <- phyloseq::phyloseq(
+                phyloseq::otu_table(as.matrix(t(comm_df)), taxa_are_rows = TRUE)
+              )
+              phyloseq::distance(distance_ps, method = input$distance_metric)
+            } else {
+              dist_method <- switch(
+                input$distance_metric,
+                aitchison = "euclidean",
+                "bray"
+              )
+              vegan::vegdist(comm_df, method = dist_method)
+            }
+          },
           error = function(e) {
             validate(need(FALSE, paste0("Distance calculation failed: ", conditionMessage(e))))
           }
         )
         model <- tryCatch(
-          vegan::capscale(stats::as.formula("dist_obj ~ group_model"), data = model_df, comm = comm_df),
+          vegan::capscale(model_formula, data = model_df, comm = comm_df),
           error = function(e) {
             validate(need(FALSE, paste0("dbRDA model fitting failed: ", conditionMessage(e))))
           }
         )
-
-        adonis_tbl <- tryCatch(
-          vegan::adonis2(dist_obj ~ group_model, data = model_df, permutations = 999),
-          error = function(e) NULL
-        )
-        if (!is.null(adonis_tbl)) {
-          adf <- as.data.frame(adonis_tbl)
-          if ("group_model" %in% rownames(adf)) {
-            if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf["group_model", "Pr(>F)"])
-            if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf["group_model", "R2"])
-          } else if (nrow(adf) >= 1) {
-            if ("Pr(>F)" %in% colnames(adf)) permanova_p <- as.numeric(adf[1, "Pr(>F)"])
-            if ("R2" %in% colnames(adf)) permanova_r2 <- as.numeric(adf[1, "R2"])
-          }
-        }
       } else {
         model <- tryCatch(
-          vegan::cca(stats::as.formula("comm_df ~ group_model"), data = model_df),
+          vegan::cca(model_formula, data = model_df),
           error = function(e) {
             validate(need(FALSE, paste0("CCA model fitting failed: ", conditionMessage(e))))
           }
@@ -466,6 +713,27 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
       anova_all <- tryCatch(vegan::anova.cca(model, permutations = 999), error = function(e) NULL)
       p_all <- if (!is.null(anova_all) && nrow(as.data.frame(anova_all)) >= 1) as.data.frame(anova_all)[1, "Pr(>F)"] else NA_real_
+      term_tests <- tryCatch(as.data.frame(vegan::anova.cca(model, by = "margin", permutations = 999)), error = function(e) data.frame())
+      if (nrow(term_tests) > 0L) {
+        term_tests$InternalTerm <- rownames(term_tests)
+        reverse_names <- stats::setNames(names(internal_names), internal_names)
+        term_tests$Variable <- unname(reverse_names[term_tests$InternalTerm])
+        term_tests$Variable[is.na(term_tests$Variable)] <- term_tests$InternalTerm[is.na(term_tests$Variable)]
+        term_tests$Type <- unname(variable_types[term_tests$Variable])
+        rownames(term_tests) <- NULL
+      }
+      vif_values <- tryCatch(vegan::vif.cca(model), error = function(e) numeric(0))
+      if (length(vif_values) > 0L) {
+        vif_labels <- names(vif_values)
+        for (variable_index in seq_along(internal_names)) {
+          variable <- names(internal_names)[variable_index]
+          internal <- unname(internal_names[variable_index])
+          if (is.na(variable) || !nzchar(variable) || is.na(internal) || !nzchar(internal)) next
+          matched <- startsWith(vif_labels, internal)
+          vif_labels[matched] <- paste0(variable, substring(vif_labels[matched], nchar(internal) + 1L))
+        }
+        names(vif_values) <- vif_labels
+      }
 
       site_scores <- vegan::scores(model, display = "sites", choices = 1:2, scaling = 2)
       species_scores <- tryCatch(vegan::scores(model, display = "species", choices = 1:2, scaling = 2), error = function(e) NULL)
@@ -477,7 +745,21 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       )
       colnames(site_df)[1:2] <- c("Axis1", "Axis2")
       site_df$SampleID <- rownames(site_df)
-      site_df$Group <- as.character(model_df$group_model)
+      primary_internal <- internal_names[[input$group_var]]
+      site_df$Group <- model_df[[primary_internal]]
+      additional_centroid_df <- data.frame()
+      categorical_additional <- setdiff(explanatory_vars, input$group_var)
+      categorical_additional <- categorical_additional[variable_types[categorical_additional] == "Categorical"]
+      if (length(categorical_additional) > 0L) {
+        centroid_parts <- lapply(categorical_additional, function(variable) {
+          level_values <- model_df[[internal_names[[variable]]]]
+          data.frame(Axis1 = site_df$Axis1, Axis2 = site_df$Axis2, Level = level_values) %>%
+            dplyr::group_by(Level) %>%
+            dplyr::summarise(Axis1 = mean(Axis1), Axis2 = mean(Axis2), .groups = "drop") %>%
+            dplyr::mutate(Variable = variable, Label = paste0(variable, ": ", Level))
+        })
+        additional_centroid_df <- dplyr::bind_rows(centroid_parts)
+      }
 
       species_df <- data.frame()
       species_all_df <- data.frame()
@@ -507,24 +789,25 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         bp_df <- as.data.frame(biplot_scores, stringsAsFactors = FALSE)
         if (ncol(bp_df) >= 2) {
           colnames(bp_df)[1:2] <- c("Axis1", "Axis2")
-          bp_df$Variable <- rownames(bp_df)
+          bp_df$InternalTerm <- rownames(bp_df)
+          reverse_names <- stats::setNames(names(internal_names), internal_names)
+          bp_df$Variable <- unname(reverse_names[bp_df$InternalTerm])
+          bp_df$Variable[is.na(bp_df$Variable)] <- bp_df$InternalTerm[is.na(bp_df$Variable)]
         } else {
           bp_df <- data.frame()
         }
       }
 
-      # For categorical groups, bp scores from model contrasts may omit the reference level.
-      # Build explicit level-wise arrows from sample centroids so every group level is shown.
-      group_arrow_df <- data.frame()
-      if (is.factor(model_df$group_model)) {
-        group_arrow_df <- site_df %>%
-          dplyr::group_by(Group) %>%
-          dplyr::summarise(
-            Axis1 = mean(Axis1, na.rm = TRUE),
-            Axis2 = mean(Axis2, na.rm = TRUE),
-            .groups = "drop"
-          ) %>%
-          dplyr::mutate(Variable = paste0("", Group))
+      environment_df <- data.frame()
+      continuous_explanatory <- explanatory_vars[variable_types[explanatory_vars] == "Continuous"]
+      if (nrow(bp_df) > 0L && length(continuous_explanatory) > 0L) {
+        environment_df <- bp_df[bp_df$Variable %in% continuous_explanatory, , drop = FALSE]
+        p_column <- intersect(c("Pr(>F)", "Pr(>Chi)"), colnames(term_tests))
+        environment_df$p_value <- NA_real_
+        if (length(p_column) > 0L && nrow(term_tests) > 0L) {
+          p_lookup <- stats::setNames(term_tests[[p_column[1]]], term_tests$Variable)
+          environment_df$p_value <- unname(p_lookup[environment_df$Variable])
+        }
       }
 
       eig <- vegan::eigenvals(model)
@@ -536,7 +819,18 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         species_df = species_df,
         species_all_df = species_all_df,
         bp_df = bp_df,
-        group_arrow_df = group_arrow_df,
+        environment_df = environment_df,
+        additional_centroid_df = additional_centroid_df,
+        primary_is_categorical = identical(variable_types[[input$group_var]], "Categorical"),
+        explanatory_vars = explanatory_vars,
+        conditioning_vars = conditioning_vars,
+        variable_types = variable_types,
+        term_tests = term_tests,
+        vif = vif_values,
+        model_formula_label = paste(
+          "Community ~",
+          paste(c(explanatory_vars, paste0("Condition(", conditioning_vars, ")")), collapse = " + ")
+        ),
         model_label = if (identical(model_type, "cca")) "CCA" else "dbRDA",
         model_type = model_type,
         metric_label = metric_label,
@@ -546,9 +840,10 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         axis1_var = axis1_var,
         axis2_var = axis2_var,
         model_p = as.numeric(p_all),
-        permanova_p = permanova_p,
-        permanova_r2 = permanova_r2,
         n_samples = nrow(site_df),
+        n_samples_total = nrow(model_source),
+        n_samples_excluded = sum(!keep_samples),
+        excluded_samples = excluded_samples,
         n_taxa = nrow(otu_model),
         run_settings = isolate(current_analysis_settings())
       )
@@ -560,7 +855,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       validate(
         need(
           identical(payload$run_settings, current_analysis_settings()),
-          "Analysis settings changed after the last run. Click 'Run Biplot' to update all result tabs."
+          "Analysis settings changed after the last run. Click 'Run Ordination' to update all result tabs."
         )
       )
       payload
@@ -594,15 +889,15 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         taxa_df <- payload$species_all_df[payload$species_all_df$Taxon %in% input$selected_taxa, , drop = FALSE]
       }
       bp_df <- payload$bp_df
-      group_arrow_df <- payload$group_arrow_df
+      environment_df <- payload$environment_df
 
       p <- ggplot2::ggplot(site_df, ggplot2::aes(x = Axis1, y = Axis2, color = Group)) +
         ggplot2::theme_bw(base_size = base_size) +
         ggplot2::labs(
           title = if (identical(payload$model_type, "cca")) {
-            paste0(input$tax_level, "-Level Association Biplot (CCA)")
+            paste0(input$tax_level, "-Level Constrained Ordination (CCA)")
           } else {
-            paste0(input$tax_level, "-Level Association Biplot (dbRDA, ", payload$metric_label, ")")
+            paste0(input$tax_level, "-Level Constrained Ordination (dbRDA, ", payload$metric_label, ")")
           },
           x = paste0(if (identical(payload$model_type, "cca")) "CCA1" else "CAP1", if (is.finite(payload$axis1_var)) paste0(" (", payload$axis1_var, "%)") else ""),
           y = paste0(if (identical(payload$model_type, "cca")) "CCA2" else "CAP2", if (is.finite(payload$axis2_var)) paste0(" (", payload$axis2_var, "%)") else ""),
@@ -625,20 +920,39 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         p <- p + ggplot2::geom_point(size = dot_size, alpha = 0.9)
       }
 
-      if (isTRUE(input$show_group_centroid)) {
+      if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) {
         centroid_df <- site_df %>%
           dplyr::group_by(Group) %>%
           dplyr::summarise(Axis1 = mean(Axis1, na.rm = TRUE), Axis2 = mean(Axis2, na.rm = TRUE), .groups = "drop")
         if (nrow(centroid_df) > 0) {
-          p <- p + ggplot2::geom_point(
+          p <- p + ggplot2::geom_label(
             data = centroid_df,
-            mapping = ggplot2::aes(x = Axis1, y = Axis2, color = Group),
-            shape = 4,
-            size = 4,
-            stroke = 1.2,
-            show.legend = FALSE
+            mapping = ggplot2::aes(x = Axis1, y = Axis2, label = Group, colour = Group),
+            fill = "white",
+            text.colour = "#262626",
+            fontface = "bold",
+            size = text_size_sample,
+            linewidth = 0.45,
+            label.padding = grid::unit(0.18, "lines"),
+            show.legend = FALSE,
+            inherit.aes = FALSE
           )
         }
+      }
+      if (isTRUE(input$show_additional_centroids) && nrow(payload$additional_centroid_df) > 0L) {
+        p <- p + ggplot2::geom_label(
+          data = payload$additional_centroid_df,
+          mapping = ggplot2::aes(x = Axis1, y = Axis2, label = Label),
+          fill = "white",
+          colour = "#0F766E",
+          text.colour = "#262626",
+          fontface = "bold",
+          size = text_size_sample,
+          linewidth = 0.45,
+          label.padding = grid::unit(0.18, "lines"),
+          show.legend = FALSE,
+          inherit.aes = FALSE
+        )
       }
 
       if (isTRUE(input$show_taxa_vectors) && nrow(taxa_df) > 0) {
@@ -676,30 +990,35 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         }
       }
 
-      if (isTRUE(input$show_group_vectors)) {
-        if (nrow(group_arrow_df) > 0) {
-          p <- p +
-            ggplot2::geom_segment(
-              data = group_arrow_df,
-              ggplot2::aes(x = 0, y = 0, xend = Axis1, yend = Axis2),
-              inherit.aes = FALSE,
-              color = "#1B5E20",
-              linewidth = 0.7,
-              linetype = "dashed",
-              arrow = grid::arrow(length = grid::unit(0.17, "cm"))
-            ) +
-            ggplot2::geom_text(
-              data = group_arrow_df,
-              ggplot2::aes(x = Axis1, y = Axis2, label = Variable),
-              inherit.aes = FALSE,
-              color = "#1B5E20",
-              size = text_size_group_vector,
-              vjust = -0.4
+      if (isTRUE(input$show_environment_vectors) && nrow(environment_df) > 0L) {
+        selected_environment <- input$environment_vector_vars
+        if (length(selected_environment) > 0L) {
+          environment_df <- environment_df[environment_df$Variable %in% selected_environment, , drop = FALSE]
+        }
+        if (isTRUE(input$environment_only_significant)) {
+          cutoff <- suppressWarnings(as.numeric(input$environment_p_cutoff))
+          if (!is.finite(cutoff)) cutoff <- 0.05
+          environment_df <- environment_df[is.finite(environment_df$p_value) & environment_df$p_value <= cutoff, , drop = FALSE]
+        }
+        max_vectors <- suppressWarnings(as.integer(input$max_environment_vectors))
+        if (!is.finite(max_vectors) || max_vectors < 1L) max_vectors <- 10L
+        if (nrow(environment_df) > max_vectors) {
+          environment_df <- environment_df[order(environment_df$p_value, na.last = TRUE), , drop = FALSE]
+          environment_df <- environment_df[seq_len(max_vectors), , drop = FALSE]
+        }
+        if (nrow(environment_df) > 0L) {
+          environment_df$Label <- environment_df$Variable
+          if (isTRUE(input$show_environment_pvalues)) {
+            p_text <- ifelse(
+              is.finite(environment_df$p_value),
+              paste0("p=", format(environment_df$p_value, digits = 3)),
+              "p=NA"
             )
-        } else if (nrow(bp_df) > 0) {
+            environment_df$Label <- paste0(environment_df$Variable, " (", p_text, ")")
+          }
           p <- p +
             ggplot2::geom_segment(
-              data = bp_df,
+              data = environment_df,
               ggplot2::aes(x = 0, y = 0, xend = Axis1, yend = Axis2),
               inherit.aes = FALSE,
               color = "#1B5E20",
@@ -708,8 +1027,8 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
               arrow = grid::arrow(length = grid::unit(0.17, "cm"))
             ) +
             ggplot2::geom_text(
-              data = bp_df,
-              ggplot2::aes(x = Axis1, y = Axis2, label = Variable),
+              data = environment_df,
+              ggplot2::aes(x = Axis1, y = Axis2, label = Label),
               inherit.aes = FALSE,
               color = "#1B5E20",
               size = text_size_group_vector,
@@ -746,12 +1065,12 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       {
         if (is.null(input$run_biplot) || input$run_biplot < 1) {
           graphics::plot.new()
-          graphics::text(0.5, 0.5, "Click 'Run Biplot' to start analysis.", cex = 0.85)
+          graphics::text(0.5, 0.5, "Click 'Run Ordination' to start analysis.", cex = 0.85)
           return(invisible(NULL))
         }
         if (isTRUE(biplot_running())) {
           graphics::plot.new()
-          graphics::text(0.5, 0.5, "Biplot analysis is running. Please wait...", cex = 0.85)
+          graphics::text(0.5, 0.5, "Constrained ordination is running. Please wait...", cex = 0.85)
           return(invisible(NULL))
         }
         biplot_plot()
@@ -764,8 +1083,24 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       req(display_biplot_payload())
       payload <- display_biplot_payload()
       pval_txt <- if (is.finite(payload$model_p)) format(payload$model_p, digits = 3) else "NA"
-      permanova_p_txt <- if (is.finite(payload$permanova_p)) format(payload$permanova_p, digits = 3) else "NA"
-      permanova_r2_txt <- if (is.finite(payload$permanova_r2)) format(payload$permanova_r2, digits = 3) else "NA"
+      term_lines <- character(0)
+      if (nrow(payload$term_tests) > 0L) {
+        p_column <- intersect(c("Pr(>F)", "Pr(>Chi)"), colnames(payload$term_tests))
+        if (length(p_column) > 0L) {
+          keep <- payload$term_tests$Variable %in% payload$explanatory_vars
+          term_rows <- payload$term_tests[keep, , drop = FALSE]
+          term_lines <- vapply(seq_len(nrow(term_rows)), function(i) {
+            paste0(
+              "  ", term_rows$Variable[i], " [", term_rows$Type[i], "]: p=",
+              format(term_rows[[p_column[1]]][i], digits = 3)
+            )
+          }, character(1))
+        }
+      }
+      vif_lines <- character(0)
+      if (length(payload$vif) > 0L) {
+        vif_lines <- paste0("  ", names(payload$vif), ": ", format(payload$vif, digits = 3))
+      }
       taxa_vectors_shown <- if (length(input$selected_taxa) > 0 && nrow(payload$species_all_df) > 0) {
         sum(payload$species_all_df$Taxon %in% input$selected_taxa)
       } else {
@@ -776,8 +1111,10 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           paste0("Model: ", payload$model_label),
           paste0("Distance metric: ", payload$metric_label),
           paste0("Transformation: ", payload$transformation_label),
-          paste0("Group variable: ", input$group_var),
-          paste0("Samples used: ", payload$n_samples),
+          paste0("Formula: ", payload$model_formula_label),
+          paste0("Primary variable: ", input$group_var),
+          paste0("Samples used: ", payload$n_samples, " / ", payload$n_samples_total),
+          paste0("Samples excluded for missing values: ", payload$n_samples_excluded),
           paste0("Taxa used: ", payload$n_taxa),
           paste0("Taxa vectors shown: ", taxa_vectors_shown),
           paste0(
@@ -788,8 +1125,8 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
             ")"
           ),
           paste0(payload$model_label, " model p-value (perm): ", pval_txt),
-          if (identical(payload$model_type, "dbrda")) paste0("PERMANOVA p-value (adonis2): ", permanova_p_txt) else NULL,
-          if (identical(payload$model_type, "dbrda")) paste0("PERMANOVA R2 (adonis2): ", permanova_r2_txt) else NULL
+          if (length(term_lines) > 0L) c("Marginal term tests:", term_lines) else NULL,
+          if (length(vif_lines) > 0L) c("Collinearity (VIF):", vif_lines) else NULL
         ),
         collapse = "\n"
       )
@@ -800,10 +1137,36 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 700 else input$plot_width
       tags$div(
         class = "simple-result-card",
-        style = paste0("width: ", box_width, "px; max-width: 100%;"),
+        style = paste0("width: ", box_width, "px; max-width: 100%; height: 280px;"),
         verbatimTextOutput(session$ns("biplot_status"))
       )
     })
+
+    output$biplot_term_tests <- renderTable({
+      payload <- display_biplot_payload()
+      tests <- payload$term_tests
+      validate(need(nrow(tests) > 0L, "Marginal term tests are unavailable for this model."))
+      tests <- tests[tests$Variable %in% payload$explanatory_vars, , drop = FALSE]
+      statistic_columns <- intersect(c("Df", "Variance", "SumOfSqs", "ChiSquare", "F", "Pr(>F)", "Pr(>Chi)"), colnames(tests))
+      tests[, c("Variable", "Type", statistic_columns), drop = FALSE]
+    }, striped = TRUE, bordered = TRUE, spacing = "s", digits = 4)
+
+    output$biplot_vif_table <- renderTable({
+      payload <- display_biplot_payload()
+      validate(need(length(payload$vif) > 0L, "VIF values are unavailable for this model."))
+      data.frame(
+        ModelTerm = names(payload$vif),
+        VIF = as.numeric(payload$vif),
+        Assessment = ifelse(payload$vif >= 10, "High", ifelse(payload$vif >= 5, "Elevated", "Acceptable")),
+        check.names = FALSE
+      )
+    }, striped = TRUE, bordered = TRUE, spacing = "s", digits = 3)
+
+    output$biplot_exclusions <- renderTable({
+      payload <- display_biplot_payload()
+      validate(need(nrow(payload$excluded_samples) > 0L, "No samples were excluded for missing model variables."))
+      payload$excluded_samples
+    }, striped = TRUE, bordered = TRUE, spacing = "s")
 
     output$biplot_legend_box <- renderUI({
       req(input$plot_width)
@@ -844,10 +1207,16 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     output$biplot_figure_legend <- renderUI({
       payload <- display_biplot_payload()
       req(input$group_var, input$tax_level, input$analysis_method, input$distance_metric)
-      distance_label <- if (identical(input$distance_metric, "aitchison")) "Aitchison" else "Bray-Curtis"
+      distance_label <- switch(
+        input$distance_metric,
+        aitchison = "Aitchison",
+        jaccard = "Jaccard",
+        jsd = "Jensen-Shannon",
+        "Bray-Curtis"
+      )
       body_text <- if (identical(input$analysis_method, "cca")) {
         paste0(
-          "The CCA association biplot projects sample relationships on CCA1 and CCA2 at ",
+          "CCA constrained ordination projects sample relationships on CCA1 and CCA2 at ",
           tolower(input$tax_level),
           " level. Distance metric is not used in CCA. Input abundances are transformed using ",
           payload$transformation_label,
@@ -855,13 +1224,13 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           input$group_var,
           ". ",
           if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
-          if (isTRUE(input$show_group_vectors)) "Group vectors show fitted group-direction effects. " else "",
-          if (isTRUE(input$show_group_centroid)) "Cross markers indicate group centroids. " else "",
+          if (isTRUE(input$show_environment_vectors)) "Green dashed arrows show fitted continuous environmental variables. " else "",
+          if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) "Boxed labels indicate primary-group centroids. " else "",
           if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
         )
       } else {
         paste0(
-          "The dbRDA association biplot projects sample relationships on CAP1 and CAP2 using ",
+          "dbRDA constrained ordination projects sample relationships on CAP1 and CAP2 using ",
           distance_label,
           " distance at ",
           tolower(input$tax_level),
@@ -871,8 +1240,8 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           input$group_var,
           ". ",
           if (isTRUE(input$show_taxa_vectors)) "Taxa arrows indicate taxa loadings. " else "",
-          if (isTRUE(input$show_group_vectors)) "Group vectors show fitted group-direction effects. " else "",
-          if (isTRUE(input$show_group_centroid)) "Cross markers indicate group centroids. " else "",
+          if (isTRUE(input$show_environment_vectors)) "Green dashed arrows show fitted continuous environmental variables. " else "",
+          if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) "Boxed labels indicate primary-group centroids. " else "",
           if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
         )
       }
@@ -885,13 +1254,13 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         "."
       )
       tags$div(
-        tags$div(style = "font-weight: 600; margin-bottom: 4px;", "Association biplot"),
+        tags$div(style = "font-weight: 600; margin-bottom: 4px;", "Constrained ordination"),
         tags$div(body_text)
       )
     })
 
     output$download_biplot_png <- downloadHandler(
-      filename = function() paste0("association_biplot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
+      filename = function() paste0("constrained_ordination_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
       contentType = "image/png",
       content = function(file) {
         req(!is.null(input$run_biplot) && input$run_biplot > 0)
@@ -909,17 +1278,26 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     )
 
     output$download_biplot_scores <- downloadHandler(
-      filename = function() paste0("association_biplot_scores_", Sys.Date(), ".tsv"),
+      filename = function() paste0("constrained_ordination_scores_", Sys.Date(), ".tsv"),
       content = function(file) {
         req(display_biplot_payload())
         payload <- display_biplot_payload()
-        site_out <- payload$site_df %>% dplyr::mutate(Type = "Sample", Label = SampleID) %>% dplyr::select(Type, Label, Axis1, Axis2, Group)
+        site_out <- payload$site_df %>%
+          dplyr::mutate(Type = "Sample", Label = SampleID, Group = as.character(Group)) %>%
+          dplyr::select(Type, Label, Axis1, Axis2, Group)
         taxa_out <- if (nrow(payload$species_df) > 0) {
           payload$species_df %>% dplyr::mutate(Type = "Taxa", Label = Taxon, Group = NA_character_) %>% dplyr::select(Type, Label, Axis1, Axis2, Group)
         } else {
           data.frame(Type = character(0), Label = character(0), Axis1 = numeric(0), Axis2 = numeric(0), Group = character(0))
         }
-        out_df <- dplyr::bind_rows(site_out, taxa_out)
+        environment_out <- if (nrow(payload$environment_df) > 0) {
+          payload$environment_df %>%
+            dplyr::mutate(Type = "Environment", Label = Variable, Group = NA_character_) %>%
+            dplyr::select(Type, Label, Axis1, Axis2, Group)
+        } else {
+          data.frame(Type = character(0), Label = character(0), Axis1 = numeric(0), Axis2 = numeric(0), Group = character(0))
+        }
+        out_df <- dplyr::bind_rows(site_out, taxa_out, environment_out)
         utils::write.table(out_df, file = file, sep = "\t", quote = FALSE, row.names = FALSE)
       }
     )

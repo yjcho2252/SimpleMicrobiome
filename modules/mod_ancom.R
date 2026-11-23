@@ -1404,7 +1404,8 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
         filename = function() paste0("ancombc2_", name, ".png"),
         content = function(file) {
           ggplot2::ggsave(file, plot = plot(), device = "png",
-                          width = req(input$plot_width) / 100, height = req(input$plot_height) / 100)
+                          width = req(input$plot_width) / 100, height = req(input$plot_height) / 100,
+                          dpi = 300)
         }
       )
     }
@@ -1759,7 +1760,8 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
       content = function(file) {
         req(input$plot_height, input$plot_width)
         ggplot2::ggsave(file, plot = volcano_plot_reactive(), device = "png",
-                        width = input$plot_width / 100, height = input$plot_height / 100)
+                        width = input$plot_width / 100, height = input$plot_height / 100,
+                        dpi = 300)
       }
     )
 
@@ -1776,7 +1778,8 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
       content = function(file) {
         req(input$plot_height, input$plot_width)
         ggplot2::ggsave(file, plot = bar_plot_reactive(), device = "png",
-                        width = input$plot_width / 100, height = input$plot_height / 100)
+                        width = input$plot_width / 100, height = input$plot_height / 100,
+                        dpi = 300)
       }
     )
 

@@ -1304,7 +1304,13 @@ mod_sparcc_server <- function(id, ps_obj) {
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
         if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
 
-        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        grDevices::png(
+          file,
+          width = plot_width / 72,
+          height = plot_height / 72,
+          units = "in",
+          res = 300
+        )
         on.exit(grDevices::dev.off(), add = TRUE)
         p <- draw_comparison_network_plot(edge_tbl, palette, res$run_settings)
         print(p)
@@ -1599,7 +1605,13 @@ mod_sparcc_server <- function(id, ps_obj) {
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
         if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
 
-        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        grDevices::png(
+          file,
+          width = plot_width / 72,
+          height = plot_height / 72,
+          units = "in",
+          res = 300
+        )
         on.exit(grDevices::dev.off(), add = TRUE)
         draw_network_plot(res, connected_only = FALSE)
       }
@@ -1614,7 +1626,13 @@ mod_sparcc_server <- function(id, ps_obj) {
         if (is.na(plot_width) || plot_width <= 0) plot_width <- 800L
         if (is.na(plot_height) || plot_height <= 0) plot_height <- 550L
 
-        grDevices::png(file, width = plot_width * 2L, height = plot_height * 2L, res = 120)
+        grDevices::png(
+          file,
+          width = plot_width / 72,
+          height = plot_height / 72,
+          units = "in",
+          res = 300
+        )
         on.exit(grDevices::dev.off(), add = TRUE)
         draw_network_plot(res, connected_only = TRUE)
       }

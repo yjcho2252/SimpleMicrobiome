@@ -44,7 +44,7 @@ mod_beta_ui <- function(id) {
         selectInput(ns("primary_group_var"), "Primary Variable (Color):", choices = character(0), selected = NULL),
         selectInput(ns("secondary_group_var"), "Secondary Variable (Shape):", choices = c("None"), selected = "None"),
         hr(),
-        h4(icon("compass"), "Ordination Setup"),
+        h4(icon("compass"), "Core Analysis"),
         selectInput(
           ns("distance_metric"),
           "Distance metric:",
@@ -66,8 +66,30 @@ mod_beta_ui <- function(id) {
           choices = c("ASV" = "ASV", "Species" = "Species", "Genus" = "Genus"),
           selected = "ASV"
         ),
-        checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
-        uiOutput(ns("subject_id_selector")),
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("PERMANOVA")),
+          br(),
+          textOutput(ns("permanova_test_group")),
+          checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
+          uiOutput(ns("subject_id_selector")),
+          conditionalPanel(
+            condition = sprintf("!input['%s']", ns("enable_within_subject_pairing")),
+            checkboxInput(ns("permanova_adjust"), "Adjust for covariates", value = FALSE),
+            conditionalPanel(
+              condition = sprintf("input['%s']", ns("permanova_adjust")),
+              selectizeInput(ns("permanova_covariates"), "Covariates:", choices = NULL, multiple = TRUE)
+            )
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s']", ns("enable_within_subject_pairing")),
+            helpText("Covariate adjustment is available for independent samples.")
+          )
+        ),
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("PERMDISP")),
+          br(),
+          checkboxInput(ns("show_permdisp"), "Show PERMDISP results", value = FALSE)
+        ),
         hr(),
         
         h4(icon("sliders"), "Plot Settings"),
@@ -115,29 +137,30 @@ mod_beta_ui <- function(id) {
           numericInput(ns("y_max"), "Y-axis maximum:", value = NA)
         ),
         hr(),
-        h4(icon("layer-group"), "Post-Ordination Analyses"),
-
+        h4(icon("layer-group"), "Optional Post-Ordination"),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
-          tags$summary(strong("PERMANOVA")),
+          tags$summary(strong("EnvFit")),
           br(),
-          textOutput(ns("permanova_test_group")),
-          conditionalPanel(
-            condition = sprintf("!input['%s']", ns("enable_within_subject_pairing")),
-            checkboxInput(ns("permanova_adjust"), "Adjust for covariates", value = FALSE),
-            conditionalPanel(
-              condition = sprintf("input['%s']", ns("permanova_adjust")),
-              selectizeInput(ns("permanova_covariates"), "Covariates:", choices = NULL, multiple = TRUE)
-            )
-          ),
-          conditionalPanel(
-            condition = sprintf("input['%s']", ns("enable_within_subject_pairing")),
-            helpText("Covariate adjustment is available for independent samples.")
-          )
-        ),
-        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
-          tags$summary(strong("PERMDISP")),
-          br(),
-          checkboxInput(ns("show_permdisp"), "Show PERMDISP results", value = FALSE)
+          uiOutput(ns("envfit_var_selector")),
+          uiOutput(ns("envfit_taxa_selector")),
+          checkboxInput(ns("envfit_only_sig"), "Show only significant vectors", value = TRUE),
+          numericInput(ns("envfit_p_cutoff"), "p-value cutoff:", value = 0.05, min = 0.001, max = 1, step = 0.01),
+          checkboxInput(ns("show_envfit_vectors"), "Overlay EnvFit vectors on plots", value = TRUE),
+          actionButton(ns("run_envfit"), "Run EnvFit", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
+          tags$script(HTML(
+            "Shiny.addCustomMessageHandler('toggle-envfit-run-btn', function(msg) {
+               var btn = document.getElementById(msg.id);
+               if (!btn) return;
+               btn.disabled = !!msg.disabled;
+               if (msg.label) btn.textContent = msg.label;
+            });
+            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
+              var el = document.getElementById(msg.id);
+              if (!el) return;
+              el.style.width = msg.width;
+              el.style.maxWidth = '100%';
+            });"
+          ))
         ),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("Clustering")),
@@ -173,30 +196,6 @@ mod_beta_ui <- function(id) {
                if (!btn) return;
                btn.disabled = !!msg.disabled;
                if (msg.label) btn.textContent = msg.label;
-            });"
-          ))
-        ),
-        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
-          tags$summary(strong("EnvFit")),
-          br(),
-          uiOutput(ns("envfit_var_selector")),
-          uiOutput(ns("envfit_taxa_selector")),
-          checkboxInput(ns("envfit_only_sig"), "Show only significant vectors", value = TRUE),
-          numericInput(ns("envfit_p_cutoff"), "p-value cutoff:", value = 0.05, min = 0.001, max = 1, step = 0.01),
-          checkboxInput(ns("show_envfit_vectors"), "Overlay EnvFit vectors on plots", value = TRUE),
-          actionButton(ns("run_envfit"), "Run EnvFit", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
-          tags$script(HTML(
-            "Shiny.addCustomMessageHandler('toggle-envfit-run-btn', function(msg) {
-               var btn = document.getElementById(msg.id);
-               if (!btn) return;
-               btn.disabled = !!msg.disabled;
-               if (msg.label) btn.textContent = msg.label;
-            });
-            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
-              var el = document.getElementById(msg.id);
-              if (!el) return;
-              el.style.width = msg.width;
-              el.style.maxWidth = '100%';
             });"
           ))
         ),
@@ -323,25 +322,36 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       }
       requested
     }
+
+    categorical_group_choices <- reactive({
+      req(ps_obj())
+      metadata <- as(phyloseq::sample_data(ps_obj()), "data.frame")
+      candidates <- setdiff(colnames(metadata), "SampleID")
+      candidates[vapply(candidates, function(variable) {
+        values <- metadata[[variable]]
+        is_categorical <- is.factor(values) || is.character(values) || is.logical(values)
+        if (!is_categorical) return(FALSE)
+        values <- as.character(values)
+        values <- values[!is.na(values) & nzchar(trimws(values))]
+        length(unique(values)) >= 2L
+      }, logical(1))]
+    })
     
     observe({
-      req(meta_cols())
-      group_choices <- meta_cols()
+      group_choices <- categorical_group_choices()
+      if (length(group_choices) == 0L) {
+        updateSelectInput(session, "primary_group_var", choices = character(0), selected = NULL)
+        updateSelectInput(session, "secondary_group_var", choices = "None", selected = "None")
+        return()
+      }
       current_primary <- input$primary_group_var
       if (is.null(current_primary) || !current_primary %in% group_choices) {
-        non_sampleid_choices <- setdiff(group_choices, "SampleID")
-        current_primary <- if (length(non_sampleid_choices) > 0) {
-          non_sampleid_choices[1]
-        } else if (length(group_choices) > 0) {
-          group_choices[1]
-        } else {
-          NULL
-        }
+        current_primary <- group_choices[1]
       }
       updateSelectInput(session, "primary_group_var", choices = group_choices, selected = current_primary)
 
-      resolved_primary <- resolve_meta_colname(current_primary, meta_cols())
-      secondary_choices <- c("None", setdiff(meta_cols(), c("SampleID", current_primary, resolved_primary)))
+      resolved_primary <- resolve_meta_colname(current_primary, group_choices)
+      secondary_choices <- c("None", setdiff(group_choices, c(current_primary, resolved_primary)))
       current_secondary <- input$secondary_group_var
       if (is.null(current_secondary) || !current_secondary %in% secondary_choices) {
         current_secondary <- "None"
@@ -352,7 +362,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
     primary_group_var <- reactive({
       req(input$primary_group_var, ps_obj())
       metadata <- as(phyloseq::sample_data(ps_obj()), "data.frame")
-      resolve_meta_colname(input$primary_group_var, colnames(metadata))
+      resolved <- resolve_meta_colname(input$primary_group_var, colnames(metadata))
+      validate(need(resolved %in% categorical_group_choices(), "Select a categorical primary variable."))
+      resolved
     })
     secondary_group_var <- reactive({
       req(ps_obj())
@@ -360,7 +372,9 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
         return("None")
       }
       metadata <- as(phyloseq::sample_data(ps_obj()), "data.frame")
-      resolve_meta_colname(input$secondary_group_var, colnames(metadata))
+      resolved <- resolve_meta_colname(input$secondary_group_var, colnames(metadata))
+      validate(need(resolved %in% categorical_group_choices(), "Select a categorical secondary variable."))
+      resolved
     })
 
     output$subject_id_selector <- renderUI({

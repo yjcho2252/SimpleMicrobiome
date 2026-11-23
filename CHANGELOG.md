@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-23] v1.1.4
+
+- Separated Beta Diversity and Constrained Ordination under the Diversity menu and renamed Correlation Heatmap to Association Heatmap.
+- Expanded Constrained Ordination with multivariable and conditioning models, environmental and taxa display controls, and the same dbRDA distance options used by Beta Diversity.
+- Reorganized Beta Diversity into core and optional post-ordination analyses, with clearer variable selection and improved biplot stability.
+- Standardized PNG exports at 300 dpi across analysis modules. See the [release notes](docs/releases/2026-11-23-v1.1.4.md).
+
 ## [2026-11-23] v1.1.3
 
 - Added shared sample and group plot ordering in Preprocessing and applied it across supported plots.

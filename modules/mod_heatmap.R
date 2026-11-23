@@ -54,7 +54,7 @@ mod_heatmap_ui <- function(id) {
     sidebarLayout(
       sidebarPanel(
         width = 2,
-        h4(icon("table-cells"), "Correlation Heatmap"),
+        h4(icon("table-cells"), "Association Heatmap"),
         hr(),
         selectInput(
           ns("group_var"),
@@ -211,7 +211,7 @@ mod_heatmap_ui <- function(id) {
         ))
       ),
       mainPanel(
-        h4("Correlation Heatmap"),
+        h4("Association Heatmap"),
         plotOutput(ns("corr_heatmap_plot"), height = "auto"),
         uiOutput(ns("heatmap_legend_box")),
         uiOutput(ns("heatmap_status_separator")),

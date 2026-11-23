@@ -1359,8 +1359,8 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       "maaslin2-association-heatmap.png",
       function(file) {
         size <- association_dimensions()
-        ggplot2::ggsave(file, association_plot(), device = "png", dpi = 72,
-                        units = "px", width = size$width, height = size$height)
+        ggplot2::ggsave(file, association_plot(), device = "png", dpi = 300,
+                        units = "in", width = size$width / 72, height = size$height / 72)
       }
     )
 
@@ -1925,7 +1925,8 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       content = function(file) {
         req(input$plot_height, input$plot_width)
         ggplot2::ggsave(file, plot = volcano_plot_reactive(), device = "png",
-                        width = input$plot_width / 100, height = input$plot_height / 100)
+                        width = input$plot_width / 100, height = input$plot_height / 100,
+                        dpi = 300)
       }
     )
 
@@ -1936,7 +1937,8 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       content = function(file) {
         req(input$plot_height, input$plot_width)
         ggplot2::ggsave(file, plot = bar_plot_reactive(), device = "png",
-                        width = input$plot_width / 100, height = input$plot_height / 100)
+                        width = input$plot_width / 100, height = input$plot_height / 100,
+                        dpi = 300)
       }
     )
 
