@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-26] v1.1.6
+
+- Added primary-group panels for categorical subgroups in Association Heatmap.
+- Added within-subject sample connections to PCoA, NMDS, and Constrained Ordination.
+- Added Auto and Manual plot sizing to Taxa Barplot and Association Heatmap.
+- Refined figure legends, MaAsLin3 result views, and tabular data loading. See the [release notes](docs/releases/2026-11-26-v1.1.6.md).
+
 ## [2026-11-24] v1.1.5
 
 - Improved taxa and explanatory-variable overlays in Beta Diversity and Constrained Ordination, including clearer labels and optional group hulls.

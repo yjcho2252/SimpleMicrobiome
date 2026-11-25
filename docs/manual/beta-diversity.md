@@ -67,6 +67,7 @@ The distance choice is the most important modeling decision in this module.
 - **Dot Size**: larger points improve visibility but can hide overlap.
 - **Show Dot Outline**: improves separation between overlapping groups.
 - **Show Centroids** displays group names at their centers.
+- **Connect Samples Within Subjects** draws a line for subjects with exactly two plotted samples. Choose the metadata column under **Subject ID Variable**. This display option works independently of PERMANOVA pairing.
 - **Sample Color Overlay** shades points by alpha diversity or by the relative abundance of one taxon.
 - **Show Group Ellipses**: adds centroid/spread cues; helpful for group-level pattern reading.
 - **Show Group Hulls**: draws a convex hull (`chull`) polygon per group in ordination space.

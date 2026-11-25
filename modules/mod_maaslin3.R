@@ -46,7 +46,7 @@ mod_maaslin3_ui <- function(id) {
       ),
       hr(),
       h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-      numericInput(ns("summary_width"), "Plot width (px)", 1200, min = 400, max = 4000, step = 50),
+      numericInput(ns("summary_width"), "Plot width (px)", 700, min = 400, max = 4000, step = 50),
       numericInput(ns("summary_height"), "Plot height (px)", 1000, min = 400, max = 4000, step = 50),
       numericInput(ns("summary_font"), "Base font size (pt)", 10, min = 6, max = 30, step = 1),
       actionButton(ns("run"), "Run MaAsLin3", class = "btn-danger maaslin3-run-btn",
@@ -74,46 +74,50 @@ mod_maaslin3_ui <- function(id) {
     mainPanel(
       width = 10,
       h4("MaAsLin3"),
-      tabsetPanel(
-        tabPanel("Summary Plot", uiOutput(ns("summary"))),
-        tabPanel("Volcano Plot",
-          checkboxInput(ns("volcano_primary_only"), "Show only the primary variable", TRUE),
-          downloadButton(
-            ns("volcano_download"),
-            "Download volcano PNG",
-            style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-          ),
-          div(style = "overflow-x: auto;", plotOutput(ns("volcano"), height = "auto"))
-        ),
-        tabPanel(
-          "Results Table",
-          uiOutput(ns("results_width_style")),
-          div(
-            id = ns("results_content"),
-            style = "width: var(--results-width, 1200px); max-width: 100%; margin-top: 12px; margin-bottom: 18px;",
-            p("Abundance effects are relative fold changes among detected samples. Prevalence effects are detection odds ratios. Individual q-values apply to each model. Joint q-values combine evidence across both models."),
-            fluidRow(
-              column(6,
-                selectInput(ns("view"), "Model", c("Abundance", "Prevalence", "All results"), width = "100%"),
-                checkboxInput(ns("primary_only"), "Show only the primary variable", TRUE)
-              ),
-              column(6,
-                selectInput(ns("test"), "Significance test", c("Individual", "Joint"), width = "100%"),
-                checkboxInput(ns("significant"), "Significant results only", FALSE)
-              )
-            ),
-            downloadButton(ns("tsv"), "Download full TSV"),
-            p("Select a result row to inspect its abundance and prevalence."),
-            DT::DTOutput(ns("results")),
-            uiOutput(ns("association_detail"))
-          )
-        )
-      ),
+      uiOutput(ns("results_width_style")),
       div(
-        style = "clear: both; margin-top: 16px;",
-        hr(),
-        h5(icon("circle-info"), "MaAsLin3 Status"),
-        div(class = "simple-result-card", verbatimTextOutput(ns("status")))
+        id = ns("results_content"),
+        style = "width: var(--results-width, 700px); max-width: 100%;",
+      tabsetPanel(
+          id = ns("result_tab"),
+          tabPanel("Summary Plot", uiOutput(ns("summary"))),
+          tabPanel("Volcano Plot",
+            checkboxInput(ns("volcano_primary_only"), "Show only the primary variable", TRUE),
+            downloadButton(
+              ns("volcano_download"),
+              "Download volcano PNG",
+              style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+            ),
+            div(style = "overflow-x: auto;", plotOutput(ns("volcano"), height = "auto"))
+          ),
+          tabPanel(
+            "Results Table",
+            div(
+              style = "margin-top: 12px; margin-bottom: 18px;",
+              p("Abundance effects are relative fold changes among detected samples. Prevalence effects are detection odds ratios. Individual q-values apply to each model. Joint q-values combine evidence across both models."),
+              fluidRow(
+                column(6,
+                  selectInput(ns("view"), "Model", c("Abundance", "Prevalence", "All results"), width = "100%"),
+                  checkboxInput(ns("primary_only"), "Show only the primary variable", TRUE)
+                ),
+                column(6,
+                  selectInput(ns("test"), "Significance test", c("Individual", "Joint"), width = "100%"),
+                  checkboxInput(ns("significant"), "Significant results only", FALSE)
+                )
+              ),
+              downloadButton(ns("tsv"), "Download full TSV"),
+              p("Select a result row to inspect its abundance and prevalence."),
+              DT::DTOutput(ns("results")),
+              uiOutput(ns("association_detail"))
+            )
+          )
+        ),
+        div(
+          style = "clear: both; margin-top: 16px;",
+          hr(),
+          h5(icon("circle-info"), "MaAsLin3 Status"),
+          div(class = "simple-result-card", verbatimTextOutput(ns("status")))
+        )
       )
     )
   )
@@ -581,7 +585,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
             median_comparison_abundance = TRUE, median_comparison_prevalence = FALSE,
             min_prevalence = config$prevalence / 100,
             max_significance = config$q, plot_summary_plot = TRUE,
-            plot_associations = FALSE, save_plots_rds = TRUE, cores = 1
+            plot_associations = FALSE, save_plots_rds = TRUE, cores = 4
           )
         })
         tsv <- file.path(out, "all_results.tsv")
@@ -640,7 +644,17 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
         },
         paste("Samples used:", nrow(run$model$metadata)),
         paste("Taxonomic level:", rank),
-        sprintf("Prevalence filter: %g%%", run$settings$prevalence)
+        sprintf("Prevalence filter: %g%%", run$settings$prevalence),
+        "",
+        switch(
+          if (is.null(input$result_tab)) "Summary Plot" else input$result_tab,
+          "Volcano Plot" = sprintf(
+            "Points show model effects relative to the tested null value. The dashed line marks the individual q-value cutoff (%g). Red and blue mark positive and negative effects at or below that cutoff.",
+            run$settings$q
+          ),
+          "Results Table" = "Abundance effects describe fold changes among samples where the taxon was detected. Prevalence effects describe odds ratios for detection. Joint q-values combine evidence from both models.",
+          "The summary plot shows associations from the abundance and prevalence models."
+        )
       )
       paste(lines, collapse = "\n")
     })

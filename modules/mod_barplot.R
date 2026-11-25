@@ -115,16 +115,16 @@ mod_barplot_ui <- function(id) {
                     selected = "Paired"),
         hr(),
         h4(icon("sliders"), "Display Options"),
-        checkboxInput(ns("auto_plot_width"), "Fit plot to screen", value = TRUE),
+        selectInput(ns("plot_size_mode"), "Plot Size", choices = c("Auto" = "auto", "Manual" = "manual"), selected = "auto"),
         conditionalPanel(
-          condition = sprintf("!input['%s']", ns("auto_plot_width")),
+          "input.plot_size_mode === 'manual'", ns = ns,
           numericInput(ns("plot_width"), "Plot Width (px):",
-                       value = 1000, min = 200, step = 50)
+                       value = 1000, min = 200, step = 50),
+          numericInput(ns("plot_height"), "Plot Height (px):",
+                       value = 400, min = 300, step = 50)
         ),
-        numericInput(ns("plot_height"), "Plot Height (px):",
-                     value = 400, min = 300, step = 50),
         numericInput(ns("base_size"), "Base Font Size:",
-                     value = 9, min = 6, max = 30, step = 1),
+                     value = 12, min = 6, max = 30, step = 1),
 
         
         hr(),
@@ -188,25 +188,19 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       if (!phyloseq::taxa_are_rows(ps)) counts <- t(counts)
       sample_depths <- sample_depths[colnames(counts)]
 
-      counts <- withr::with_seed(42, {
-        for (sample_index in which(sample_depths > rarefaction_depth)) {
-          remaining_reads <- sample_depths[sample_index]
-          remaining_draws <- rarefaction_depth
-          observed_taxa <- which(counts[, sample_index] > 0)
-          sampled_counts <- integer(length(observed_taxa))
-          for (i in seq_along(observed_taxa)) {
-            # Draw the current taxon's share of the remaining sample without replacement.
-            taxon_reads <- counts[observed_taxa[i], sample_index]
-            remaining_reads <- remaining_reads - taxon_reads
-            drawn <- stats::rhyper(1L, taxon_reads, remaining_reads, remaining_draws)
-            sampled_counts[i] <- drawn
-            remaining_draws <- remaining_draws - drawn
-            if (remaining_draws == 0L) break
-          }
-          counts[observed_taxa, sample_index] <- sampled_counts
+      deep_samples <- which(sample_depths > rarefaction_depth)
+      if (length(deep_samples) > 0L) {
+        if (nrow(counts) == 1L) {
+          counts[1L, deep_samples] <- rarefaction_depth
+        } else {
+          # vegan expects samples in rows and draws without replacement.
+          rarefied <- withr::with_seed(
+            42,
+            vegan::rrarefy(t(counts[, deep_samples, drop = FALSE]), rarefaction_depth)
+          )
+          counts[, deep_samples] <- t(rarefied)
         }
-        counts
-      })
+      }
       phyloseq::otu_table(ps) <- phyloseq::otu_table(counts, taxa_are_rows = TRUE)
       phyloseq::prune_taxa(phyloseq::taxa_sums(ps) > 0, ps)
     })
@@ -690,8 +684,13 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       }
     })
 
+    manual_plot_size <- reactive(identical(input$plot_size_mode, "manual"))
+    effective_plot_height <- reactive({
+      if (manual_plot_size()) req(input$plot_height) else 400
+    })
+
     effective_plot_width <- reactive({
-      if (identical(input$auto_plot_width, FALSE)) return(req(input$plot_width))
+      if (manual_plot_size()) return(req(input$plot_width))
       data <- barplot_data()
       req(data)
       df_plot <- data$df_plot
@@ -860,7 +859,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
 
           label_height_px <- subgroup_label_size * 96 / 25.4
           label_band_px <- 1.4 * label_height_px + 6
-          panel_height_px <- max(100, input$plot_height - 120)
+          panel_height_px <- max(100, effective_plot_height() - 120)
           subgroup_headroom <- label_band_px / (panel_height_px - label_band_px)
           subgroup_label_df <- subgroup_blocks %>%
             dplyr::mutate(
@@ -1036,7 +1035,6 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
     })
 
     output$barplot_out <- plotly::renderPlotly({
-      req(input$plot_height)
       ps_now <- ps_obj()
       validate(
         need(!is.null(ps_now), "Applying selected samples and preparing bar plot."),
@@ -1046,7 +1044,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       plot_width <- effective_plot_width()
       widget <- plotly::ggplotly(
         plot, tooltip = "text", dynamicTicks = FALSE,
-        width = plot_width, height = input$plot_height
+        width = plot_width, height = effective_plot_height()
       )
       layout <- widget$x$layout
       axis_names <- grep("^xaxis[0-9]*$", names(layout), value = TRUE)
@@ -1124,7 +1122,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
           trace
         })
       }
-      if (!identical(input$auto_plot_width, FALSE)) {
+      if (!manual_plot_size()) {
         panel_width <- max(1, plot_width - layout$margin$l - layout$margin$r)
         widget$x$data <- lapply(widget$x$data, function(trace) {
           if (!identical(trace$type, "bar")) return(trace)
@@ -1219,7 +1217,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
         el.taxaWidthObserver.observe(legend);
         reportWidth();
       }", data = list(id = session$ns("barplot_taxa_legend"), title = plot$labels$fill,
-                      fontFamily = font_family, autoWidth = !identical(input$auto_plot_width, FALSE),
+                      fontFamily = font_family, autoWidth = !manual_plot_size(),
                       widthInput = session$ns("available_plot_width")))
     })
     
@@ -1227,7 +1225,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       filename = function() { paste0("taxa_barplot_", input$tax_level, "_", input$plot_mode, ".png") },
       content = function(file) {
         plot_width_in <- effective_plot_width() / 72
-        plot_height_in <- input$plot_height / 72
+        plot_height_in <- effective_plot_height() / 72
         
         title_grob <- grid::textGrob(
           barplot_title(), x = grid::unit(6, "pt"), just = "left",
@@ -1335,7 +1333,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
             first_sentence,
             " at ",
             tax_level_label,
-            " level. Colors denote taxa. ",
+            " level. Each colored segment represents a taxon, and its height shows that taxon's share of the bar. ",
             if (identical(input$taxa_display_mode, "top_n")) {
               if (identical(input$top_n_basis, "each_group")) {
                 paste0("The top ", input$top_n_taxa,

@@ -1691,7 +1691,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       body_text <- if (identical(active_tab, "Network Plot (All)")) {
         "This panel shows all nodes and edges passing the minimum absolute edge-weight threshold. Edge color indicates sign (positive/negative), edge width indicates absolute weight, and node size reflects the selected node-size metric."
       } else if (identical(active_tab, "Network Plot (Connected)")) {
-        "This panel shows the connected component view after edge filtering, excluding isolated nodes to emphasize connected structure."
+        "Only taxa with at least one retained edge are shown. Edge color indicates the sign of the association, and thicker edges indicate larger absolute weights."
       } else if (identical(active_tab, "Comparison Network")) {
         "This panel visualizes differential edges between two selected groups. It is available only when analysis mode is set to Compare two groups."
       } else if (identical(active_tab, "Edge Table")) {

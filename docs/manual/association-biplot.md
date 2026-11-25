@@ -61,6 +61,7 @@ It is used to interpret how variables align with major ordination axes.
 
 ### 2.9 Label Controls
 - Controls sample/feature label visibility and density.
+- Sample-to-centroid lines can connect each sample to its primary categorical-group centroid.
 - Useful for balancing readability vs detail.
 
 ### 2.10 Scaling / Display Options
@@ -70,6 +71,7 @@ It is used to interpret how variables align with major ordination axes.
 ### 2.11 Plot Width / Height / Base Font Size
 - The base font defaults to 14 pt and dot size defaults to 5. **Show Dot Outline** adds a dark border to each sample marker.
 - Increase dimensions for dense labels and multi-group overlays.
+- **Connect Samples Within Subjects** draws a line for subjects with exactly two plotted samples. Choose the metadata column under **Subject ID Variable**.
 
 ## 3. How to Interpret Biplot Elements
 

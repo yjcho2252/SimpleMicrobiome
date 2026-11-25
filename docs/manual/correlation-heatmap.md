@@ -11,8 +11,8 @@ The module supports abundance-based associations and prevalence-based binary ass
 - In subgroup mode, the analysis can be restricted to one primary level before using the secondary grouping variable.
 
 ### 2.2 Select subgroup / primary level / secondary grouping variable
-- `Select subgroup` restricts samples to one primary level.
-- When enabled, the secondary grouping variable is used as the group variable for the heatmap context.
+- With a categorical secondary variable, choose `All` to show one panel per primary group or select one primary level to show that panel only.
+- Panels share a color scale and secondary-column order. Comparisons are made within each panel.
 - Small subgroup sample sizes can make associations unstable.
 
 ### 2.3 Group type
@@ -45,11 +45,10 @@ The module supports abundance-based associations and prevalence-based binary ass
 - `Color palette`: selects a diverging palette, including a colorblind-friendly option.
 - `Color scale abs limit (0 = auto)`: fixes the symmetric color scale limit when nonzero. Auto mode uses a robust range to reduce the influence of extreme values.
 - `Mask non-significant cells (FDR)`: hides cells that do not pass the selected FDR cutoff.
-- `FDR cutoff (q)`: q-value threshold used when masking is enabled.
+- An asterisk marks cells at or below the selected FDR cutoff. With masking enabled, cells above the cutoff or without a valid q-value are shown in gray.
 
 ### 2.8 Display Options
-- `Cell width`, `Cell height`, and `Base Font Size` control readability.
-- Increase cell size for long labels or dense matrices.
+- `Plot Size` defaults to `Auto`. Choose `Manual` to set the width and height, and use `Base Font Size` to adjust text.
 
 ## 3. Result Interpretation
 

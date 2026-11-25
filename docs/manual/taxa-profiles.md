@@ -118,7 +118,7 @@ This document explains what each left-panel parameter does and how different set
 
 ### 2.11 Plot Width / Height / Base Font Size
 - **What it controls**: Figure readability.
-- `Fit plot to screen` adjusts the width to the available space. Turn it off to set the width manually.
+- `Plot Size` defaults to `Auto`, which fits the width to the available space. Choose `Manual` to set the width and height. The base font defaults to 12 pt.
 - Hover over a bar segment to see its taxon and relative abundance. Click a legend item to highlight it across panels.
 - Taxa Barplot rarefies to 3,000 reads per sample or the lowest selected read count, whichever is smaller.
 - **Guideline**:

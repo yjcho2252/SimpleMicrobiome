@@ -943,7 +943,11 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
             " across groups; ",
             plot_type_label,
             ".",
-            sig_sentence
+            if (isTRUE(input$show_p_val)) sig_sentence else "",
+            if (isTRUE(input$show_p_val) && isTRUE(input$show_sig_as_marks) &&
+                n_groups >= 2 && paired_stat_method() %in% c("t.test", "wilcox.test")) {
+              " When shown, *, **, and *** mark p-values below 0.05, 0.01, and 0.001, respectively. The label ns indicates that the comparison did not meet the 0.05 threshold."
+            } else ""
           )
         )
       )

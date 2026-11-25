@@ -1847,14 +1847,22 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
       } else {
         "raw p-value"
       }
-      legend_title <- if (identical(active_tab, "Bar plot")) {
+      legend_title <- if (identical(active_tab, "Forest plot")) {
+        "ANCOM-BC2 forest plot"
+      } else if (identical(active_tab, "Contrast heatmap")) {
+        "ANCOM-BC2 contrast heatmap"
+      } else if (identical(active_tab, "Bar plot")) {
         "ANCOM-BC2 differential taxa bar plot"
       } else if (identical(active_tab, "Table")) {
         "ANCOM-BC2 results table"
       } else {
         "ANCOM-BC2 volcano plot"
       }
-      legend_body <- if (identical(active_tab, "Bar plot")) {
+      legend_body <- if (identical(active_tab, "Forest plot")) {
+        "Points show adjusted log fold changes relative to the reference group. Lines extend one standard error on either side of each estimate. Teal marks taxa called differential by ANCOM-BC2."
+      } else if (identical(active_tab, "Contrast heatmap")) {
+        "Cell colors show adjusted log fold changes relative to the reference group. Red is positive, blue is negative, and gray indicates an unavailable estimate. An asterisk (*) marks a taxon called differential by ANCOM-BC2 for that contrast."
+      } else if (identical(active_tab, "Bar plot")) {
         paste0(
           "Bars show the top 10 taxa ranked by absolute log2 fold-change (log2FC) from ANCOM-BC2 at ",
           tolower(input$tax_level),

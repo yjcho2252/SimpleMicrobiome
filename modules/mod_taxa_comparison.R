@@ -470,20 +470,12 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
       req(isTRUE(is_active_tab()))
       req(ps_obj(), input$group_var, input$tax_level)
       
-      ps <- ps_obj()
+      ps <- tax_level_ps_raw()
       tax_level <- input$tax_level
       sample_cols <- colnames(as.data.frame(phyloseq::sample_data(ps), stringsAsFactors = FALSE))
       primary_col <- resolve_meta_colname(input$group_var, sample_cols)
       secondary_col <- resolve_meta_colname(input$secondary_group_var, sample_cols)
       is_secondary <- !is.null(secondary_col) && secondary_col != "none"
-      
-      if (tax_level != "ASV") {
-        validate(need(!is.null(phyloseq::tax_table(ps)), "Taxonomy table is missing."))
-        tax_ranks <- phyloseq::rank_names(ps)
-        validate(need(tax_level %in% tax_ranks, paste0("Level '", tax_level, "' not found.")))
-        ps <- apply_disambiguated_taxrank(ps, tax_level)
-        ps <- phyloseq::tax_glom(ps, taxrank = tax_level, NArm = FALSE)
-      }
       
       abundance_mode <- input$abundance_mode
       if (is.null(abundance_mode) || !abundance_mode %in% c("clr", "relative", "log_tss")) {
@@ -1754,7 +1746,14 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
             plot_type_label,
             ". The y-axis represents ",
             abundance_label,
-            ". Pairwise significance is annotated above each comparison.",
+            ".",
+            if (isTRUE(input$show_p_val) && !isTRUE(input$show_trend_line)) {
+              if (isTRUE(input$show_sig_as_marks)) {
+                " When shown, *, **, and *** mark pairwise p-values below 0.05, 0.01, and 0.001, respectively. The label ns indicates that the comparison did not meet the 0.05 threshold. Labels use adjusted p-values when a correction applies."
+              } else {
+                " When shown, brackets label pairwise p-values, adjusted when a correction applies."
+              }
+            } else "",
             longitudinal_sentence,
             regression_sentence
           )

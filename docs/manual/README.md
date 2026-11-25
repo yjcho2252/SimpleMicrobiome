@@ -1,9 +1,9 @@
 ﻿# SimpleMicrobiome Guide
 
-## v1.1.5 Highlights
-- Beta Diversity and Constrained Ordination provide clearer taxa and explanatory-variable overlays.
-- EnvFit taxa statistics and differential-abundance subgroup workflows are more consistent.
-- Display controls and module terminology are standardized across the app.
+## v1.1.6 Highlights
+- Association Heatmap shows categorical subgroups in separate primary-group panels.
+- Beta Diversity and Constrained Ordination can connect paired samples from the same subject.
+- Taxa Barplot and Association Heatmap offer automatic and manual plot sizing, and result tabs have clearer figure legends.
 
 ## Module Guides
 - [Data Loading](/manual/data-loading.html)

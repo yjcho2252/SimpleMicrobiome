@@ -280,7 +280,7 @@ mod_fileload_server <- function(id) {
       }
     )
     
-    read_microbiome_file <- function(file_input, is_meta = FALSE) {
+    read_microbiome_file <- function(file_input, is_meta = FALSE, is_otu = FALSE) {
       if (is.null(file_input)) return(NULL)
       
       file_path <- file_input$datapath
@@ -296,11 +296,47 @@ mod_fileload_server <- function(id) {
         sep_val <- ","  
       }
       
-      rn_val <- if (is_meta) NULL else 1
-      
       data <- tryCatch({
-        read.table(file_path, header = TRUE, row.names = rn_val, sep = sep_val, 
-                   comment.char = "", check.names = FALSE, stringsAsFactors = FALSE)
+        read_columns <- function(col_types, n_max = Inf) {
+          readr::read_delim(
+            file_path,
+            delim = sep_val,
+            col_types = col_types,
+            n_max = n_max,
+            na = "NA",
+            name_repair = "minimal",
+            num_threads = 1L,
+            lazy = FALSE,
+            progress = FALSE
+          )
+        }
+        character_columns <- readr::cols(.default = readr::col_character())
+        if (is_otu) {
+          column_count <- ncol(read_columns(character_columns, n_max = 0))
+          otu_types <- paste0("c", strrep("d", max(0L, column_count - 1L)))
+          parsed <- read_columns(otu_types)
+        } else {
+          parsed <- read_columns(character_columns)
+        }
+        if (nrow(readr::problems(parsed)) > 0L) {
+          stop("The file contains invalid values or rows that do not match the header.")
+        }
+
+        data_frame <- as.data.frame(parsed)
+        if (!is_meta) {
+          ids <- data_frame[[1L]]
+          data_frame <- data_frame[-1L]
+          rownames(data_frame) <- ids
+        }
+        # Preserve identifier text and infer the other columns from all rows.
+        if (!is_otu) {
+          value_columns <- seq_along(data_frame)
+          if (is_meta) value_columns <- value_columns[-1L]
+          data_frame[value_columns] <- lapply(
+            data_frame[value_columns], utils::type.convert, as.is = TRUE
+          )
+        }
+        data_frame
       }, error = function(e) {
         message(paste("File read failed:", file_input$name, "Error:", conditionMessage(e)))
         return(NULL)
@@ -335,7 +371,7 @@ mod_fileload_server <- function(id) {
       session$onFlushed(function() {
         on.exit(load_in_progress(FALSE), add = TRUE)
 
-        otu_df <- read_microbiome_file(otu_input)
+        otu_df <- read_microbiome_file(otu_input, is_otu = TRUE)
         if (is.null(otu_df)) {
           error_message <- "OTU file read error: Check the ASV/OTU abundance matrix format, delimiter, and row names. Please re-upload the OTU file."
           load_error(error_message)

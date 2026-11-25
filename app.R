@@ -69,7 +69,7 @@ ui <- page_navbar(
         alt = "SimpleMicrobiome",
         style = "height: 30px; width: auto; display: block;"
       ),
-      tags$span("v.1.1.5", class = "navbar-app-version")
+      tags$span("v1.1.6", class = "navbar-app-version")
     ),
     style = "display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; padding: 0;"
   ),

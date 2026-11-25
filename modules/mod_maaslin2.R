@@ -2006,14 +2006,21 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       } else {
         "raw p-value"
       }
-      legend_title <- if (identical(active_tab, "Bar plot")) {
+      legend_title <- if (identical(active_tab, "Association Heatmap")) {
+        "MaAsLin2 association heatmap"
+      } else if (identical(active_tab, "Bar plot")) {
         "MaAsLin2 differential taxa bar plot"
       } else if (identical(active_tab, "Table")) {
         "MaAsLin2 results table"
       } else {
         "MaAsLin2 volcano plot"
       }
-      legend_body <- if (continuous_primary()) {
+      legend_body <- if (identical(active_tab, "Association Heatmap")) {
+        sprintf(
+          "Cell colors show model coefficients. Red is positive, blue is negative, and gray indicates an unavailable estimate. An asterisk (*) marks a coefficient with q ≤ %g.",
+          association_cells()$q
+        )
+      } else if (continuous_primary()) {
         paste0("Coefficients are estimated per one-unit increase in ", group_var_resolved(),
                " on the fitted model scale, with other model terms held fixed.")
       } else if (identical(active_tab, "Bar plot")) {

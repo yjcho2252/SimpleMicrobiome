@@ -177,10 +177,14 @@ mod_biplot_ui <- function(id) {
         numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
         numericInput(ns("dot_size"), "Dot Size (point size):", value = 5, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
+        checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
         checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
-        checkboxInput(ns("show_group_centroid"), "Show primary-group centroids", value = TRUE),
-        checkboxInput(ns("show_additional_centroids"), "Show centroids for additional categorical variables", value = FALSE),
-        checkboxInput(ns("show_sample_names"), "Show sample names", value = FALSE),
+        checkboxInput(ns("show_centroid_lines"), "Show Sample-to-Centroid Lines", value = FALSE),
+        checkboxInput(ns("connect_subject_samples"), "Connect Samples Within Subjects", value = FALSE),
+        uiOutput(ns("subject_id_selector")),
+        checkboxInput(ns("show_group_centroid"), "Show Primary-Group Centroids", value = TRUE),
+        checkboxInput(ns("show_additional_centroids"), "Show Centroids for Additional Categorical Variables", value = FALSE),
+        checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
         tags$button(
           id = ns("run_biplot"),
           type = "button",
@@ -247,6 +251,15 @@ mod_biplot_ui <- function(id) {
 ## Server
 mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
+    output$subject_id_selector <- renderUI({
+      req(isTRUE(input$connect_subject_samples), ps_obj())
+      metadata <- phyloseq::sample_data(ps_obj(), errorIfNULL = FALSE)
+      req(!is.null(metadata))
+      choices <- setdiff(colnames(metadata), input$group_var)
+      choices <- choices[gsub("[^a-z0-9]", "", tolower(choices)) != "sampleid"]
+      if (!length(choices)) return(helpText("No metadata columns are available for Subject ID."))
+      selectInput(session$ns("subject_id_var"), "Subject ID Variable:", choices = choices)
+    })
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
     observeEvent(ps_obj(), {
@@ -909,6 +922,22 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
           axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1)
         )
+
+      if (isTRUE(input$connect_subject_samples) && isTruthy(input$subject_id_var)) {
+        metadata <- as.data.frame(phyloseq::sample_data(ps_obj()))
+        p <- add_subject_pair_lines(p, site_df, metadata, input$subject_id_var, "Axis1", "Axis2")
+      }
+
+      centroid_df <- data.frame()
+      if ((isTRUE(input$show_centroid_lines) || isTRUE(input$show_group_centroid)) && isTRUE(payload$primary_is_categorical)) {
+        centroid_df <- site_df %>%
+          dplyr::group_by(Group) %>%
+          dplyr::summarise(
+            CentroidAxis1 = mean(Axis1, na.rm = TRUE),
+            CentroidAxis2 = mean(Axis2, na.rm = TRUE),
+            .groups = "drop"
+          )
+      }
       if (isTRUE(input$show_group_hulls) && isTRUE(payload$primary_is_categorical)) {
         hull_parts <- lapply(split(site_df, as.character(site_df$Group)), function(group_df) {
           group_df <- group_df[
@@ -934,6 +963,26 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           )
         }
       }
+      if (isTRUE(input$show_ellipses) && isTRUE(payload$primary_is_categorical)) {
+        p <- p + ggplot2::stat_ellipse(ggplot2::aes(group = Group), level = 0.80)
+      }
+      if (isTRUE(input$show_centroid_lines) && nrow(centroid_df) > 0L) {
+        centroid_line_df <- dplyr::left_join(site_df, centroid_df, by = "Group")
+        p <- p + ggplot2::geom_segment(
+          data = centroid_line_df,
+          ggplot2::aes(
+            x = Axis1,
+            y = Axis2,
+            xend = CentroidAxis1,
+            yend = CentroidAxis2,
+            colour = Group
+          ),
+          inherit.aes = FALSE,
+          linewidth = 0.3,
+          alpha = 0.45,
+          show.legend = FALSE
+        )
+      }
       if (isTRUE(input$show_dot_outline)) {
         p <- p + ggplot2::geom_point(
           ggplot2::aes(
@@ -946,15 +995,11 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         p <- p + ggplot2::geom_point(size = dot_size, alpha = 0.9)
       }
 
-      centroid_df <- data.frame()
       if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) {
-        centroid_df <- site_df %>%
-          dplyr::group_by(Group) %>%
-          dplyr::summarise(Axis1 = mean(Axis1, na.rm = TRUE), Axis2 = mean(Axis2, na.rm = TRUE), .groups = "drop")
         if (nrow(centroid_df) > 0) {
           p <- p + ggplot2::geom_label(
             data = centroid_df,
-            mapping = ggplot2::aes(x = Axis1, y = Axis2, label = Group, colour = Group),
+            mapping = ggplot2::aes(x = CentroidAxis1, y = CentroidAxis2, label = Group, colour = Group),
             fill = "white",
             text.colour = "#262626",
             fontface = "bold",
@@ -992,10 +1037,10 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
           stringsAsFactors = FALSE
         )
         centroid_obstacles <- list()
-        if (nrow(centroid_df) > 0L) {
+        if (isTRUE(input$show_group_centroid) && nrow(centroid_df) > 0L) {
           centroid_obstacles[[length(centroid_obstacles) + 1L]] <- data.frame(
-            Axis1 = centroid_df$Axis1,
-            Axis2 = centroid_df$Axis2,
+            Axis1 = centroid_df$CentroidAxis1,
+            Axis2 = centroid_df$CentroidAxis2,
             Taxon = "",
             repel_point_size = 12,
             stringsAsFactors = FALSE
@@ -1335,7 +1380,10 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
             )
           } else "",
           if (isTRUE(input$show_environment_vectors)) "Green dashed arrows show fitted continuous environmental variables. " else "",
+          if (isTRUE(input$show_ellipses) && isTRUE(payload$primary_is_categorical)) "Ellipses show the fitted 80% contours for each group. " else "",
           if (group_hulls_shown) "Shaded polygons show convex hulls for primary-group samples. " else "",
+          if (isTRUE(input$show_centroid_lines) && isTRUE(payload$primary_is_categorical)) "Lines connect samples to their primary-group centroids. " else "",
+          if (isTRUE(input$connect_subject_samples) && isTruthy(input$subject_id_var)) "Thin gray lines connect pairs of samples from the same subject. " else "",
           if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) "Boxed labels indicate primary-group centroids. " else "",
           if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
         )
@@ -1358,7 +1406,10 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
             )
           } else "",
           if (isTRUE(input$show_environment_vectors)) "Green dashed arrows show fitted continuous environmental variables. " else "",
+          if (isTRUE(input$show_ellipses) && isTRUE(payload$primary_is_categorical)) "Ellipses show the fitted 80% contours for each group. " else "",
           if (group_hulls_shown) "Shaded polygons show convex hulls for primary-group samples. " else "",
+          if (isTRUE(input$show_centroid_lines) && isTRUE(payload$primary_is_categorical)) "Lines connect samples to their primary-group centroids. " else "",
+          if (isTRUE(input$connect_subject_samples) && isTruthy(input$subject_id_var)) "Thin gray lines connect pairs of samples from the same subject. " else "",
           if (isTRUE(input$show_group_centroid) && isTRUE(payload$primary_is_categorical)) "Boxed labels indicate primary-group centroids. " else "",
           if (isTRUE(input$show_sample_names)) "Sample labels are displayed near points." else ""
         )

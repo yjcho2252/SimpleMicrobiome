@@ -5,6 +5,7 @@ mod_top_ui <- function(id) {
 
   recent_count <- 5L
   version_history <- c(
+    "261126: v1.1.6 - Added subgroup heatmap panels and within-subject ordination lines, with clearer plot controls and legends.",
     "261124: v1.1.5 - Improved ordination overlays, EnvFit taxa results, differential-abundance workflows, and UI consistency.",
     "261123: v1.1.4 - Reorganized diversity analyses, expanded constrained ordination, and standardized PNG exports.",
     "261123: v1.1.3 - Shared plot ordering and improved association heatmap styling.",

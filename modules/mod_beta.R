@@ -66,12 +66,12 @@ mod_beta_ui <- function(id) {
           choices = c("ASV" = "ASV", "Species" = "Species", "Genus" = "Genus"),
           selected = "ASV"
         ),
+        uiOutput(ns("subject_id_selector")),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("PERMANOVA")),
           br(),
           textOutput(ns("permanova_test_group")),
           checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
-          uiOutput(ns("subject_id_selector")),
           conditionalPanel(
             condition = sprintf("!input['%s']", ns("enable_within_subject_pairing")),
             checkboxInput(ns("permanova_adjust"), "Adjust for covariates", value = FALSE),
@@ -101,6 +101,7 @@ mod_beta_ui <- function(id) {
         checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
         checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
         checkboxInput(ns("show_centroid_lines"), "Show Sample-to-Centroid Lines", value = FALSE),
+        checkboxInput(ns("connect_subject_samples"), "Connect Samples Within Subjects", value = FALSE),
         checkboxInput(ns("show_centroids"), "Show Centroids", value = FALSE),
         checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
         selectInput(ns("primary_color_palette"), "Primary Group Color Palette:",
@@ -379,21 +380,25 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
 
     output$subject_id_selector <- renderUI({
       req(meta_cols())
-      if (!isTRUE(input$enable_within_subject_pairing)) {
+      if (!isTRUE(input$enable_within_subject_pairing) && !isTRUE(input$connect_subject_samples)) {
         return(NULL)
       }
       subject_choices <- setdiff(meta_cols(), c("SampleID", input$primary_group_var, input$secondary_group_var))
+      selected_subject <- isolate(input$subject_id_var)
+      if (!isTruthy(selected_subject) || !selected_subject %in% subject_choices) {
+        selected_subject <- head(subject_choices, 1L)
+      }
       selectInput(
         session$ns("subject_id_var"),
         "Subject ID Variable:",
         choices = subject_choices,
-        selected = if (length(subject_choices) > 0) subject_choices[1] else NULL
+        selected = selected_subject
       )
     })
 
     observe({
       req(meta_cols())
-      if (!isTRUE(input$enable_within_subject_pairing)) {
+      if (!isTRUE(input$enable_within_subject_pairing) && !isTRUE(input$connect_subject_samples)) {
         return()
       }
       subject_choices <- setdiff(meta_cols(), c("SampleID", input$primary_group_var, input$secondary_group_var))
@@ -803,18 +808,23 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       }
     })
 
+    beta_distance <- reactive({
+      req(ps_normalized_local(), dist_method())
+      phyloseq::distance(ps_normalized_local(), method = dist_method())
+    })
+
     data_prepared <- reactive({
       req(ps_normalized_local(), dist_method(), primary_group_var())
       ps_data <- ps_normalized_local()
       ps_data <- coerce_group_vars_to_factor(ps_data, primary_group_var(), secondary_group_var())
-      dist_mat <- phyloseq::distance(ps_data, method = dist_method())
+      dist_mat <- beta_distance()
       metadata <- as(phyloseq::sample_data(ps_data), "data.frame")
       list(ps = ps_data, dist_mat = dist_mat, metadata = metadata, dist_method = dist_method())
     })
 
     ordination_distance <- reactive({
       method <- dist_method()
-      if (identical(method, "jaccard")) data_prepared()$dist_mat else method
+      if (identical(method, "jaccard")) beta_distance() else method
     })
 
     phyloseq_signature <- function(ps) {
@@ -1309,7 +1319,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       pcoa_ord <- tryCatch(pcoa_ordination_reactive(), error = function(e) NULL)
       if (is.null(pcoa_ord)) {
         pcoa_ord <- tryCatch(
-          phyloseq::ordinate(ps_for_envfit, method = "PCoA", distance = ordination_distance()),
+          phyloseq::ordinate(ps_for_envfit, method = "PCoA", distance = beta_distance()),
           error = function(e) NULL
         )
       }
@@ -1563,8 +1573,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
     
     
     pcoa_ordination_reactive <- reactive({
-      req(ps_plot_obj())
-      phyloseq::ordinate(ps_plot_obj(), method = "PCoA", distance = ordination_distance())
+      req(ps_normalized_local())
+      phyloseq::ordinate(ps_normalized_local(), method = "PCoA", distance = beta_distance())
     })
     
     pcoa_plot_reactive <- reactive({
@@ -1617,6 +1627,11 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      if (isTRUE(input$connect_subject_samples)) {
+        metadata <- as.data.frame(phyloseq::sample_data(ps_data_for_plot))
+        subject_col <- resolve_meta_colname(input$subject_id_var, names(metadata))
+        p <- add_subject_pair_lines(p, plot_data, metadata, subject_col, "Axis.1", "Axis.2")
+      }
       centroid_df <- NULL
       centroid_line_df <- NULL
       if (isTRUE(input$show_centroid_lines) || isTRUE(input$show_centroids)) {
@@ -1938,10 +1953,10 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
     }
 
     nmds_ordination_reactive <- reactive({
-      req(ps_plot_obj(), dist_method())
+      req(ps_normalized_local(), dist_method())
       redraw_index <- if (is.null(input$redraw_nmds)) 0L else as.integer(input$redraw_nmds)
       set.seed(42L + redraw_index)
-      run_beta_nmds(ps_plot_obj())
+      run_beta_nmds(ps_normalized_local())
     })
 
     nmds_run_info <- reactive({
@@ -2015,6 +2030,11 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
         )
       
       plot_data <- phyloseq::plot_ordination(ps_data_for_plot, ord, justDF = TRUE)
+      if (isTRUE(input$connect_subject_samples)) {
+        metadata <- as.data.frame(phyloseq::sample_data(ps_data_for_plot))
+        subject_col <- resolve_meta_colname(input$subject_id_var, names(metadata))
+        p <- add_subject_pair_lines(p, plot_data, metadata, subject_col, "NMDS1", "NMDS2")
+      }
       centroid_df <- NULL
       centroid_line_df <- NULL
       if (isTRUE(input$show_centroid_lines) || isTRUE(input$show_centroids)) {
@@ -2667,7 +2687,12 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
             " at ",
             tax_level_label,
             " level. Points represent samples and are colored by group. ",
-            if (isTRUE(input$show_ellipses)) "Group ellipses show 80% confidence regions. " else "",
+            if (isTRUE(input$show_ellipses)) "Ellipses show the fitted 80% contours for each group. " else "",
+            if (isTRUE(input$show_centroids)) "Centroids mark group centers. " else "",
+            if (isTRUE(input$show_centroid_lines)) "Lines connect samples to their group centroids. " else "",
+            if (isTRUE(input$connect_subject_samples) && isTruthy(input$subject_id_var)) {
+              "Thin gray lines connect pairs of samples from the same subject. "
+            } else "",
             if (isTRUE(input$show_group_hulls)) "Group hulls show convex envelopes (chull). " else "",
             rarefaction_sentence,
             pairing_sentence,

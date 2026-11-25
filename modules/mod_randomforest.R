@@ -2471,9 +2471,9 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       }
 
       legend_body <- if (identical(active_tab, "ROC / AUC")) {
-        "ROC curves summarize one-vs-rest classification performance for each class. AUC values in the legend and macro AUC indicate overall discriminative performance."
+        "Each ROC curve shows the trade-off between the true-positive and false-positive rates for one class versus the remaining classes. The legend gives the area under each curve (AUC), and macro AUC averages those values across classes."
       } else if (identical(active_tab, "SHAP Bar plot")) {
-        "The SHAP plot shows the top taxa ranked by mean absolute SHAP value. Larger bars indicate stronger contribution of each taxon to model predictions."
+        "Bars rank taxa by their mean absolute SHAP values. Longer bars indicate a larger average contribution to predictions, irrespective of the direction of that contribution."
       } else if (identical(active_tab, "SHAP Table")) {
         "This table summarizes SHAP statistics per feature, including class-specific contributions when available."
       } else if (identical(active_tab, "RF Table")) {
