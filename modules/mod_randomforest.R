@@ -1829,7 +1829,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       list(cell_mm = cell_mm, bar_width_pt = bar_width_pt)
     }
 
-    build_shap_plot <- function(res, top_n = 20, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120, base_size = 11) {
+    build_shap_plot <- function(res, top_n = 20, taxa_fontsize = 10, cell_mm = 4.4, bar_width_pt = 120, base_size = 11) {
       ss <- derive_shap_summary(res)
       validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP summary is not available."))
       ss <- as.data.frame(ss, check.names = FALSE)
@@ -1932,9 +1932,9 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         show_column_dend = FALSE,
         show_heatmap_legend = FALSE,
         row_names_side = "left",
-        row_names_gp = grid::gpar(fontsize = taxa_fontsize),
+        row_names_gp = grid::gpar(fontsize = taxa_fontsize, col = "black"),
         row_names_max_width = row_label_width,
-        column_names_gp = grid::gpar(fontsize = max(8, base_size - 2)),
+        column_names_gp = grid::gpar(fontsize = plot_axis_label_size(base_size, 11), col = "black"),
         column_names_rot = 90,
         width = grid::unit(cell_mm * ncol(hm_mat), "mm"),
         height = grid::unit(cell_mm * nrow(hm_mat), "mm")
@@ -1949,7 +1949,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             at = c(0, bar_x_max / 2, bar_x_max),
             labels = sprintf("%.2f", c(0, bar_x_max / 2, bar_x_max)),
             side = "bottom",
-            gp = grid::gpar(fontsize = max(8, base_size - 3))
+            gp = grid::gpar(fontsize = plot_axis_label_size(base_size, 11), col = "black")
           ),
           ylim = c(0, bar_x_max),
           bar_width = 0.7,
@@ -1980,7 +1980,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         ss <- derive_shap_summary(res)
         validate(need(!is.null(ss) && nrow(ss) > 0, "SHAP plot is not available."))
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
-        taxa_font <- max(6, as.integer(input$base_size) - 3)
+        taxa_font <- plot_axis_label_size(input$base_size, 11)
         p <- build_shap_plot(
           res,
           top_n = 20,
@@ -2041,7 +2041,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           res = dpi_val
         )
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 25L)
-        taxa_font <- max(6, as.integer(input$base_size) - 3)
+        taxa_font <- plot_axis_label_size(input$base_size, 11)
         p <- build_shap_plot(
           res,
           top_n = 25,
@@ -2059,7 +2059,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       }
     )
 
-    build_importance_plot <- function(res, taxa_fontsize = 8, cell_mm = 4.4, bar_width_pt = 120, base_size = 11) {
+    build_importance_plot <- function(res, taxa_fontsize = 10, cell_mm = 4.4, bar_width_pt = 120, base_size = 11) {
       top_imp <- head(res$importance, 20)
       top_imp$taxa_label_plot <- make.unique(resolve_current_taxa_labels(top_imp, res$tax_level))
       dup_label <- duplicated(top_imp$taxa_label_plot) | duplicated(top_imp$taxa_label_plot, fromLast = TRUE)
@@ -2144,9 +2144,9 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
         show_column_dend = FALSE,
         show_heatmap_legend = FALSE,
         row_names_side = "left",
-        row_names_gp = grid::gpar(fontsize = taxa_fontsize),
+        row_names_gp = grid::gpar(fontsize = taxa_fontsize, col = "black"),
         row_names_max_width = row_label_width,
-        column_names_gp = grid::gpar(fontsize = max(8, base_size - 2)),
+        column_names_gp = grid::gpar(fontsize = plot_axis_label_size(base_size, 11), col = "black"),
         column_names_rot = 90,
         width = grid::unit(cell_mm * ncol(hm_mat), "mm"),
         height = grid::unit(cell_mm * nrow(hm_mat), "mm")
@@ -2161,7 +2161,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
             at = c(0, bar_x_max / 2, bar_x_max),
             labels = sprintf("%.2f", c(0, bar_x_max / 2, bar_x_max)),
             side = "bottom",
-            gp = grid::gpar(fontsize = max(8, base_size - 3))
+            gp = grid::gpar(fontsize = plot_axis_label_size(base_size, 11), col = "black")
           ),
           ylim = c(0, bar_x_max),
           bar_width = 0.7,
@@ -2191,7 +2191,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           return(invisible(NULL))
         }
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
-        taxa_font <- max(6, as.integer(input$base_size) - 3)
+        taxa_font <- plot_axis_label_size(input$base_size, 11)
         p <- build_importance_plot(
           res,
           taxa_fontsize = taxa_font,
@@ -2235,7 +2235,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           res = dpi_val
         )
         geom <- compute_plot_geom(input$plot_width, input$plot_height, n_rows = 20L)
-        taxa_font <- max(6, as.integer(input$base_size) - 3)
+        taxa_font <- plot_axis_label_size(input$base_size, 11)
         p <- build_importance_plot(
           res,
           taxa_fontsize = taxa_font,
@@ -2313,6 +2313,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           color = "Class"
         ) +
         ggplot2::theme_minimal(base_size = base_size) +
+          plot_axis_label_theme(base_size, 11) +
         ggplot2::theme(
           plot.title = ggplot2::element_text(face = "bold"),
           panel.grid.minor = ggplot2::element_blank(),

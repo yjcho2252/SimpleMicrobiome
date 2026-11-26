@@ -52,9 +52,17 @@ mod_taxa_correlogram_ui <- function(id) {
       hr(),
       h5(icon("download"), "Download"),
       div(
-        style = "display: flex; flex-wrap: wrap; gap: 4px;",
-        downloadButton(ns("download_plot"), "Plot (PNG)"),
-        downloadButton(ns("download_matrix"), "Matrix (TSV)")
+        style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+        downloadButton(
+          ns("download_plot"),
+          "Plot (PNG)",
+          style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+        ),
+        downloadButton(
+          ns("download_matrix"),
+          "Matrix (TSV)",
+          style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+        )
       )
     ),
     mainPanel(
@@ -246,6 +254,7 @@ mod_taxa_correlogram_server <- function(id, ps_obj, active = function() TRUE) {
         ggplot2::coord_fixed() +
         ggplot2::labs(x = NULL, y = NULL) +
         ggplot2::theme_minimal(base_size = font) +
+          plot_axis_label_theme(font, 11) +
         ggplot2::theme(
           axis.text.x = ggplot2::element_text(
             angle = angle, hjust = if (angle == 0) 0.5 else 1,

@@ -128,7 +128,8 @@ If `Within-Subject Pairing` is enabled and the selected subject ID has repeated 
 
 ### 2.13 Plot Width / Plot Height / Base Font Size
 - **What it controls**: readability of multi-group/multi-index output.
-- Base Font Size defaults to 14, Dot Size defaults to 4, and X-axis labels can be displayed at 0°, 45°, or 90°.
+- The plot defaults to 600 × 500 px, with a base font size of 14 and dot size of 4. X-axis labels default to 0° and can be rotated to 45° or 90°.
+- Use **Plot (PNG)** and **Data (TSV)** in the **Download** section at the bottom of the left panel.
 - **Practical guidance**:
   - Many groups or long labels -> increase width.
   - Many selected indices -> increase height.
@@ -142,6 +143,8 @@ If `Within-Subject Pairing` is enabled and the selected subject ID has repeated 
 - When pairing is enabled but the data do not contain repeated measurements for the selected subject ID, the app keeps the comparison in the figure but indicates that pairing is not ready.
 
 ## 4. Rarefaction Depth Rule
+
+The figure legend reports the applied rarefaction depth in reads per sample. If the 100,000-read cap reduces the depth, the legend also reports the minimum sample depth before applying the cap.
 - Alpha diversity is computed after rarefaction.
 - The app uses:
   - `rarefaction depth = min(min(sample sums), 100000)`

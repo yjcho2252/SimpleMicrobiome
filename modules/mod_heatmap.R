@@ -311,7 +311,7 @@ mod_heatmap_ui <- function(id) {
 mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = function() NULL, active = function() TRUE) {
   moduleServer(id, function(input, output, session) {
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
-    tss_value_scales <- c("Square Root (Hellinger)" = "hellinger", "Log2(1 + TSS %)" = "log_tss")
+    tss_value_scales <- c("Square Root (Hellinger)" = "hellinger", "Log TSS (Log10(% + 1))" = "log_tss")
 
     observeEvent(ps_obj(), {
       ps <- ps_obj()
@@ -888,7 +888,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       scale <- input$value_scale
       if (is_tss_abundance(payload) && scale %in% tss_value_scales) {
         # Transform sample values or completed group means without changing the test inputs.
-        transform <- if (identical(scale, "hellinger")) sqrt else function(x) log2(1 + 100 * x)
+        transform <- if (identical(scale, "hellinger")) sqrt else function(x) log10(100 * x + 1)
         payload$assoc_mat <- transform(payload$assoc_mat)
         payload$heat_df$Association <- transform(payload$heat_df$Association)
         payload$run_settings$value_scale <- scale
@@ -994,7 +994,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       } else if (identical(settings$value_scale, "hellinger")) {
         if (isTRUE(settings$samples)) "Square root of\nrelative abundance" else "Square root of mean\nrelative abundance"
       } else if (identical(settings$value_scale, "log_tss")) {
-        if (isTRUE(settings$samples)) "Log2(1 + relative\nabundance %)" else "Log2(1 + mean relative\nabundance %)"
+        if (isTRUE(settings$samples)) "Log10(relative\nabundance % + 1)" else "Log10(mean relative\nabundance % + 1)"
       } else if (identical(settings$association_mode, "prevalence")) {
         if (isTRUE(settings$samples)) "Detection" else if (identical(analysis_target(), "taxa_group")) "Delta prevalence\n(in vs out)" else
           "Phi coefficient\n(binary association)"
@@ -1152,11 +1152,12 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         labels[marked] <- paste0(labels[marked], "*")
       }
 
+      legend_fonts <- heatmap_legend_font_sizes()
       legend_params <- c(list(
         title = legend_title,
         title_position = "topcenter",
-        title_gp = grid::gpar(fontfamily = font_family, fontsize = max(6, base_size - 4)),
-        labels_gp = grid::gpar(fontfamily = font_family, fontsize = max(5, base_size - 5))
+        title_gp = grid::gpar(fontfamily = font_family, fontsize = legend_fonts[["title"]]),
+        labels_gp = grid::gpar(fontfamily = font_family, fontsize = legend_fonts[["labels"]])
       ), legend_ticks)
       panel_titles <- NULL
       if (!is.null(panels)) {
@@ -1194,8 +1195,8 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         row_names_side = if (show_row_dend_opt) "right" else "left",
         column_names_side = "bottom",
         column_names_rot = heatmap_x_label_angle(),
-        row_names_gp = grid::gpar(fontfamily = font_family, fontsize = max(6, base_size - 2)),
-        column_names_gp = grid::gpar(fontfamily = font_family, fontsize = max(6, base_size - 2)),
+        row_names_gp = grid::gpar(fontfamily = font_family, fontsize = plot_axis_label_size(base_size, 10), col = "black"),
+        column_names_gp = grid::gpar(fontfamily = font_family, fontsize = plot_axis_label_size(base_size, 10), col = "black"),
         top_annotation = panel_titles,
         row_names_max_width = grid::unit(min(60, canvas_width_mm * 0.35), "mm"),
         show_heatmap_legend = FALSE,
@@ -1231,6 +1232,11 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       list(heatmap = heatmap, colors = col_fun, legend = legend_params)
     }
 
+    heatmap_legend_font_sizes <- reactive({
+      base_size <- heatmap_base_size()
+      c(title = max(6, base_size * 0.9), labels = max(5, base_size * 0.85))
+    })
+
     plot_dims_px <- reactive({
       if (identical(input$plot_size_mode, "manual")) {
         clamp_dimension <- function(value, fallback, minimum) {
@@ -1256,7 +1262,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       n_cols <- ncol(assoc_mat)
       n_rows <- nrow(assoc_mat)
       base_size <- heatmap_base_size()
-      label_size <- max(6, base_size - 2)
+      label_size <- plot_axis_label_size(base_size, 10)
       panels <- payload$column_panels
       by_sample <- isTRUE(payload$run_settings$samples)
       column_labels <- if (by_sample || is.null(panels)) colnames(assoc_mat) else panels$secondary
@@ -1275,9 +1281,10 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       radians <- heatmap_x_label_angle() * pi / 180
       label_height <- label_size * 110 / 72
       column_labels_px <- min(label_cap_px, column_label_width * sin(radians) + label_height * cos(radians))
+      legend_fonts <- heatmap_legend_font_sizes()
       legend_px <- max(
-        text_width_px(heatmap_legend_title(payload), label_size),
-        text_width_px("-100.00", max(5, base_size - 3)) + 36
+        text_width_px(heatmap_legend_title(payload), legend_fonts[["title"]]),
+        text_width_px("-100.00", legend_fonts[["labels"]]) + 36
       )
       horizontal_space <- row_labels_px + legend_px + if (isTRUE(input$show_row_dendrogram)) 170 else 100
       vertical_space <- max(230, column_labels_px + if (isTRUE(input$show_col_dendrogram)) 120 else 80)
@@ -1558,7 +1565,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         if (identical(payload$run_settings$value_scale, "hellinger")) {
           paste0("Colors show the square root of ", quantity, " expressed as a proportion.")
         } else {
-          paste0("Colors show log2(1 + x), where x is ", quantity, " expressed as a percentage.")
+          paste0("Colors show log10(x + 1), where x is ", quantity, " expressed as a percentage.")
         }
       }
       body_text <- if (by_sample) {

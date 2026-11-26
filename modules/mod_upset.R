@@ -10,10 +10,7 @@ mod_upset_ui <- function(id) {
       hr(),
       h4(icon("sliders"), "Analysis & Plot Settings"),
       selectInput(ns("rank"), "Taxonomic Level", choices = c("Genus", "ASV"), selected = "Genus"),
-      tags$details(
-        tags$summary("Advanced Options"),
-        numericInput(ns("min_prevalence"), "Minimum Group Prevalence (%)", 10, min = 0, max = 100, step = 1)
-      ),
+      numericInput(ns("min_prevalence"), "Prevalence Filter (%)", 10, min = 0, max = 100, step = 1),
       hr(),
       h4(icon("sliders"), "Display Options"),
       selectInput(ns("plot_size_mode"), "Plot Size", choices = c("Auto" = "auto", "Manual" = "manual")),
@@ -27,9 +24,17 @@ mod_upset_ui <- function(id) {
       hr(),
       h5(icon("download"), "Download"),
       div(
-        style = "display: flex; flex-wrap: wrap; gap: 4px;",
-        downloadButton(ns("download_plot"), "Plot (PNG)"),
-        downloadButton(ns("download_table"), "Intersections (TSV)")
+        style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+        downloadButton(
+          ns("download_plot"),
+          "Plot (PNG)",
+          style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+        ),
+        downloadButton(
+          ns("download_table"),
+          "Intersections (TSV)",
+          style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+        )
       )
     ),
     mainPanel(
@@ -179,21 +184,25 @@ mod_upset_server <- function(id, ps_obj, plot_order = function() NULL, active = 
       top_height <- grid::unit(max(100, size[["height"]] * 0.35) / 96, "inches")
       intersection_color <- "#246A73"
       annotation_font <- grid::gpar(fontfamily = "sans", fontsize = font, col = "#334155")
+      axis_font <- grid::gpar(fontfamily = "sans", fontsize = plot_axis_label_size(font, 11), col = "black")
       plot <- ComplexHeatmap::UpSet(
         m, set_order = seq_along(ComplexHeatmap::set_size(m)),
         comb_order = seq_along(sizes),
-        row_names_gp = grid::gpar(fontfamily = "sans", fontsize = font, fontface = "bold", col = "#243446"),
+        row_names_gp = grid::gpar(fontfamily = "sans", fontsize = plot_axis_label_size(font, 11),
+                                  fontface = "bold", col = "black"),
         comb_col = intersection_color, pt_size = grid::unit(2.5, "mm"), lwd = 1.7,
         bg_col = c("#F3F6F8", "#FFFFFF"), bg_pt_col = "#CFD8DF",
         top_annotation = ComplexHeatmap::upset_top_annotation(
           m, height = top_height, gp = grid::gpar(fill = intersection_color), annotation_name_gp = annotation_font,
+          axis_param = list(gp = axis_font),
           add_numbers = show_counts, numbers_rot = 0,
           numbers_gp = grid::gpar(fontfamily = "sans", fontsize = max(7, font - 2), col = "#243446"),
           numbers_offset = grid::unit(1.5, "mm"),
           ylim = if (show_counts) c(0, max(sizes) * 1.2) else NULL
         ),
         left_annotation = ComplexHeatmap::upset_left_annotation(
-          m, gp = grid::gpar(fill = "#A8B9C6"), annotation_name_gp = annotation_font
+          m, gp = grid::gpar(fill = "#A8B9C6"), annotation_name_gp = annotation_font,
+          axis_param = list(direction = "reverse", gp = axis_font)
         ),
         right_annotation = NULL
       )

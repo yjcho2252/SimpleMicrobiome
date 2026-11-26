@@ -44,9 +44,17 @@ mod_taxa_summary_ui <- function(id) {
       hr(),
       h5(icon("download"), "Download"),
       div(
-        style = "display: flex; flex-wrap: wrap; gap: 4px;",
-        downloadButton(ns("download_plot"), "Plot (PNG)"),
-        downloadButton(ns("download_summary"), "Summary (TSV)")
+        style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+        downloadButton(
+          ns("download_plot"),
+          "Plot (PNG)",
+          style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+        ),
+        downloadButton(
+          ns("download_summary"),
+          "Summary (TSV)",
+          style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+        )
       )
     ),
     mainPanel(
@@ -230,7 +238,7 @@ mod_taxa_summary_server <- function(id, ps_obj, plot_order = function() NULL) {
       summary <- taxa_summary()
       if (label_angle() != 90 || !isTruthy(summary$x_label)) return(0)
       label_width <- max(nchar(levels(summary$cells$x), type = "width"))
-      ceiling(label_width * base_font() * 0.8) + 16
+      ceiling(label_width * plot_axis_label_size(base_font(), 12)) + 16
     })
 
     summary_plot <- function() {
@@ -260,6 +268,7 @@ mod_taxa_summary_server <- function(id, ps_obj, plot_order = function() NULL) {
         ggplot2::scale_y_discrete(drop = FALSE, expand = ggplot2::expansion(add = y_padding)) +
         ggplot2::labs(x = summary$x_label, y = NULL) +
         ggplot2::theme_minimal(base_size = base_font(), base_family = "sans") +
+          plot_axis_label_theme(base_font(), 12) +
         ggplot2::theme(
           legend.title = ggplot2::element_text(size = ggplot2::rel(0.78)),
           legend.text = ggplot2::element_text(size = ggplot2::rel(0.75)),
@@ -373,6 +382,8 @@ mod_taxa_summary_server <- function(id, ps_obj, plot_order = function() NULL) {
       axes <- grep("^[xy]axis[0-9]*$", names(widget$x$layout), value = TRUE)
       for (axis in axes) {
         widget$x$layout[[axis]]$tickfont$family <- font_family
+        widget$x$layout[[axis]]$tickfont$size <- plot_axis_label_size(base_font(), 12) * 96 / 72
+        widget$x$layout[[axis]]$tickfont$color <- "black"
         if (startsWith(axis, "yaxis")) {
           # Reserve space for the labels without drawing visible tick marks.
           widget$x$layout[[axis]]$ticks <- "outside"

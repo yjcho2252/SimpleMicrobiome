@@ -29,23 +29,41 @@ automatic_analysis_view <- function(ns, ..., prompt_overlay = NULL) {
   )
 }
 
+req_active_analysis <- function(active) {
+  # Successful computations do not depend on tab visibility.
+  if (!isTRUE(shiny::isolate(active()))) shiny::req(isTRUE(active()))
+}
+
 automatic_analysis <- function(active, inputs, compute) {
+  opened <- shiny::reactiveVal(FALSE)
+  shiny::observeEvent(active(), {
+    if (isTRUE(active())) opened(TRUE)
+  })
   settled <- shiny::debounce(shiny::reactive({
-    if (isTRUE(active())) inputs() else NULL
+    if (opened()) tryCatch(inputs(), shiny.silent.error = function(e) NULL)
   }), 350)
+  last_request <- NULL
+  last_result <- NULL
+  has_result <- FALSE
 
   shiny::reactive({
-    shiny::req(isTRUE(active()))
+    shiny::req(opened())
     requested <- inputs()
+    if (has_result && identical(requested, last_request)) return(last_result)
+    req_active_analysis(active)
     shiny::validate(shiny::need(identical(requested, settled()), "Updating analysis..."))
-    shiny::isolate(compute(requested))
+    result <- shiny::isolate(compute(requested))
+    last_request <<- requested
+    last_result <<- result
+    has_result <<- TRUE
+    result
   })
 }
 
 register_automatic_analysis_status <- function(output, active, result, initial_message,
                                                updating_message = "Updating analysis...") {
   state <- shiny::reactive({
-    shiny::req(isTRUE(active()))
+    shiny::req(isTRUE(active()), cancelOutput = TRUE)
     tryCatch({
       result()
       list(ready = TRUE)

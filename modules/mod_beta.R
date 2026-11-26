@@ -20,6 +20,8 @@ mod_beta_ui <- function(id) {
         selectInput(ns("secondary_group_var"), "Secondary Variable (Shape)", choices = c("None"), selected = "None"),
         hr(),
         h4(icon("sliders"), "Analysis Settings"),
+        selectInput(ns("analysis_method"), "Analysis Method",
+                    choices = c("PCoA", "NMDS"), selected = "PCoA"),
         selectInput(
           ns("distance_metric"),
           "Distance Metric",
@@ -71,7 +73,7 @@ mod_beta_ui <- function(id) {
           uiOutput(ns("envfit_var_selector")),
           uiOutput(ns("envfit_taxa_selector")),
           checkboxInput(ns("envfit_only_sig"), "Show Only Significant Vectors", value = TRUE),
-          numericInput(ns("envfit_p_cutoff"), "p-Value Cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
+          numericInput(ns("envfit_p_cutoff"), "p-value Cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
           checkboxInput(ns("show_envfit_vectors"), "Overlay EnvFit Vectors on Plots", value = TRUE),
           actionButton(ns("run_envfit"), "Run EnvFit", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
           tags$script(HTML(
@@ -171,6 +173,16 @@ mod_beta_ui <- function(id) {
           numericInput(ns("x_max"), "X-Axis Maximum", value = NA),
           numericInput(ns("y_min"), "Y-Axis Minimum", value = NA),
           numericInput(ns("y_max"), "Y-Axis Maximum", value = NA)
+        ),
+        hr(),
+        h5(icon("download"), "Download"),
+        tags$div(
+          style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_beta_plot"),
+            "Plot (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
         )
       ),
       
@@ -181,36 +193,19 @@ mod_beta_ui <- function(id) {
           tags$div(
             id = ns("beta_tab_container"),
             style = "max-width: 100%;",
-            tabsetPanel(
-              id = ns("beta_tabs"),
-              tabPanel("PCoA",
-                tags$div(
-                  style = "margin-top: 8px;",
-                  downloadButton(
-                    ns("download_pcoa"),
-                    "Download PCoA (PNG)",
-                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-                  )
-                ),
-                uiOutput(ns("pcoa_plot_ui"))
-              ),
-              tabPanel("NMDS",
-                tags$div(
-                  style = "margin-top: 8px;",
-                  downloadButton(
-                    ns("download_nmds"),
-                    "Download NMDS (PNG)",
-                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-                  )
-                ),
-                uiOutput(ns("nmds_plot_ui")),
-                tags$div(
-                  style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
-                  actionButton(
-                    ns("redraw_nmds"),
-                    "Re-run NMDS",
-                    style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
-                  )
+            conditionalPanel(
+              "input.analysis_method === 'PCoA'", ns = ns,
+              uiOutput(ns("pcoa_plot_ui"))
+            ),
+            conditionalPanel(
+              "input.analysis_method === 'NMDS'", ns = ns,
+              uiOutput(ns("nmds_plot_ui")),
+              tags$div(
+                style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
+                actionButton(
+                  ns("redraw_nmds"),
+                  "Re-run NMDS",
+                  style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
                 )
               )
             )
@@ -1589,6 +1584,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       }
       
       p <- p + ggplot2::theme_bw(base_size = base_size) +
+        plot_axis_label_theme(base_size, 14) +
         ggplot2::labs(title = paste0("PCoA - ", distance_label(), " (", input$beta_tax_level, " Level)"),
                       color = primary_group_var(),
                       shape = if (is.null(plot_shape_var())) NULL else plot_shape_var(),
@@ -1899,19 +1895,6 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       )
     })
     
-    output$download_pcoa <- downloadHandler(
-      filename = function() { paste0("PCoA_", gsub("-", "", distance_label()), "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") },
-      content = function(file) {
-        dpi_val <- 300
-        #width_in <- input$plot_width_px / dpi_val
-        #height_in <- input$plot_height_px / dpi_val
-        width_in <- input$plot_width_px / 72
-        height_in <- input$plot_height_px / 72
-        ggplot2::ggsave(file, plot = pcoa_plot_reactive(), device = "png",
-                        width = width_in, height = height_in, units = "in", dpi = dpi_val)
-      }
-    )
-    
     run_beta_nmds <- function(ps) {
       distance <- ordination_distance()
       if (inherits(distance, "dist")) {
@@ -1994,6 +1977,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       }
       
       p <- p + ggplot2::theme_bw(base_size = base_size) +
+        plot_axis_label_theme(base_size, 14) +
         ggplot2::labs(title = paste0("NMDS - ", distance_label(), " (", input$beta_tax_level, " Level, Stress: ", round(ord$stress, 3), ")"),
                       color = primary_group_var(),
                       shape = if (is.null(plot_shape_var())) NULL else plot_shape_var()) +
@@ -2308,16 +2292,18 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       )
     })
     
-    output$download_nmds <- downloadHandler(
-      filename = function() { paste0("NMDS_", gsub("-", "", distance_label()), "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") },
+    output$download_beta_plot <- downloadHandler(
+      filename = function() {
+        paste0(req(input$analysis_method), "_", gsub("-", "", distance_label()),
+               "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
+      },
       content = function(file) {
-        dpi_val <- 300
-        #width_in <- input$plot_width_px / dpi_val
-        #height_in <- input$plot_height_px / dpi_val
+        method <- req(input$analysis_method)
+        plot <- if (identical(method, "NMDS")) nmds_plot_reactive() else pcoa_plot_reactive()
         width_in <- input$plot_width_px / 72
         height_in <- input$plot_height_px / 72
-        ggplot2::ggsave(file, plot = nmds_plot_reactive(), device = "png",
-                        width = width_in, height = height_in, units = "in", dpi = dpi_val)
+        ggplot2::ggsave(file, plot = plot, device = "png",
+                        width = width_in, height = height_in, units = "in", dpi = 300)
       }
     )
     
@@ -2517,7 +2503,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
           paste0(groups, "\n(n = ", result$group_sizes[groups], ")")
         }) +
         ggplot2::labs(x = result$group_var, y = "Distance to group spatial median") +
-        ggplot2::theme_bw()
+        ggplot2::theme_bw() +
+          plot_axis_label_theme(input$base_size, 14)
     })
     
     output$permanova_results_out <- renderUI({
@@ -2608,8 +2595,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
     })
 
     beta_figure_legend <- function() {
-      req(input$beta_tabs, input$distance_metric, input$beta_tax_level)
-      ord_label <- if (identical(input$beta_tabs, "NMDS")) "NMDS beta diversity ordination plot" else "PCoA beta diversity ordination plot"
+      req(input$analysis_method, input$distance_metric, input$beta_tax_level)
+      ord_label <- paste(input$analysis_method, "beta diversity ordination plot")
       metric_label <- distance_label()
       metric_phrase <- if (grepl("Aitchison", metric_label, fixed = TRUE)) metric_label else paste0(metric_label, " distance")
       tax_level_label <- tolower(input$beta_tax_level)
@@ -2629,7 +2616,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
         ""
       }
       nmds_sentence <- ""
-      if (identical(input$beta_tabs, "NMDS")) {
+      if (identical(input$analysis_method, "NMDS")) {
         info <- nmds_legend_info()
         if (!is.null(info)) {
           stress_text <- if (is.finite(info$stress)) format(round(info$stress, 3), nsmall = 3) else "not available"
@@ -2676,10 +2663,8 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
     }
 
     output$nmds_results_out <- renderUI({
-      if (!identical(input$beta_tabs, "NMDS")) {
-        return(HTML("Open the NMDS tab to calculate and display NMDS run details."))
-      }
-      info <- nmds_run_info()
+      req(identical(input$analysis_method, "NMDS"))
+      info <- req(nmds_legend_info())
       stress_text <- if (is.finite(info$stress)) format(round(info$stress, 3), nsmall = 3) else "not available"
       tries_text <- if (length(info$tries) > 0 && !is.na(info$tries)) {
         paste0(info$tries, " start(s)")
@@ -2702,12 +2687,16 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       req(input$plot_width_px)
       box_width <- if (is.null(input$plot_width_px) || !is.finite(input$plot_width_px)) 500 else input$plot_width_px
       tags$div(
-        tags$h5(icon("project-diagram"), "NMDS Run Details"),
-        tags$div(
-          class = "app-result-card app-status-card",
-          style = paste0("width: ", box_width, "px; max-width: 100%;"),
-          htmlOutput(session$ns("nmds_results_out"))
-        ),
+        if (identical(input$analysis_method, "NMDS") && !is.null(nmds_legend_info())) {
+          tagList(
+            tags$h5(icon("project-diagram"), "NMDS Run Details"),
+            tags$div(
+              class = "app-result-card app-status-card",
+              style = paste0("width: ", box_width, "px; max-width: 100%;"),
+              htmlOutput(session$ns("nmds_results_out"))
+            )
+          )
+        },
         tags$h5(icon("flask"), "Statistical Test: PERMANOVA Results"),
         tags$div(
           class = "app-result-card app-status-card",
@@ -2726,18 +2715,26 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
             )
           )
         },
-        tags$h5(icon("object-group"), "Clustering Results"),
-        tags$div(
-          class = "app-result-card app-status-card",
-          style = paste0("width: ", box_width, "px; max-width: 100%;"),
-          verbatimTextOutput(session$ns("clustering_results_out"))
-        ),
-        tags$h5(icon("arrows-to-dot"), "EnvFit Results"),
-        tags$div(
-          class = "app-result-card app-status-card",
-          style = paste0("width: ", box_width, "px; max-width: 100%;"),
-          verbatimTextOutput(session$ns("envfit_results_out"))
-        )
+        if (isTRUE(input$run_clustering > 0)) {
+          tagList(
+            tags$h5(icon("object-group"), "Clustering Results"),
+            tags$div(
+              class = "app-result-card app-status-card",
+              style = paste0("width: ", box_width, "px; max-width: 100%;"),
+              verbatimTextOutput(session$ns("clustering_results_out"))
+            )
+          )
+        },
+        if (isTRUE(input$run_envfit > 0)) {
+          tagList(
+            tags$h5(icon("arrows-to-dot"), "EnvFit Results"),
+            tags$div(
+              class = "app-result-card app-status-card",
+              style = paste0("width: ", box_width, "px; max-width: 100%;"),
+              verbatimTextOutput(session$ns("envfit_results_out"))
+            )
+          )
+        }
       )
     })
 

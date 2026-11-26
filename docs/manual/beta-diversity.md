@@ -83,7 +83,10 @@ The distance choice is the most important modeling decision in this module.
 ## 3. Analysis Structure
 
 - **Analysis Settings** groups the distance and taxonomic settings with PERMANOVA, PERMDISP, EnvFit, and Clustering.
-- Switch between PCoA and NMDS in the results panel.
+- Use **Analysis Method** at the top of **Analysis Settings** to switch between PCoA (the default) and NMDS.
+- Use **Plot (PNG)** at the bottom of the left panel to download the selected ordination.
+- Selecting NMDS runs the ordination. Use **Re-run NMDS** below the plot to run it again. **NMDS Run Details** appears when an NMDS plot and its run details are available.
+- **Clustering Results** and **EnvFit Results** appear independently after you first click their respective Run buttons.
 
 ### 3.1 PERMANOVA and PERMDISP
 PERMANOVA is the main hypothesis test shown in the results box.

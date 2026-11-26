@@ -1293,6 +1293,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
                         sprintf("* q ≤ %g | Selected group reference: %s", view$q, input$reference_level),
                       caption = "Gray indicates an unavailable estimate.") +
         ggplot2::theme_minimal(base_size = font_size) +
+          plot_axis_label_theme(font_size, 11) +
         ggplot2::theme(panel.grid = ggplot2::element_blank(),
                        axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
                        legend.position = "bottom")
@@ -1548,6 +1549,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       plot + ggplot2::labs(x = detail$variable,
                            y = if (identical(detail$method, "ZINB")) "Read count" else "Log-transformed relative abundance") +
         ggplot2::theme_minimal(base_size = input$base_size) +
+          plot_axis_label_theme(input$base_size, 11) +
         ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
                        panel.grid.major.x = ggplot2::element_blank(),
                        axis.title = ggplot2::element_text(face = "bold", colour = "#243746"))
@@ -1740,11 +1742,11 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
              subtitle = if (continuous) paste("Continuous predictor:", group_var_resolved()) else
                paste0("Positive log2FC = increased in ", target_label, " (vs ", input$reference_level, ")")) +
         theme_minimal(base_size = input$base_size) +
+          plot_axis_label_theme(input$base_size, 11) +
         theme(
           plot.title = element_text(size = 16, face = "bold"),
           plot.subtitle = element_text(size = 12),
           axis.title = element_text(size = 14),
-          axis.text = element_text(size = 12),
           legend.title = element_text(size = 13),
           legend.text = element_text(size = 12)
         )
@@ -1834,6 +1836,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
              y = if (continuous) paste("Coefficient per unit of", group_var_resolved()) else expression("log"[2]*"FC"),
              fill = "Direction") +
         theme_bw(base_size = input$base_size) +
+          plot_axis_label_theme(input$base_size, 11) +
         theme(
           plot.title = element_text(size = input$base_size + 3, face = "bold"),
           plot.margin = ggplot2::margin(6, 90, 6, 90)

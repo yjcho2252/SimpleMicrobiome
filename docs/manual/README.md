@@ -1,5 +1,10 @@
 ﻿# SimpleMicrobiome Guide
 
+## v1.2.1 Highlights
+
+- Alpha and Beta Diversity exports are in the left settings panel. Use **Analysis Method** in Beta Diversity to switch between PCoA and NMDS.
+- The manual index links directly to Taxa Bubble Plot, Taxa Correlogram, and UpSet Plot.
+
 ## v1.2.0 Highlights
 
 - Taxa Profiles includes Taxa Bubble Plot for comparing abundance and prevalence across groups.
@@ -11,6 +16,7 @@
 - [Data Loading](/manual/data-loading.html)
 - [Preprocessing](/manual/preprocessing.html)
 - [Taxa Profiles](/manual/taxa-profiles.html)
+  - [Taxa Bubble Plot](/manual/taxa-profiles.html#taxa-bubble-plot)
 - [Alpha Diversity](/manual/alpha-diversity.html)
 - [Beta Diversity](/manual/beta-diversity.html)
 - [Constrained Ordination](/manual/association-biplot.html)
@@ -21,6 +27,8 @@
 - [SparCC](/manual/sparcc.html)
 - [SPIEC-EASI](/manual/spieceasi.html)
 - [Association Heatmap](/manual/correlation-heatmap.html)
+- [Taxa Correlogram](/manual/correlation-heatmap.html#taxa-correlogram)
+- [UpSet Plot](/manual/correlation-heatmap.html#upset-plot)
 
 ## Quick Goal-Based Path
 - **Start-to-finish first analysis**:

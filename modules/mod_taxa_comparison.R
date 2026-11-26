@@ -20,7 +20,7 @@ mod_taxa_comparison_ui <- function(id) {
         width = 2,
         h4(icon("square-poll-vertical"), "Taxa Comparison"),
         hr(),
-        profile_group_selectors(ns, "group_var", "Primary Group",
+        profile_group_selectors(ns, "group_var", "Primary Group (Facet)",
                                 "secondary_group_var", "Secondary Group (Optional)"),
         hr(),
         h4(icon("sliders"), "Analysis & Plot Settings"),
@@ -42,7 +42,7 @@ mod_taxa_comparison_ui <- function(id) {
         ),
         checkboxInput(
           ns("show_p_lt_0_05_only"),
-          "Show Only q-Value < 0.05",
+          "Show only q-value < 0.05",
           value = FALSE
         ),
         selectInput(
@@ -100,10 +100,10 @@ mod_taxa_comparison_ui <- function(id) {
           tags$summary(
             h4(icon("sliders"), "Statistical Testing", style = "display: inline; margin: 0;")
           ),
-          checkboxInput(ns("show_p_val"), "Show p-Value Bars", value = TRUE),
+          checkboxInput(ns("show_p_val"), "Show p-value Bars", value = TRUE),
           conditionalPanel(
             condition = sprintf("input['%s'] == true", ns("show_p_val")),
-            checkboxInput(ns("show_sig_only"), "Show Only p-Value < 0.05", value = TRUE),
+            checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
             checkboxInput(ns("show_sig_as_marks"), "Show as Significant Marks", value = TRUE)
           ),
           selectInput(
@@ -405,7 +405,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
     }, ignoreInit = TRUE)
 
     taxa_long_data <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(ps_obj(), input$group_var, input$tax_level)
       
       ps <- tax_level_ps_raw()
@@ -498,7 +498,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
     })
 
     taxa_stats <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(taxa_long_data(), input$group_var)
       df <- taxa_long_data()
       trend_group_type <- input$trend_group_type
@@ -623,7 +623,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
     })
     
     tax_level_ps_raw <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(ps_obj(), input$tax_level)
       ps <- ps_obj()
       tax_level <- input$tax_level
@@ -643,7 +643,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
     })
     
     tax_matrices <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(tax_level_ps_raw(), input$tax_level)
       ps <- tax_level_ps_raw()
       tax_level <- input$tax_level
@@ -690,7 +690,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
       input$trend_group_type,
       input$trend_line_method
     ), {
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       taxa_summary <- taxa_stats()
 
       if (isTRUE(input$show_p_lt_0_05_only)) {
@@ -744,7 +744,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
     }, ignoreInit = FALSE)
     
     taxa_plot_data <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(taxa_long_data(), input$group_var)
       df <- taxa_long_data()
       selected_taxa <- if (is.null(input$taxa_selected) || length(input$taxa_selected) == 0) {
@@ -822,7 +822,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
     }
 
     taxa_plot_reactive <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(taxa_plot_data())
       df <- taxa_plot_data()
       secondary_col <- input$secondary_group_var
@@ -911,6 +911,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
           expand = ggplot2::expansion(mult = c(0, 0.08))
         ) +
         ggplot2::theme_bw(base_size = base_size) +
+          plot_axis_label_theme(base_size, 14) +
         ggplot2::labs(title = plot_title,
                       x = if (is_secondary) secondary_col else input$group_var, y = y_label,
                       caption = if (!is.null(exclusion_note)) paste(exclusion_note, "Tests use all samples.", sep = "\n")) +
@@ -919,7 +920,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
           plot.title = ggplot2::element_text(size = base_size + 3, face = "bold"),
           axis.title.x = ggplot2::element_text(face = "bold", size = base_size + 1),
           axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
-          axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5, size = max(6, base_size - 1)),
+          axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5),
           legend.position = "none",
           strip.background = ggplot2::element_rect(fill = "grey85", color = "grey20"),
           strip.text = ggplot2::element_text(face = "bold"),

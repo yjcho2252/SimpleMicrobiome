@@ -1317,6 +1317,7 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
         ) +
         ggplot2::labs(x = NULL, y = "Observed relative abundance (%)") +
         ggplot2::theme_bw(base_size = req(input$base_size)) +
+          plot_axis_label_theme(req(input$base_size), 11) +
         ggplot2::theme(legend.position = "none")
     })
 
@@ -1341,7 +1342,8 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
         ggplot2::labs(x = "Adjusted log fold change (natural log)", y = NULL, colour = NULL,
                       subtitle = paste("Reference group", input$reference_level),
                       caption = "Up to 10 estimates per contrast. Lines show ±1 SE.") +
-        ggplot2::theme_bw(base_size = req(input$base_size))
+        ggplot2::theme_bw(base_size = req(input$base_size)) +
+          plot_axis_label_theme(req(input$base_size), 11)
     })
 
     contrast_heatmap_reactive <- reactive({
@@ -1370,6 +1372,7 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
                       subtitle = paste("Reference group", input$reference_level),
                       caption = "* ANCOM-BC2 differential call. Grey indicates an unavailable estimate.") +
         ggplot2::theme_bw(base_size = req(input$base_size)) +
+          plot_axis_label_theme(req(input$base_size), 11) +
         ggplot2::theme(panel.grid = ggplot2::element_blank())
     })
 
@@ -1574,11 +1577,11 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
              color = "Direction",
              subtitle = paste0("Positive log2FC = increased in ", target_label, " (vs ", input$reference_level, ")")) +
         theme_minimal(base_size = input$base_size) +
+          plot_axis_label_theme(input$base_size, 11) +
         theme(
           plot.title = element_text(size = 16, face = "bold"),
           plot.subtitle = element_text(size = 12),
           axis.title = element_text(size = 14),
-          axis.text = element_text(size = 12),
           legend.title = element_text(size = 13),
           legend.text = element_text(size = 12)
         )
@@ -1664,6 +1667,7 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
              y = expression("log"[2]*"FC"),
              fill = "Direction") +
         theme_bw(base_size = input$base_size) +
+          plot_axis_label_theme(input$base_size, 11) +
         theme(
           plot.title = element_text(size = input$base_size + 3, face = "bold"),
           plot.margin = ggplot2::margin(6, 90, 6, 90)

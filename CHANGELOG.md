@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-27] v1.2.1
+
+- Moved Alpha and Beta Diversity downloads to the settings panel, added a Beta Diversity analysis selector, and refined result-card visibility.
+- Aligned download buttons and plot labels across modules, simplified UpSet controls, and reused automatic analysis results when inputs are unchanged.
+- Updated module guidance and added Bubble Plot, Correlogram, and UpSet links to the in-app manual index. See the [release notes](docs/releases/2026-11-27-v1.2.1.md).
+
 ## [2026-11-26] v1.2.0
 
 - Added Taxa Bubble Plot, Taxa Correlogram, and Upset Plot.

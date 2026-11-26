@@ -44,7 +44,7 @@ Use the sample-level view to inspect individual samples, or the grouped view to 
 - `Selected taxa (optional)`: if selected, only those taxa are shown.
 - `Show row dendrogram` and `Show column dendrogram`: controls clustering display.
 - `Color palette`: selects a diverging palette, including a colorblind-friendly option.
-- `Color scale abs limit (0 = auto)`: fixes the symmetric color scale limit when nonzero. Auto mode uses a robust range to reduce the influence of extreme values.
+- **Signed Color Scale Abs Limit (0 = Auto)** sets a symmetric color range from the negative limit to the positive limit. By default, Auto uses the 98th percentile of the absolute values of the displayed cells, with a fallback when that percentile cannot provide a positive limit. This setting applies to signed color scales.
 - `Mask non-significant cells (FDR)`: hides cells that do not pass the selected FDR cutoff.
 - An asterisk marks cells at or below the selected FDR cutoff. With masking enabled, cells above the cutoff or without a valid q-value are shown in gray.
 
@@ -109,3 +109,33 @@ Use the sample-level view to inspect individual samples, or the grouped view to 
 - Prevalence filter and max taxa
 - Value scale and color scale limit
 - Whether FDR masking was used and the q cutoff
+
+<a id="taxa-correlogram"></a>
+
+## Taxa Correlogram
+
+Use Taxa Correlogram to visualize pairwise correlations between taxa across samples.
+
+1. Analyze all samples or use **Primary Grouping Variable** and **Group Level to Include** to focus on a subset.
+2. Select **Genus** or **ASV**. Use **Prevalence Filter (%)** and **Max Taxa** to limit the matrix. Eligible taxa are ranked by mean relative abundance.
+3. Choose abundance-based or presence/absence association. For abundance, select CLR or TSS and Pearson or Spearman correlation. The presence/absence mode uses phi correlation.
+4. Read the circle color for the sign and the circle size for the magnitude of each correlation. Use **Mask Non-Significant Pairs (FDR)** and **FDR Cutoff (q)** to hide pairs above the adjusted significance threshold.
+
+Use **Plot (PNG)** to save the figure and **Matrix (TSV)** to export the pairwise results. Correlation describes an association across samples and does not establish a direct interaction.
+
+The default prevalence filter is 10%, and **Max Taxa** is 20. FDR masking and significance marks are off by default, and the q cutoff is 0.05. **Cluster Taxa** is on, the default palette is blue–red, and the maximum circle size is 8. Plot sizing defaults to **Auto**. Manual dimensions start at 850 × 750 px, and the base font size is 11.
+
+<a id="upset-plot"></a>
+
+## UpSet Plot
+
+Use UpSet Plot to see which taxa are unique to a group or shared across groups.
+
+1. Choose a **Grouping Variable** and select 2 to 12 groups under **Groups to Include**.
+2. Select **Genus** or **ASV** and set **Prevalence Filter (%)**. A taxon belongs to a group when it is detected in at least one sample and meets the threshold within that group.
+3. Read the filled dots to identify the groups in each intersection. The top bar counts taxa belonging to exactly those groups among the selected groups. The side bars show the total number of included taxa in each group.
+4. Use **Max Intersections to Plot** to limit the figure to the largest intersections. The intersection table lists all observed intersections.
+
+Use **Plot (PNG)** to save the figure and **Intersections (TSV)** to export the intersection table.
+
+After data are loaded, the app keeps a valid grouping selection or selects the first available metadata column other than sample ID. It selects all available group levels when there are at most 12. When there are more than 12, choose the levels to include. The default prevalence filter is 10%, and the plot shows up to 25 intersections. Plot sizing defaults to **Auto**. Manual dimensions start at 900 × 550 px, and the base font size is 11.

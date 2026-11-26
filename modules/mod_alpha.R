@@ -56,11 +56,11 @@ mod_alpha_ui <- function(id) {
           "#%s { margin-bottom: 2px; } #%s, #%s { margin-top: 0; margin-bottom: 4px; }",
           ns("show_p_val"), ns("show_sig_only"), ns("show_sig_as_marks")
         ))),
-        checkboxInput(ns("show_p_val"), "Show p-Value Bars", value = TRUE),
+        checkboxInput(ns("show_p_val"), "Show p-value Bars", value = TRUE),
         
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("show_sig_only"), "Show Only p-Value < 0.05", value = TRUE),
+          checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
           checkboxInput(ns("show_sig_as_marks"), "Show as Significant Marks", value = TRUE)
         ),
         
@@ -91,42 +91,31 @@ mod_alpha_ui <- function(id) {
                     choices = c("0° Horizontal" = "0", "45° Diagonal" = "45", "90° Vertical" = "90"),
                     selected = "0"),
         selectInput(ns("color_palette"), "Color Palette", group_plot_palettes, selected = "set2"),
-        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar Plot)", value = FALSE)
+        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar Plot)", value = FALSE),
+        hr(),
+        h5(icon("download"), "Download"),
+        tags$div(
+          style = "display: flex; gap: 4px; align-items: center; flex-wrap: nowrap;",
+          downloadButton(
+            ns("download_alpha_plot"),
+            "Plot (PNG)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ),
+          downloadButton(
+            ns("download_alpha_data"),
+            "Data (TSV)",
+            style = "font-size: 11px; padding: 3px 6px; width: calc(50% - 2px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          )
+        )
       ),
       mainPanel(
         h4("Alpha Diversity"),
         plot_data_wait_view(ns,
           tags$div(
             style = "max-width: 100%;",
-            tabsetPanel(
-              id = ns("alpha_tabs"),
-              tabPanel(
-                "Plot",
-                tags$div(
-                  style = "margin-top: 8px;",
-                  downloadButton(
-                    ns("download_alpha_plot"),
-                    "Download Plot (PNG)",
-                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-                  )
-                ),
-                plotOutput(ns("alpha_plot_out"), height = "auto")
-              ),
-              tabPanel(
-                "Data",
-                tags$div(
-                  style = "margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center;",
-                  downloadButton(
-                    ns("download_alpha_data"),
-                    "Download Data (TSV)",
-                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-                  )
-                )
-              )
-            )
+            plotOutput(ns("alpha_plot_out"), height = "auto")
           ),
-          plot_legend_output(ns, "alpha_legend_box", c("alpha_plot_out")),
-          textOutput(ns("rarefy_size_text"))
+          plot_legend_output(ns, "alpha_legend_box", c("alpha_plot_out"))
         )
       )
     )
@@ -245,7 +234,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
     output$local_group_selector <- renderUI({
       req(meta_cols())
       group_choices <- setdiff(meta_cols(), "SampleID")
-      selectInput(session$ns("group_var"), "Primary Group",
+      selectInput(session$ns("group_var"), "Primary Group (Facet)",
                   choices = group_choices, selected = group_choices[1]) 
     })
     
@@ -277,19 +266,17 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
     })
     
     rarefaction_size <- reactive({
-      req(isTRUE(is_active_tab()))
-      req(ps_obj())
-      min(min(phyloseq::sample_sums(ps_obj())), 100000)
+      min(rarefaction_size_raw(), 100000)
     })
 
     rarefaction_size_raw <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(ps_obj())
       min(phyloseq::sample_sums(ps_obj()))
     })
     
     alpha_long_reactive <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(ps_obj(), input$group_var, input$alpha_methods)
       physeq_rarefied <- phyloseq::rarefy_even_depth(
         ps_obj(), sample.size = rarefaction_size(), rngseed = 42, replace = FALSE, verbose = FALSE
@@ -331,7 +318,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
     })
     
     alpha_plot_reactive <- reactive({
-      req(isTRUE(is_active_tab()))
+      req_active_analysis(is_active_tab)
       req(alpha_long <- alpha_long_reactive())
       primary_col <- resolve_meta_colname(input$group_var, colnames(alpha_long))
       secondary_col <- resolve_meta_colname(input$secondary_group_var, colnames(alpha_long))
@@ -368,6 +355,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
       
       p <- ggplot2::ggplot(alpha_long, ggplot2::aes_string(x = x_axis_col, y = "Value", fill = x_axis_col)) +
         ggplot2::theme_bw(base_size = base_size) +
+          plot_axis_label_theme(base_size, 14) +
         ggplot2::scale_fill_manual(values = fill_values, drop = FALSE) +
         ggplot2::labs(
           title = "Alpha Diversity Comparison",
@@ -797,21 +785,6 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
       input$plot_width 
     })
     
-    output$rarefy_size_text <- renderText({
-      req(rarefaction_size(), rarefaction_size_raw())
-      if (rarefaction_size_raw() >= 100000) {
-        paste0(
-          "Rarefaction depth: ",
-          scales::comma(rarefaction_size()),
-          " (capped at 100,000 from raw minimum ",
-          scales::comma(rarefaction_size_raw()),
-          ")"
-        )
-      } else {
-        paste("Rarefaction depth:", scales::comma(rarefaction_size()))
-      }
-    })
-    
     output$download_alpha_plot <- downloadHandler(
       filename = function() { 
         paste0("alpha_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png") 
@@ -920,6 +893,15 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
       } else {
         "box plots summarize group distributions with overlaid sample points"
       }
+      depth <- rarefaction_size()
+      raw_depth <- rarefaction_size_raw()
+      rarefaction_sentence <- paste0("Samples were rarefied to ", scales::comma(depth), " reads per sample.")
+      if (raw_depth > depth) {
+        rarefaction_sentence <- paste0(
+          rarefaction_sentence, " The minimum sample depth before applying the cap was ",
+          scales::comma(raw_depth), " reads."
+        )
+      }
       tags$div(
         tags$div(
           style = "font-weight: 600; margin-bottom: 4px;",
@@ -938,7 +920,8 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
               " When shown, *, **, and *** mark p-values below 0.05, 0.01, and 0.001, respectively. The label ns indicates that the comparison did not meet the 0.05 threshold."
             } else ""
           )
-        )
+        ),
+        tags$p(style = "margin: 6px 0 0;", rarefaction_sentence)
       )
     }
   })

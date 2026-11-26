@@ -74,9 +74,10 @@ Current result tabs:
 ### 2.11 Train ratio
 - Used in holdout mode.
 - Higher value gives more training data but less reliable test estimate.
-- Typical operating range: 0.75-0.85.
+- Default: 0.8. A typical operating range is 0.75–0.85.
 
 ### 2.12 Top N features by mean abundance
+- Default: 100 features.
 - Preselects candidate feature space.
 - Lower N reduces runtime and overfitting risk.
 - Too small N may miss predictive taxa.
@@ -84,7 +85,7 @@ Current result tabs:
 ### 2.13 Number of trees (ntree)
 - More trees typically stabilize model estimates.
 - Runtime increases with ntree.
-- Practical baseline: 500.
+- Default: 500 trees.
 
 ### 2.14 mtry (0 = auto)
 - Number of features considered per split.
@@ -97,13 +98,15 @@ Current result tabs:
 
 ### 2.16 K for K-fold CV
 - Larger K can improve estimate stability but increases runtime.
-- Common baseline: K=5.
+- Default: 5 folds.
 
 ### 2.17 Random seed
+- Default: 1234.
 - Ensures reproducibility of splits and model randomness.
 - Keep fixed for fair parameter comparisons.
 
 ### 2.18 Plot Width / Height / Base Font Size
+- Defaults: 1160 × 500 px and a base font size of 11.
 - Controls readability of SHAP/importance figures and labels.
 
 ## 3. Validation and Metrics Interpretation

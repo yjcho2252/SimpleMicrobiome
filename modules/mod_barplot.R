@@ -964,6 +964,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       
       p <- p +
         ggplot2::theme_bw(base_size = base_size) +
+          plot_axis_label_theme(base_size, 12) +
         ggplot2::scale_y_continuous(
           expand = if (subgroup_headroom > 0) {
             ggplot2::expansion(add = c(0, subgroup_headroom / 2))
@@ -976,8 +977,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
           axis.text.x = ggplot2::element_text(
             angle = 90,
             hjust = 1,
-            vjust = 0.5,
-            size = if (plot_mode == "Group_Mean") base_size else max(6, base_size - 2)
+            vjust = 0.5
           ),
           axis.title.y = ggplot2::element_text(face = "bold", size = base_size + 1),
           panel.border = ggplot2::element_rect(colour = "#595959", fill = NA, linewidth = 0.5),
@@ -1121,6 +1121,8 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       layout$hoverlabel$font$family <- font_family
       for (axis_name in grep("^[xy]axis[0-9]*$", names(layout), value = TRUE)) {
         layout[[axis_name]]$tickfont$family <- font_family
+        layout[[axis_name]]$tickfont$size <- plot_axis_label_size(input$base_size, 12) * 96 / 72
+        layout[[axis_name]]$tickfont$color <- "black"
       }
       layout$annotations <- lapply(layout$annotations, function(annotation) {
         annotation$font$family <- font_family

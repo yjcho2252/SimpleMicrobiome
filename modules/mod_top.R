@@ -5,6 +5,7 @@ mod_top_ui <- function(id) {
 
   recent_count <- 5L
   version_history <- c(
+    "261127: v1.2.1 - Refined analysis controls, plot exports, and result panels, and updated the user guide.",
     "261126: v1.2.0 - Added Taxa Bubble Plot, Taxa Correlogram, and Upset Plot, with consistent plot settings and result panels.",
     "261126: v1.1.6 - Added subgroup heatmap panels and within-subject ordination lines, with clearer plot controls and legends.",
     "261124: v1.1.5 - Improved ordination overlays, EnvFit taxa results, differential-abundance workflows, and UI consistency.",

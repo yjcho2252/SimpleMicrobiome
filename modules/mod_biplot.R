@@ -37,12 +37,6 @@ mod_biplot_ui <- function(id) {
         hr(),
         h4(icon("sliders"), "Analysis Settings"),
         selectInput(
-          ns("tax_level"),
-          "Taxonomic Level",
-          choices = c("ASV", "Genus", "Species", "Strain"),
-          selected = "Genus"
-        ),
-        selectInput(
           ns("analysis_method"),
           "Analysis Method",
           choices = c("dbRDA (capscale)" = "dbrda", "CCA" = "cca"),
@@ -58,6 +52,12 @@ mod_biplot_ui <- function(id) {
             "Aitchison" = "aitchison"
           ),
           selected = "bray"
+        ),
+        selectInput(
+          ns("tax_level"),
+          "Taxonomic Level",
+          choices = c("ASV", "Genus", "Species", "Strain"),
+          selected = "Genus"
         ),
         conditionalPanel(
           condition = sprintf("input['%s'] == 'jaccard'", ns("distance_metric")),
@@ -135,8 +135,8 @@ mod_biplot_ui <- function(id) {
             options = list(plugins = list("remove_button"))
           ),
           checkboxInput(ns("environment_only_significant"), "Show Only Significant Variables", value = FALSE),
-          numericInput(ns("environment_p_cutoff"), "P-Value Cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
-          checkboxInput(ns("show_environment_pvalues"), "Show p-Values in Labels", value = FALSE),
+          numericInput(ns("environment_p_cutoff"), "p-value Cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
+          checkboxInput(ns("show_environment_pvalues"), "Show p-values in Labels", value = FALSE),
           numericInput(ns("max_environment_vectors"), "Maximum Vectors", value = 10, min = 1, max = 50, step = 1)
         ),
         hr(),
@@ -879,6 +879,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
 
       p <- ggplot2::ggplot(site_df, ggplot2::aes(x = Axis1, y = Axis2, color = Group)) +
         ggplot2::theme_bw(base_size = base_size) +
+          plot_axis_label_theme(base_size, 14) +
         ggplot2::labs(
           title = if (identical(payload$model_type, "cca")) {
             paste0(input$tax_level, "-Level Constrained Ordination (CCA)")

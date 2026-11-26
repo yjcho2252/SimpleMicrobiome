@@ -669,8 +669,8 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       font_theme <- ggplot2::theme(
         text = ggplot2::element_text(size = font),
         axis.title = ggplot2::element_text(size = font + 2),
-        axis.text = ggplot2::element_text(size = font),
-        axis.text.x = ggplot2::element_text(size = font),
+        axis.text = ggplot2::element_text(size = font, colour = "black"),
+        axis.text.x = ggplot2::element_text(size = font, colour = "black"),
         legend.title = ggplot2::element_text(size = font + 2),
         legend.text = ggplot2::element_text(size = font),
         strip.text = ggplot2::element_text(size = font)
@@ -688,7 +688,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
         }
         # The heatmap hides its y-axis labels when a coefficient panel is present.
         if (!inherits(panel$theme$axis.text.y, "element_blank")) {
-          panel <- panel + ggplot2::theme(axis.text.y = ggplot2::element_text(size = font))
+          panel <- panel + ggplot2::theme(axis.text.y = ggplot2::element_text(size = font, colour = "black"))
         }
         panel + font_theme
       }
@@ -807,6 +807,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
           )
         ) +
         ggplot2::theme_bw(base_size = req(input$summary_font)) +
+          plot_axis_label_theme(req(input$summary_font), 10) +
         ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"), legend.position = "bottom")
     })
 
@@ -933,6 +934,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     detail_theme <- function() {
       req(isTruthy(input$summary_font), is.finite(input$summary_font))
       ggplot2::theme_minimal(base_size = input$summary_font) +
+        plot_axis_label_theme(input$summary_font, 10) +
         ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
                        panel.grid.major.x = ggplot2::element_blank(),
                        axis.title = ggplot2::element_text(face = "bold", colour = "#243746"))
