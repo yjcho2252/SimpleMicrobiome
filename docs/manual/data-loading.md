@@ -15,6 +15,8 @@ Loads all base inputs required by downstream modules.
 - Current modules support taxonomy selection up to `Strain` where available.
 
 ### 2.3 Metadata upload
+- Upload a TSV, CSV, TXT, XLSX, or XLS file. For Excel workbooks, the app reads the first worksheet and uses its first row as column headers.
+- Use `SampleID` as the first column header. Store IDs with leading zeros as text in Excel so they match the abundance table.
 - Defines grouping/covariate columns used throughout app.
 - Column types (categorical vs numeric) affect available analyses and model behavior.
 
@@ -47,9 +49,9 @@ The bundled example datasets are compact, app-ready subsets. They are intended f
 - Useful grouping variables: `Country` for between-country contrasts, `Age_Class` or `Age_Group` for age-related analyses, and `Subject_ID` for paired or repeated-measures workflows where supported.
 - References: Sprockett et al., 2020; Subramanian et al., 2014; Vatanen et al., 2016; `microbiomeDataSets` SprockettTHData reference page.
 
-### 2.6 QZA converter link/entry
-- Path for converting QIIME2 artifact formats before import.
-- Required when raw input is not app-native tabular format.
+### 2.6 QIIME 2 artifacts
+- Upload `table.qza` in the feature-table field and `taxonomy.qza` in the taxonomy field. You can mix QZA and TSV files.
+- The app sends QZA files to the configured Converter service and validates the returned TSV tables. You can also use the standalone QZA Converter and upload its TSV outputs.
 
 ## 3. Validation Checklist
 - Sample IDs overlap across feature table and metadata.

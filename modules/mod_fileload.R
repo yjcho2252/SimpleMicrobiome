@@ -85,7 +85,7 @@ mod_fileload_ui <- function(id) {
       tags$p("1. ASV/OTU Abundance Matrix", class = "file-input-label"),
       div(
         class = "file-input-control",
-        fileInput(ns("otu_file"), NULL, accept = c(".csv", ".tsv", ".txt"))
+        fileInput(ns("otu_file"), NULL, accept = c(".csv", ".tsv", ".txt", ".qza"))
       )
     ),
     div(
@@ -93,7 +93,7 @@ mod_fileload_ui <- function(id) {
       tags$p("2. Taxonomy Table", class = "file-input-label"),
       div(
         class = "file-input-control",
-        fileInput(ns("tax_file"), NULL, accept = c(".csv", ".tsv", ".txt"))
+        fileInput(ns("tax_file"), NULL, accept = c(".csv", ".tsv", ".txt", ".qza"))
       )
     ),
     div(
@@ -101,7 +101,7 @@ mod_fileload_ui <- function(id) {
       tags$p("3. Metadata Table", class = "file-input-label"),
       div(
         class = "file-input-control",
-        fileInput(ns("meta_file"), NULL, accept = c(".csv", ".tsv", ".txt"))
+        fileInput(ns("meta_file"), NULL, accept = c(".csv", ".tsv", ".txt", ".xlsx", ".xls"))
       )
     ),
     div(
@@ -146,17 +146,17 @@ mod_fileload_ui <- function(id) {
     ),
     tags$div(
       style = "font-size: 12px; color: #555; margin-top: 2px; margin-bottom: 8px;",
-      tags$p("This tool requires 3 tsv files:", style = "margin: 0 0 4px 0;"),
+      tags$p("Upload three input tables:", style = "margin: 0 0 4px 0;"),
       tags$ul(
         style = "margin: 0 0 0 18px; padding: 0;",
-        tags$li("ASV/OTU Abundance Matrix from table.qza of QIIME2"),
-        tags$li("Taxonomy table from taxonomy.qza of QIIME2"),
-        tags$li("Metadata table prepared manually by the user (see the example file)"),
-        tags$p("- The first column should contain sample IDs, and its column name must be 'SampleID'.")
+        tags$li("ASV/OTU Abundance Matrix (.tsv, .csv, .txt, or table.qza)"),
+        tags$li("Taxonomy table (.tsv, .csv, .txt, or taxonomy.qza)"),
+        tags$li("Metadata table (.tsv, .csv, .txt, .xlsx, or .xls). For Excel, the first worksheet is used."),
+        tags$li("In the metadata table, use SampleID as the first column header. Store IDs with leading zeros as text in Excel.")
       ),
       tags$p(
         tagList(
-          "To convert QZA files to input files, use ",
+          "Uploaded QZA files are sent to the configured Converter service. To convert them separately and upload TSV files instead, use the ",
           tags$a(
             href = converter_url,
             target = "_blank",
@@ -280,46 +280,75 @@ mod_fileload_server <- function(id) {
       }
     )
     
+    is_qza_upload <- function(file_input) {
+      identical(tolower(tools::file_ext(file_input$name)), "qza")
+    }
+
+    convert_qza <- function(file_input, is_otu) {
+      base_url <- sub("/+$", "", trimws(Sys.getenv(
+        "QIIME_CONVERTER_URL", "https://simplemicrobiome.mglab.org/convert"
+      )))
+      if (!nzchar(base_url)) stop("The QZA Converter service URL is not configured.")
+
+      endpoint <- if (is_otu) "/convert/feature-table" else "/convert/taxonomy"
+      upload <- curl::form_file(file_input$datapath, name = basename(file_input$name))
+      request <- httr2::request(paste0(base_url, endpoint))
+      request <- if (is_otu) {
+        httr2::req_body_multipart(request, feature_table_qza = upload)
+      } else {
+        httr2::req_body_multipart(request, taxonomy_qza = upload)
+      }
+      httr2::req_perform(httr2::req_timeout(request, 300))
+    }
+
     read_microbiome_file <- function(file_input, is_meta = FALSE, is_otu = FALSE) {
       if (is.null(file_input)) return(NULL)
       
       file_path <- file_input$datapath
-      data_content <- readLines(file_path, n = 5)
-      
-      if (length(data_content) < 2) {
-        return(NULL)  
-      }
-      
-      if (grepl("\t", data_content[2])) {
-        sep_val <- "\t"  
-      } else {
-        sep_val <- ","  
-      }
+      extension <- tolower(tools::file_ext(file_input$name))
+      is_excel_metadata <- is_meta && extension %in% c("xlsx", "xls")
       
       data <- tryCatch({
-        read_columns <- function(col_types, n_max = Inf) {
-          readr::read_delim(
-            file_path,
-            delim = sep_val,
-            col_types = col_types,
-            n_max = n_max,
-            na = "NA",
-            name_repair = "minimal",
-            num_threads = 1L,
-            lazy = FALSE,
-            progress = FALSE
-          )
-        }
-        character_columns <- readr::cols(.default = readr::col_character())
-        if (is_otu) {
-          column_count <- ncol(read_columns(character_columns, n_max = 0))
-          otu_types <- paste0("c", strrep("d", max(0L, column_count - 1L)))
-          parsed <- read_columns(otu_types)
+        if (is_excel_metadata) {
+          read_workbook <- if (extension == "xlsx") readxl::read_xlsx else readxl::read_xls
+          parsed <- read_workbook(file_path, sheet = 1, col_types = "text",
+                                  na = c("", "NA"), .name_repair = "minimal")
+          if (nrow(parsed) == 0L || ncol(parsed) == 0L) return(NULL)
         } else {
-          parsed <- read_columns(character_columns)
-        }
-        if (nrow(readr::problems(parsed)) > 0L) {
-          stop("The file contains invalid values or rows that do not match the header.")
+          if (!is_meta && is_qza_upload(file_input)) {
+            converted_path <- tempfile("qza_upload_", fileext = ".tsv")
+            on.exit(unlink(converted_path), add = TRUE)
+            response <- convert_qza(file_input, is_otu)
+            writeBin(httr2::resp_body_raw(response), converted_path)
+            file_path <- converted_path
+          }
+          data_content <- readLines(file_path, n = 5)
+          if (length(data_content) < 2L) return(NULL)
+          sep_val <- if (grepl("\t", data_content[2])) "\t" else ","
+          read_columns <- function(col_types, n_max = Inf) {
+            readr::read_delim(
+              file_path,
+              delim = sep_val,
+              col_types = col_types,
+              n_max = n_max,
+              na = "NA",
+              name_repair = "minimal",
+              num_threads = 1L,
+              lazy = FALSE,
+              progress = FALSE
+            )
+          }
+          character_columns <- readr::cols(.default = readr::col_character())
+          if (is_otu) {
+            column_count <- ncol(read_columns(character_columns, n_max = 0))
+            otu_types <- paste0("c", strrep("d", max(0L, column_count - 1L)))
+            parsed <- read_columns(otu_types)
+          } else {
+            parsed <- read_columns(character_columns)
+          }
+          if (nrow(readr::problems(parsed)) > 0L) {
+            stop("The file contains invalid values or rows that do not match the header.")
+          }
         }
 
         data_frame <- as.data.frame(parsed)
@@ -373,7 +402,11 @@ mod_fileload_server <- function(id) {
 
         otu_df <- read_microbiome_file(otu_input, is_otu = TRUE)
         if (is.null(otu_df)) {
-          error_message <- "OTU file read error: Check the ASV/OTU abundance matrix format, delimiter, and row names. Please re-upload the OTU file."
+          error_message <- if (is_qza_upload(otu_input)) {
+            "Feature table QZA could not be converted or read. Check that the file is a QIIME 2 feature table, or upload its TSV export."
+          } else {
+            "OTU file read error: Check the ASV/OTU abundance matrix format, delimiter, and row names. Please re-upload the OTU file."
+          }
           load_error(error_message)
           showNotification(error_message, type = "error", duration = 10)
           return(NULL)
@@ -381,7 +414,11 @@ mod_fileload_server <- function(id) {
 
         tax_df <- read_microbiome_file(tax_input)
         if (is.null(tax_df)) {
-          error_message <- "Taxonomy file read error: Check the taxonomy table format, delimiter, and row names. Please re-upload the taxonomy file."
+          error_message <- if (is_qza_upload(tax_input)) {
+            "Taxonomy QZA could not be converted or read. Check that the file is a QIIME 2 taxonomy artifact, or upload its TSV export."
+          } else {
+            "Taxonomy file read error: Check the taxonomy table format, delimiter, and row names. Please re-upload the taxonomy file."
+          }
           load_error(error_message)
           showNotification(error_message, type = "error", duration = 10)
           return(NULL)
@@ -389,7 +426,7 @@ mod_fileload_server <- function(id) {
 
         meta_df <- read_microbiome_file(meta_input, is_meta = TRUE)
         if (is.null(meta_df)) {
-          error_message <- "Metadata file read error: Check the metadata table format, delimiter, and column structure. Please re-upload the metadata file."
+          error_message <- "Metadata file read error: Upload a TSV, CSV, TXT, XLSX, or XLS table with a header and at least one sample. For Excel, put the metadata on the first worksheet."
           load_error(error_message)
           showNotification(error_message, type = "error", duration = 10)
           return(NULL)
@@ -507,7 +544,7 @@ mod_fileload_server <- function(id) {
           span(
             class = "fileload-waiting",
             span(icon("circle-notch"), class = "fileload-spinner is-running"),
-            span("Waiting for 3 data files...", style = "color: orange;")
+            span("Processing uploaded files...", style = "color: orange;")
           ),
           style = "margin-top: 2px; margin-bottom: 0;"
         )

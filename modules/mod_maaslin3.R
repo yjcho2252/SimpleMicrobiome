@@ -1,54 +1,43 @@
 mod_maaslin3_ui <- function(id) {
   ns <- NS(id)
-  required_select_id <- ns("required_selections")
-  sidebarLayout(
+  plot_scroll_layout(
     sidebarPanel(
       width = 2,
       h4(icon("flask"), "MaAsLin3"),
       hr(),
-      tags$style(HTML(paste0(
-        "#", required_select_id, " .maaslin3-required .selectize-input > input::placeholder, ",
-        "#", required_select_id, " .maaslin3-required .selectize-input > .item[data-value=''] ",
-        "{ color: #b42318; opacity: 1; }"
-      ))),
-      div(
-        id = required_select_id,
-        div(class = "maaslin3-required",
-            selectInput(ns("primary"), "1. Primary explanatory variable", choices = c("Select a variable" = ""))),
-        uiOutput(ns("primary_type_ui")),
-        checkboxInput(ns("use_subgroup"), "Select subgroup of primary explanatory variable", value = FALSE),
-        uiOutput(ns("subgroup_ui")),
-        uiOutput(ns("comparison_ui")),
-        uiOutput(ns("reference_ui")),
-        div(class = "maaslin3-required",
-            selectInput(ns("rank"), "4. Taxonomic level", choices = c("Select a taxonomic level" = "")))
-      ),
-      numericInput(ns("q"), "5. Significance threshold (q)", 0.1, min = 0.001, max = 1, step = 0.01),
-      numericInput(ns("prevalence"), "6. Prevalence filter (%)", 5, min = 0, max = 100, step = 1),
+      selectInput(ns("primary"), "1. Primary Explanatory Variable", choices = NULL),
+      uiOutput(ns("primary_type_ui")),
+      checkboxInput(ns("use_subgroup"), "Select Subgroup of Primary Explanatory Variable", value = FALSE),
+      uiOutput(ns("subgroup_ui")),
+      uiOutput(ns("comparison_ui")),
+      uiOutput(ns("reference_ui")),
+      selectInput(ns("rank"), "4. Taxonomic Level", choices = NULL),
+      numericInput(ns("q"), "5. Significance Threshold (q)", 0.1, min = 0.001, max = 1, step = 0.01),
+      numericInput(ns("prevalence"), "6. Prevalence Filter (%)", 5, min = 0, max = 100, step = 1),
       tags$details(
         style = "margin-bottom: 12px;",
         tags$summary(strong("Advanced Options")),
         br(),
-        selectizeInput(ns("covariates"), "7. Additional covariates (optional)", choices = NULL,
+        selectizeInput(ns("covariates"), "7. Additional Covariates (Optional)", choices = NULL,
                        multiple = TRUE, options = list(plugins = list("remove_button"))),
-        selectizeInput(ns("interactions"), "8. Interaction terms (optional)", choices = NULL,
+        selectizeInput(ns("interactions"), "8. Interaction Terms (Optional)", choices = NULL,
                        multiple = TRUE, options = list(plugins = list("remove_button"))),
-        selectizeInput(ns("subject"), "9. Random intercepts (optional)", choices = NULL,
+        selectizeInput(ns("subject"), "9. Random Intercepts (Optional)", choices = NULL,
                        multiple = TRUE, options = list(plugins = list("remove_button"))),
-        checkboxInput(ns("depth"), "10. Adjust for input read depth", TRUE),
-        selectizeInput(ns("group"), "11. Group tests (optional)", choices = NULL,
+        checkboxInput(ns("depth"), "10. Adjust for Input Read Depth", TRUE),
+        selectizeInput(ns("group"), "11. Group Tests (Optional)", choices = NULL,
                        multiple = TRUE, options = list(plugins = list("remove_button"))),
-        selectInput(ns("ordered"), "12. Ordered contrasts (optional)", choices = c("None" = "")),
+        selectInput(ns("ordered"), "12. Ordered Contrasts (Optional)", choices = c("None" = "")),
         uiOutput(ns("ordered_levels_ui")),
-        selectInput(ns("strata"), "13. Matched strata (optional)", choices = c("None" = "")),
+        selectInput(ns("strata"), "13. Matched Strata (Optional)", choices = c("None" = "")),
         helpText("Matched strata cannot be combined with random intercepts."),
         verbatimTextOutput(ns("model"))
       ),
       hr(),
       h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-      numericInput(ns("summary_width"), "Plot width (px)", 700, min = 400, max = 4000, step = 50),
-      numericInput(ns("summary_height"), "Plot height (px)", 1000, min = 400, max = 4000, step = 50),
-      numericInput(ns("summary_font"), "Base font size (pt)", 10, min = 6, max = 30, step = 1),
+      numericInput(ns("summary_width"), "Plot Width (px)", 700, min = 400, max = 4000, step = 50),
+      numericInput(ns("summary_height"), "Plot Height (px)", 1000, min = 400, max = 4000, step = 50),
+      numericInput(ns("summary_font"), "Base Font Size (pt)", 10, min = 6, max = 30, step = 1),
       actionButton(ns("run"), "Run MaAsLin3", class = "btn-danger maaslin3-run-btn",
                    style = "font-size: 12px;"),
       tags$script(HTML("
@@ -74,6 +63,7 @@ mod_maaslin3_ui <- function(id) {
     mainPanel(
       width = 10,
       h4("MaAsLin3"),
+      analysis_run_view(ns, "run",
       uiOutput(ns("results_width_style")),
       div(
         id = ns("results_content"),
@@ -116,8 +106,9 @@ mod_maaslin3_ui <- function(id) {
           style = "clear: both; margin-top: 16px;",
           hr(),
           h5(icon("circle-info"), "MaAsLin3 Status"),
-          div(class = "simple-result-card", verbatimTextOutput(ns("status")))
+          div(class = "app-result-card app-status-card", verbatimTextOutput(ns("status")))
         )
+      )
       )
     )
   )
@@ -125,6 +116,7 @@ mod_maaslin3_ui <- function(id) {
 
 mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
+    output$run_prompt <- analysis_run_prompt("Run MaAsLin3")
     result <- reactiveVal(NULL)
     status <- reactiveVal("")
     running <- reactiveVal(FALSE)
@@ -196,7 +188,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
         c("SampleID", input$primary)
       )
       tagList(
-        selectInput(session$ns("primary_level"), "Primary explanatory level to include",
+        selectInput(session$ns("primary_level"), "Primary Explanatory Level to Include",
                     choices = primary_levels,
                     selected = if (isTruthy(isolate(input$primary_level)) &&
                                   isolate(input$primary_level) %in% primary_levels) {
@@ -204,7 +196,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
                     } else {
                       head(primary_levels, 1L)
                     }),
-        selectInput(session$ns("secondary"), "Secondary grouping variable",
+        selectInput(session$ns("secondary"), "Secondary Grouping Variable",
                     choices = categorical_variables,
                     selected = if (isTruthy(isolate(input$secondary)) &&
                                   isolate(input$secondary) %in% categorical_variables) {
@@ -278,7 +270,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       if (is.null(ps_obj()) || !isTruthy(input$primary)) {
         return(selectizeInput(
           session$ns("comparison_groups"),
-          "2. Explanatory variable levels to compare",
+          "2. Explanatory Variable Levels to Compare",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -290,7 +282,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       available <- primary_levels()
       if (length(available)) {
         tagList(
-          selectizeInput(session$ns("comparison_groups"), "2. Explanatory variable levels to compare",
+          selectizeInput(session$ns("comparison_groups"), "2. Explanatory Variable Levels to Compare",
                          choices = available, selected = available, multiple = TRUE,
                          options = list(plugins = list("remove_button"))),
           if (length(available) > 10L) {
@@ -310,7 +302,7 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       if (identical(input$ordered, analysis_primary())) {
         available <- intersect(available, input$comparison_groups)
       }
-      selectizeInput(session$ns("ordered_levels"), "Select levels from lowest to highest",
+      selectizeInput(session$ns("ordered_levels"), "Select Levels from Lowest to Highest",
                      choices = available, selected = intersect(isolate(input$ordered_levels), available),
                      multiple = TRUE,
                      options = list(plugins = list("remove_button")))
@@ -336,17 +328,17 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
 
     output$reference_ui <- renderUI({
       if (is.null(ps_obj()) || !isTruthy(input$primary)) {
-        return(selectInput(session$ns("reference"), "3. Reference level", choices = NULL))
+        return(selectInput(session$ns("reference"), "3. Reference Level", choices = NULL))
       }
       primary <- analysis_primary()
       req(primary, primary %in% names(metadata()))
       if (analysis_categorical() && !primary %in% c(input$group, input$ordered)) {
         choices <- intersect(primary_levels(), input$comparison_groups)
         previous <- isolate(input$reference)
-        selectInput(session$ns("reference"), "3. Reference level", choices = choices,
+        selectInput(session$ns("reference"), "3. Reference Level", choices = choices,
                     selected = if (isTruthy(previous) && previous %in% choices) previous else head(choices, 1L))
       } else {
-        selectInput(session$ns("reference"), "3. Reference level", choices = NULL)
+        selectInput(session$ns("reference"), "3. Reference Level", choices = NULL)
       }
     })
 

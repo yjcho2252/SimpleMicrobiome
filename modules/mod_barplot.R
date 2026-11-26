@@ -24,35 +24,42 @@ mod_barplot_ui <- function(id) {
       .well .checkbox label { font-size: 12px; }
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
-      .taxa-barplot-loading {
-        display: none;
-        margin: 12px 0;
-        color: #475569;
+      .taxa-barplot-view { width: max-content; max-width: 100%; }
+      .taxa-barplot-stage { display: flex; align-items: flex-start; gap: 12px; }
+      .taxa-barplot-view:has(.taxa-plot-container:is(:empty, .shiny-output-error-taxa-plot-wait)),
+      .taxa-barplot-view:has(.plotly.html-widget-output:not(.shiny-output-error):not([data-taxa-ready])) {
+        width: min(var(--taxa-plot-loading-width), 100%);
       }
-      .taxa-barplot-view:has(.plotly.html-widget-output:not(.shiny-output-error):not([data-taxa-ready])) > .taxa-barplot-loading,
-      .taxa-barplot-view:has(.plotly.html-widget-output.recalculating:not(.shiny-output-error)) > .taxa-barplot-loading {
+      .taxa-barplot-stage > .taxa-plot-container { flex: 0 0 auto; }
+      .taxa-barplot-stage:has(> .taxa-plot-container.shiny-output-error-taxa-plot-wait) {
         display: block;
+      }
+      .taxa-barplot-stage > .taxa-plot-container.shiny-output-error-taxa-plot-wait {
+        width: 100%;
+      }
+      .taxa-barplot-stage:has(> .taxa-plot-container:is(:empty, .shiny-output-error)) > .taxa-barplot-taxon-legend,
+      .taxa-barplot-stage:has(> .shiny-output-error) > .taxa-plot-loading {
+        display: none;
       }
     ")),
     tags$style(HTML(sprintf(
       "#%s .shiny-options-group label, #%s .shiny-options-group label { font-size: 12px; }",
       ns("top_n_basis"), ns("abundance_threshold_basis")
     ))),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("chart-bar"), "Taxa Bar Plot"),
         hr(),
         
-        uiOutput(ns("local_group_selector")), 
-        
-        uiOutput(ns("secondary_group_selector")),
+        profile_group_selectors(ns, "group_var", "Primary Group (Facet)",
+                                "secondary_var", "Secondary Group (Optional)"),
 
         uiOutput(ns("shared_sort_notice")),
         conditionalPanel(
           condition = paste0("input['", ns("plot_mode"), "'] == 'Sample'"),
 
-          selectInput(ns("sort_method"), "Primary Sort Criterion (within Group):",
+          selectInput(ns("sort_method"), "Primary Sort Criterion (within Group)",
                       choices = c(
                         "Top Taxa Abundance" = "taxa_top1",
                         "Sample Name" = "sample_name",
@@ -64,7 +71,7 @@ mod_barplot_ui <- function(id) {
             condition = paste0("input['", ns("sort_method"), "'] == 'metadata_var'"),
             hr(),
             uiOutput(ns("sort_by_metadata_ui")),
-            selectInput(ns("secondary_sort"), "Secondary Sort (after Metadata):",
+            selectInput(ns("secondary_sort"), "Secondary Sort (after Metadata)",
                         choices = c(
                           "None" = "none",
                           "Top Taxa Abundance" = "taxa_top1",
@@ -74,16 +81,16 @@ mod_barplot_ui <- function(id) {
           )
         ),
         hr(),
-        h4(icon("sliders"), "Profile Settings"),
-        selectInput(ns("plot_mode"), "Plot Display Mode:",
+        h4(icon("sliders"), "Analysis & Plot Settings"),
+        selectInput(ns("plot_mode"), "Plot Display Mode",
                     choices = c("Sample Level" = "Sample",
                                 "Group Mean" = "Group_Mean"),
                     selected = "Sample"),        
         
-        selectInput(ns("tax_level"), "Taxonomic Level:",
+        selectInput(ns("tax_level"), "Taxonomic Level",
                     choices = tax_ranks,
                     selected = "Genus"),        
-        selectInput(ns("taxa_display_mode"), "Taxa Display Mode:",
+        selectInput(ns("taxa_display_mode"), "Taxa Display Mode",
                     choices = c(
                       "Top N Taxa" = "top_n",
                       "Abundance Threshold" = "abundance_threshold"
@@ -91,42 +98,38 @@ mod_barplot_ui <- function(id) {
                     selected = "top_n"),
         conditionalPanel(
           condition = paste0("input['", ns("taxa_display_mode"), "'] == 'top_n'"),
-          numericInput(ns("top_n_taxa"), "Taxa Numbers to Display:",
+          numericInput(ns("top_n_taxa"), "Taxa Numbers to Display",
                        value = 15, min = 1, max = 50, step = 1),
-          radioButtons(ns("top_n_basis"), "Select top taxa from",
+          radioButtons(ns("top_n_basis"), "Select Top Taxa from",
                        choices = c("All selected samples" = "overall", "Each group" = "each_group"),
                        selected = "overall")
         ),
         conditionalPanel(
           condition = paste0("input['", ns("taxa_display_mode"), "'] == 'abundance_threshold'"),
-          numericInput(ns("min_taxa_abundance_pct"), "Abundance Threshold (%):",
+          numericInput(ns("min_taxa_abundance_pct"), "Abundance Threshold (%)",
                        value = 1, min = 0, max = 100, step = 0.1),
-          radioButtons(ns("abundance_threshold_basis"), "Threshold applied to",
+          radioButtons(ns("abundance_threshold_basis"), "Threshold Applied to",
                        choices = c("Mean across selected samples" = "mean",
                                    "Mean in at least one group" = "any_group"),
                        selected = "mean")
         ),
-        selectInput(ns("name_display_mode"), "Taxa Rank to Display:",
+        selectInput(ns("name_display_mode"), "Taxa Rank to Display",
                     choices = c("Full Hierarchy" = "full",
                                 "Current Rank" = "current"),
                     selected = "current"),
-        selectInput(ns("color_palette"), "Color Palette:",
-                    choices = palette_choices,
-                    selected = "Paired"),
         hr(),
         h4(icon("sliders"), "Display Options"),
         selectInput(ns("plot_size_mode"), "Plot Size", choices = c("Auto" = "auto", "Manual" = "manual"), selected = "auto"),
         conditionalPanel(
           "input.plot_size_mode === 'manual'", ns = ns,
-          numericInput(ns("plot_width"), "Plot Width (px):",
+          numericInput(ns("plot_width"), "Plot Width (px)",
                        value = 1000, min = 200, step = 50),
-          numericInput(ns("plot_height"), "Plot Height (px):",
+          numericInput(ns("plot_height"), "Plot Height (px)",
                        value = 400, min = 300, step = 50)
         ),
-        numericInput(ns("base_size"), "Base Font Size:",
+        numericInput(ns("base_size"), "Base Font Size",
                      value = 12, min = 6, max = 30, step = 1),
-
-        
+        selectInput(ns("color_palette"), "Color Palette", palette_choices, selected = "Paired"),
         hr(),
         h5(icon("download"), "Download"),
         tags$div(
@@ -148,20 +151,19 @@ mod_barplot_ui <- function(id) {
         h4("Taxa Bar Plot"),
         div(
           class = "taxa-barplot-view",
-          style = "width: max-content;",
           uiOutput(ns("barplot_title")),
-          div(class = "taxa-barplot-loading", role = "status",
-              "Preparing the Taxa Bar Plot. Please wait..."),
           div(
-            style = "display: flex; align-items: flex-start; gap: 12px;",
-            plotly::plotlyOutput(ns("barplot_out"), width = "auto", height = "auto"),
+            class = "taxa-plot-stage taxa-barplot-stage",
+            uiOutput(ns("barplot_container"), class = "taxa-plot-container"),
             div(
               id = ns("barplot_taxa_legend"),
+              class = "taxa-barplot-taxon-legend",
               style = "flex: 0 0 auto; align-self: center; min-width: 220px; margin: 4px 0; white-space: nowrap;"
-            )
+            ),
+            taxa_plot_loading("taxa bar plot")
           )
         ),
-        uiOutput(ns("barplot_legend_box"))
+        plot_legend_output(ns, "barplot_legend_box", c("barplot_out"), class = "taxa-plot-details")
       )
     )
   )
@@ -289,25 +291,10 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       ps
     }
     
-    output$local_group_selector <- renderUI({
-      req(meta_cols())
-      group_choices <- meta_cols()
-      non_sampleid_choices <- setdiff(group_choices, "SampleID")
-      selected_col <- if (length(non_sampleid_choices) > 0) non_sampleid_choices[1] else group_choices[1]
-      selectInput(session$ns("group_var"), "Primary Group (Facet):",
-                  choices = c("None" = "__no_facet__", group_choices), selected = selected_col)
-    })
-    
-    output$secondary_group_selector <- renderUI({
-      req(meta_cols(), input$group_var)
-      resolved_primary <- resolve_meta_colname(input$group_var, meta_cols())
-      group_choices <- setdiff(meta_cols(), c(input$group_var, resolved_primary))
-      current <- isolate(input$secondary_var)
-      selected <- if (!is.null(current) && current %in% group_choices) current else "None"
-      selectInput(session$ns("secondary_var"), "Secondary Group (Optional):",
-                  choices = c("None" = "None", group_choices), 
-                  selected = selected)
-    })
+    register_profile_group_selectors(
+      input, output, session, meta_cols, "group_var", "secondary_var",
+      primary_extra = c("None" = "__no_facet__"), secondary_none = c("None" = "None")
+    )
     
     group_var <- reactive({
       req(input$group_var)
@@ -331,7 +318,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
     
     output$sort_by_metadata_ui <- renderUI({
       req(meta_cols(), input$group_var)
-      selectInput(session$ns("sort_metadata_var"), "Metadata Variable for Primary Sort:",
+      selectInput(session$ns("sort_metadata_var"), "Metadata Variable for Primary Sort",
                   choices = meta_cols(),
                   selected = group_var())
     })
@@ -879,11 +866,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
         taxa_base_colors <- generate_taxa_colors(num_top_taxa)
       } else {
         tryCatch({
-          pal_info <- RColorBrewer::brewer.pal.info[palette_choice, ]
-          max_colors <- pal_info$maxcolors
-          n_colors_to_use <- min(num_top_taxa, max_colors)
-          brewer_colors <- RColorBrewer::brewer.pal(n_colors_to_use, palette_choice)
-          taxa_base_colors <- rep(brewer_colors, length.out = num_top_taxa)
+          taxa_base_colors <- brewer_plot_colors(num_top_taxa, palette_choice)
         }, error = function(e) {
           showNotification(paste0("Warning: RColorBrewer function failed (", e$message, "). Using HCL fallback."), type = "warning", duration = 3)
           taxa_base_colors <- generate_taxa_colors(num_top_taxa)
@@ -1034,12 +1017,12 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       )
     })
 
+    output$barplot_container <- renderUI({
+      validate_taxa_plot_data(ps_obj(), "taxa bar plot")
+      plotly::plotlyOutput(session$ns("barplot_out"), width = "auto", height = "auto")
+    })
+
     output$barplot_out <- plotly::renderPlotly({
-      ps_now <- ps_obj()
-      validate(
-        need(!is.null(ps_now), "Applying selected samples and preparing bar plot."),
-        need(phyloseq::nsamples(ps_now) > 0, "Select at least one sample in Preprocessing.")
-      )
       plot <- build_barplot(interactive = TRUE)
       plot_width <- effective_plot_width()
       widget <- plotly::ggplotly(
@@ -1146,14 +1129,17 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       widget$x$layout <- layout
       htmlwidgets::onRender(widget, "function(el, x, config) {
         el.setAttribute('data-taxa-ready', 'true');
+        el.dispatchEvent(new Event('plotlegend:widgetready', {bubbles: true}));
         el.style.width = x.layout.width + 'px';
         el.style.flex = '0 0 auto';
         const legend = document.getElementById(config.id);
         if (!legend) return;
         legend.replaceChildren();
         legend.style.fontFamily = config.fontFamily;
+        legend.style.fontSize = config.legendTextSize + 'pt';
         const title = document.createElement('strong');
         title.textContent = config.title;
+        title.style.fontSize = config.legendTitleSize + 'pt';
         legend.appendChild(title);
         const items = document.createElement('div');
         items.style.cssText = 'display:flex;flex-direction:column;gap:1px;align-items:flex-start;';
@@ -1182,7 +1168,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
           const button = document.createElement('button');
           button.type = 'button';
           button.setAttribute('aria-pressed', 'false');
-          button.style.cssText = 'display:inline-flex;align-items:baseline;gap:3px;padding:0 2px;border:0;background:transparent;color:inherit;font:inherit;font-size:11px;line-height:1.15;text-align:left;white-space:nowrap;';
+          button.style.cssText = 'display:inline-flex;align-items:baseline;gap:3px;padding:0 2px;border:0;background:transparent;color:inherit;font:inherit;line-height:1.15;text-align:left;white-space:nowrap;';
           const swatch = document.createElement('span');
           swatch.setAttribute('aria-hidden', 'true');
           swatch.style.cssText = 'display:inline-block;flex:0 0 8px;height:8px;';
@@ -1200,7 +1186,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
         }
         if (el.taxaWidthObserver) el.taxaWidthObserver.disconnect();
         if (!config.autoWidth) return;
-        const canvas = el.parentElement;
+        const canvas = el.closest('.taxa-barplot-stage');
         const panel = canvas.parentElement.parentElement;
         function reportWidth() {
           if (!panel.clientWidth) return;
@@ -1217,6 +1203,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
         el.taxaWidthObserver.observe(legend);
         reportWidth();
       }", data = list(id = session$ns("barplot_taxa_legend"), title = plot$labels$fill,
+                      legendTitleSize = input$base_size, legendTextSize = input$base_size * 0.8,
                       fontFamily = font_family, autoWidth = !manual_plot_size(),
                       widthInput = session$ns("available_plot_width")))
     })
@@ -1264,28 +1251,19 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
     )
 
     output$barplot_legend_box <- renderUI({
+      req_plot_legend_tab(session, "Taxa Bar Plot")
       box_width <- effective_plot_width()
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = sprintf("width: %spx;", box_width),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("barplot_figure_legend"))
+          barplot_figure_legend()
         )
       )
     })
+    outputOptions(output, "barplot_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
-    output$barplot_figure_legend <- renderUI({
+    barplot_figure_legend <- function() {
       req(input$tax_level, input$plot_mode, input$name_display_mode, input$taxa_display_mode)
       secondary_group <- tryCatch(secondary_var(), error = function(e) NULL)
       secondary_label <- if (!is.null(secondary_group) && nzchar(secondary_group)) {
@@ -1354,11 +1332,11 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
             sort_sentence,
             "The y-axis represents relative abundance, and taxa labels are shown as ",
             taxa_name_label,
-            "; for unassigned entries, the closest annotated higher taxonomic rank is shown instead."            
+            "; for unassigned entries, the closest annotated higher taxonomic rank is shown instead."
           )
         )
       )
-    })
+    }
 
   })
 }

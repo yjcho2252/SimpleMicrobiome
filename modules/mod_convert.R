@@ -11,8 +11,8 @@ ui <- fluidPage(
   titlePanel("QIIME2 qza to TSV Converter (API Client)"),
   sidebarLayout(
     sidebarPanel(
-      fileInput("tax_qza", "Upload Taxonomy qza", accept = ".qza"),
-      fileInput("feat_qza", "Upload Feature Table qza", accept = ".qza"),
+      fileInput("tax_qza", "Upload Taxonomy QZA", accept = ".qza"),
+      fileInput("feat_qza", "Upload Feature Table QZA", accept = ".qza"),
       actionButton("convert_btn", "Convert via Service"),
       tags$div(
         style = "margin-top: 8px;",

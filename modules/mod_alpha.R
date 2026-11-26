@@ -10,7 +10,7 @@ mod_alpha_ui <- function(id) {
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
     ")),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("circle-nodes"), "Alpha Diversity"),
@@ -40,7 +40,7 @@ mod_alpha_ui <- function(id) {
         h4(icon("sliders"), "Plot Style"),
         selectInput(
           ns("plot_type"),
-          "Plot Type:",
+          "Plot Type",
           choices = c(
             "Box plot" = "boxplot",
             "Violin plot" = "violin",
@@ -49,13 +49,6 @@ mod_alpha_ui <- function(id) {
           ),
           selected = "violin"
         ),
-        selectInput(
-          ns("color_palette"),
-          "Color Palette:",
-          choices = group_plot_palettes,
-          selected = "set2"
-        ),
-        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
         
         hr(),
         h4(icon("sliders"), "Statistical Testing"),
@@ -63,22 +56,22 @@ mod_alpha_ui <- function(id) {
           "#%s { margin-bottom: 2px; } #%s, #%s { margin-top: 0; margin-bottom: 4px; }",
           ns("show_p_val"), ns("show_sig_only"), ns("show_sig_as_marks")
         ))),
-        checkboxInput(ns("show_p_val"), "Show p-value bars", value = TRUE),
+        checkboxInput(ns("show_p_val"), "Show p-Value Bars", value = TRUE),
         
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
-          checkboxInput(ns("show_sig_as_marks"), "Show as significant marks", value = TRUE)
+          checkboxInput(ns("show_sig_only"), "Show Only p-Value < 0.05", value = TRUE),
+          checkboxInput(ns("show_sig_as_marks"), "Show as Significant Marks", value = TRUE)
         ),
         
-        selectInput(ns("stat_method"), "Statistical Method:",
+        selectInput(ns("stat_method"), "Statistical Method",
                     choices = c("Wilcoxon" = "wilcox.test", 
                                 "T-test" = "t.test",
                                 "Kruskal-Wallis" = "kruskal.test"),
                     selected = "wilcox.test"),
         selectInput(
           ns("p_adjust_method"),
-          "Pairwise Multiple Testing Correction:",
+          "Pairwise Multiple Testing Correction",
           choices = c(
             "None" = "none",
             "Holm" = "holm",
@@ -90,47 +83,51 @@ mod_alpha_ui <- function(id) {
         
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        numericInput(ns("plot_width"), "Plot Width:", value = 600, min = 300, step = 50),
-        numericInput(ns("plot_height"), "Plot Height:", value = 500, min = 300, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
-        numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
-        selectInput(ns("x_label_angle"), "X-axis label angle:",
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 600, min = 300, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 500, min = 300, step = 50),
+        numericInput(ns("base_size"), "Base Font Size", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (Point Size)", value = 4, min = 0.5, max = 10, step = 0.5),
+        selectInput(ns("x_label_angle"), "X-Axis Label Angle",
                     choices = c("0° Horizontal" = "0", "45° Diagonal" = "45", "90° Vertical" = "90"),
-                    selected = "0")
+                    selected = "0"),
+        selectInput(ns("color_palette"), "Color Palette", group_plot_palettes, selected = "set2"),
+        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar Plot)", value = FALSE)
       ),
       mainPanel(
         h4("Alpha Diversity"),
-        tags$div(
-          style = "max-width: 100%;",
-          tabsetPanel(
-            id = ns("alpha_tabs"),
-            tabPanel(
-              "Plot",
-              tags$div(
-                style = "margin-top: 8px;",
-                downloadButton(
-                  ns("download_alpha_plot"),
-                  "Download Plot (PNG)",
-                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-                )
+        plot_data_wait_view(ns,
+          tags$div(
+            style = "max-width: 100%;",
+            tabsetPanel(
+              id = ns("alpha_tabs"),
+              tabPanel(
+                "Plot",
+                tags$div(
+                  style = "margin-top: 8px;",
+                  downloadButton(
+                    ns("download_alpha_plot"),
+                    "Download Plot (PNG)",
+                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                  )
+                ),
+                plotOutput(ns("alpha_plot_out"), height = "auto")
               ),
-              plotOutput(ns("alpha_plot_out"), height = "auto")
-            ),
-            tabPanel(
-              "Data",
-              tags$div(
-                style = "margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center;",
-                downloadButton(
-                  ns("download_alpha_data"),
-                  "Download Data (TSV)",
-                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+              tabPanel(
+                "Data",
+                tags$div(
+                  style = "margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center;",
+                  downloadButton(
+                    ns("download_alpha_data"),
+                    "Download Data (TSV)",
+                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                  )
                 )
               )
             )
-          )
-        ),
-        uiOutput(ns("alpha_legend_box")),
-        textOutput(ns("rarefy_size_text"))
+          ),
+          plot_legend_output(ns, "alpha_legend_box", c("alpha_plot_out")),
+          textOutput(ns("rarefy_size_text"))
+        )
       )
     )
   )
@@ -139,6 +136,7 @@ mod_alpha_ui <- function(id) {
 ## Server
 mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
+    register_plot_data_wait(output, ps_obj, "alpha diversity plot")
 
     resolve_meta_colname <- function(requested, available) {
       if (is.null(requested) || is.null(available) || length(available) == 0) {
@@ -247,7 +245,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
     output$local_group_selector <- renderUI({
       req(meta_cols())
       group_choices <- setdiff(meta_cols(), "SampleID")
-      selectInput(session$ns("group_var"), "Primary Group:", 
+      selectInput(session$ns("group_var"), "Primary Group",
                   choices = group_choices, selected = group_choices[1]) 
     })
     
@@ -260,7 +258,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
       }
       resolved_primary <- resolve_meta_colname(primary_input, meta_cols())
       group_choices <- setdiff(meta_cols(), c("SampleID", primary_input, resolved_primary))
-      selectInput(session$ns("secondary_group_var"), "Secondary Group (Optional):",
+      selectInput(session$ns("secondary_group_var"), "Secondary Group (Optional)",
                   choices = c("(None)" = "none", group_choices), selected = "none")
     })
 
@@ -272,7 +270,7 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
       subject_choices <- setdiff(meta_cols(), c("SampleID", input$group_var, input$secondary_group_var))
       selectInput(
         session$ns("subject_id_var"),
-        "Subject ID Variable:",
+        "Subject ID Variable",
         choices = subject_choices,
         selected = if (length(subject_choices) > 0) subject_choices[1] else NULL
       )
@@ -834,29 +832,20 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
     )
 
     output$alpha_legend_box <- renderUI({
+      req_plot_legend_tab(session, "Alpha Diversity")
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 800 else input$plot_width
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = sprintf("width: %spx;", box_width),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("alpha_figure_legend"))
+          alpha_figure_legend()
         )
       )
     })
+    outputOptions(output, "alpha_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
-    output$alpha_figure_legend <- renderUI({
+    alpha_figure_legend <- function() {
       req(input$alpha_methods, input$plot_type)
       selected_indices <- input$alpha_methods
       if (is.null(selected_indices) || length(selected_indices) == 0) {
@@ -951,6 +940,6 @@ mod_alpha_server <- function(id, ps_obj, meta_cols, active_tab = NULL, plot_orde
           )
         )
       )
-    })
+    }
   })
 }

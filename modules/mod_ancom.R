@@ -3,29 +3,6 @@ mod_ancom_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .simple-result-card {
-        width: 600px;
-        max-width: 100%;
-        height: 130px;
-        overflow-y: auto;
-        font-size: 12px;
-        line-height: 1.45;
-        background: #f8fafc;
-        border: 1px solid #d9e2ec;
-        border-radius: 10px;
-        padding: 10px 12px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        margin-bottom: 10px;
-      }
-      .simple-result-card pre {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -57,26 +34,26 @@ mod_ancom_ui <- function(id) {
       "padding: 4px !important;",
       "}"
     ))),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("vial-circle-check"), "ANCOM-BC2"),
         hr(),
 
-        selectInput(ns("group_var"), "1. Primary explanatory variable", choices = NULL),
+        selectInput(ns("group_var"), "1. Primary Explanatory Variable", choices = NULL),
 
-        checkboxInput(ns("use_subgroup"), "Select subgroup of primary explanatory variable", value = FALSE),
+        checkboxInput(ns("use_subgroup"), "Select Subgroup of Primary Explanatory Variable", value = FALSE),
 
         conditionalPanel(
           condition = "input.use_subgroup",
           ns = ns,
-          selectInput(ns("primary_level"), "Primary explanatory level to include", choices = NULL),
-          selectInput(ns("secondary_var"), "Secondary grouping variable", choices = NULL)
+          selectInput(ns("primary_level"), "Primary Explanatory Level to Include", choices = NULL),
+          selectInput(ns("secondary_var"), "Secondary Grouping Variable", choices = NULL)
         ),
 
         selectizeInput(
           ns("group_levels"),
-          "2. Explanatory variable levels to compare",
+          "2. Explanatory Variable Levels to Compare",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -85,19 +62,19 @@ mod_ancom_ui <- function(id) {
           )
         ),
 
-        selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
+        selectInput(ns("reference_level"), "3. Reference Level", choices = NULL),
 
-        selectInput(ns("tax_level"), "4. Taxonomic level",
+        selectInput(ns("tax_level"), "4. Taxonomic Level",
                     choices = c("ASV", "Genus", "Species", "Strain"), selected = "Genus"),
 
-        selectInput(ns("volcano_y_axis"), "5. Statistical metric",
+        selectInput(ns("volcano_y_axis"), "5. Statistical Metric",
                     choices = c("q-value (FDR)" = "q_val",
                                 "p-value" = "p_val"),
                     selected = "q_val"),
 
         numericInput(
           ns("prevalence_filter_pct"),
-          "6. Prevalence filter (0-20%)",
+          "6. Prevalence Filter (0-20%)",
           value = 5,
           min = 0,
           max = 20,
@@ -109,7 +86,7 @@ mod_ancom_ui <- function(id) {
           br(),
           selectizeInput(
             ns("fix_covariates"),
-            "7. Additional covariates for fix_formula (optional)",
+            "7. Additional Covariates for fix_formula (Optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -119,7 +96,7 @@ mod_ancom_ui <- function(id) {
           ),
           selectizeInput(
             ns("fix_interactions"),
-            "8. Interaction terms for fix_formula (optional)",
+            "8. Interaction Terms for fix_formula (Optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -129,7 +106,7 @@ mod_ancom_ui <- function(id) {
           ),
           selectizeInput(
             ns("rand_covariates"),
-            "9. Random-effect grouping variables (optional)",
+            "9. Random-Effect Grouping Variables (Optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -139,16 +116,16 @@ mod_ancom_ui <- function(id) {
           ),
           checkboxInput(
             ns("enable_trend_test"),
-            "10. Enable ordered trend test",
+            "10. Enable Ordered Trend Test",
             value = FALSE
           ),
           verbatimTextOutput(ns("formula_preview"))
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2000, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 400, min = 300, max = 2000, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 700, min = 400, max = 2000, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 400, min = 300, max = 2000, step = 50),
+        numericInput(ns("base_size"), "Base Font Size", value = 11, min = 6, max = 30, step = 1),
         tags$button(
           id = ns("run_ancom_btn"),
           type = "button",
@@ -177,6 +154,7 @@ mod_ancom_ui <- function(id) {
       ),
       mainPanel(
         h4("ANCOM-BC2"),
+        analysis_run_view(ns, "run_ancom_btn",
         tags$div(
           id = ns("ancom_tab_container"),
           style = "max-width: 100%;",
@@ -210,10 +188,11 @@ mod_ancom_ui <- function(id) {
                      uiOutput(ns("ancom_taxon_detail")))
           )
         ),
-        uiOutput(ns("ancom_legend_box")),
+        plot_legend_output(ns, "ancom_legend_box", c("ancom_plot", "ancom_barplot", "ancom_forest", "ancom_contrast_heatmap", "ancom_table")),
         uiOutput(ns("ancom_status_separator")),
         h5(icon("circle-info"), "ANCOM-BC2 Status"),
         uiOutput(ns("ancom_status_box"))
+        )
       )
     )
   )
@@ -222,6 +201,7 @@ mod_ancom_ui <- function(id) {
 ## Server
 mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
+    output$run_prompt <- analysis_run_prompt("Run ANCOM-BC2")
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
     observeEvent(ps_obj(), {
@@ -1784,6 +1764,7 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
     )
 
     output$ancom_legend_box <- renderUI({
+      req_plot_legend_tab(session, "ANCOM-BC2")
       req(input$plot_width)
       active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano plot" else input$ancom_active_tab
       if (!active_tab %in% c("Volcano plot", "Bar plot")) {
@@ -1791,33 +1772,20 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
       }
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          "clear: both;",
-          "position: relative;",
-          "z-index: 2;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = paste(sprintf("width: %spx;", box_width), "clear: both; position: relative; z-index: 2;"),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("ancom_figure_legend"))
+          ancom_figure_legend()
         )
       )
     })
+    outputOptions(output, "ancom_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
     output$ancom_status_box <- renderUI({
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
       tags$div(
-        class = "simple-result-card",
+        class = "app-result-card app-status-card",
         style = paste0("width: ", box_width, "px; max-width: 100%; position: relative; z-index: 2;"),
         verbatimTextOutput(session$ns("group_sample_counts"))
       )
@@ -1838,7 +1806,7 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
       )
     })
 
-    output$ancom_figure_legend <- renderUI({
+    ancom_figure_legend <- function() {
       req(display_ancom_res())
       req(input$tax_level, input$reference_level)
       active_tab <- if (is.null(input$ancom_active_tab) || !nzchar(input$ancom_active_tab)) "Volcano plot" else input$ancom_active_tab
@@ -1904,7 +1872,7 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
         ),
         tags$div(legend_body)
       )
-    })
+    }
 
   })
 }

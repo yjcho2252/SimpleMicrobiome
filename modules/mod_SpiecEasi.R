@@ -3,29 +3,6 @@ mod_spieceasi_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .simple-result-card {
-        width: 600px;
-        max-width: 100%;
-        height: 130px;
-        overflow-y: auto;
-        font-size: 12px;
-        line-height: 1.45;
-        background: #f8fafc;
-        border: 1px solid #d9e2ec;
-        border-radius: 10px;
-        padding: 10px 12px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        margin-bottom: 10px;
-      }
-      .simple-result-card pre {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-      }
       .tabbable > .nav-tabs {
         flex-wrap: nowrap;
         overflow-x: auto;
@@ -74,22 +51,22 @@ mod_spieceasi_ui <- function(id) {
         to { transform: rotate(360deg); }
       }
     ")),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("diagram-project"), "SPIEC-EASI"),
         hr(),
-        selectInput(ns("group_var"), "1. Primary grouping variable", choices = NULL),
-        checkboxInput(ns("use_subgroup"), "Select subgroup", value = FALSE),
+        selectInput(ns("group_var"), "1. Primary Grouping Variable", choices = NULL),
+        checkboxInput(ns("use_subgroup"), "Select Subgroup", value = FALSE),
         conditionalPanel(
           condition = "input.use_subgroup",
           ns = ns,
-          selectInput(ns("primary_level"), "Primary level to include", choices = NULL),
-          selectInput(ns("secondary_var"), "Secondary grouping variable", choices = c("None"), selected = "None")
+          selectInput(ns("primary_level"), "Primary Level to Include", choices = NULL),
+          selectInput(ns("secondary_var"), "Secondary Grouping Variable", choices = c("None"), selected = "None")
         ),
         selectizeInput(
           ns("group_levels"),
-          "2. Group levels",
+          "2. Group Levels",
           choices = NULL,
           selected = NULL,
           multiple = TRUE,
@@ -100,25 +77,25 @@ mod_spieceasi_ui <- function(id) {
         ),
         selectInput(
           ns("analysis_mode"),
-          "3. Analysis mode",
+          "3. Analysis Mode",
           choices = c("Single network", "Compare two groups"),
           selected = "Single network"
         ),
-        selectInput(ns("tax_level"), "4. Taxonomic level", choices = c("ASV", "Genus", "Species", "Strain"), selected = "Genus"),
-        numericInput(ns("prevalence_filter_pct"), "5. Prevalence filter (%)", value = 10, min = 0, max = 100, step = 1),
-        selectInput(ns("node_size_by"), "6. Node size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
-        selectInput(ns("node_color_by"), "7. Node color", choices = c("None"), selected = "None"),
+        selectInput(ns("tax_level"), "4. Taxonomic Level", choices = c("ASV", "Genus", "Species", "Strain"), selected = "Genus"),
+        numericInput(ns("prevalence_filter_pct"), "5. Prevalence Filter (%)", value = 10, min = 0, max = 100, step = 1),
+        selectInput(ns("node_size_by"), "6. Node Size", choices = c("Connectivity", "Abundance"), selected = "Connectivity"),
+        selectInput(ns("node_color_by"), "7. Node Color", choices = c("None"), selected = "None"),
         tags$details(
           style = "margin-bottom: 8px;",
           tags$summary("Advanced Options"),
-          numericInput(ns("min_edge_weight"), "8. Minimum absolute edge weight", value = 0.1, min = 0, max = 1, step = 0.01),
-          numericInput(ns("max_taxa"), "9. Max taxa for network", value = 200, min = 20, max = 2000, step = 10),
+          numericInput(ns("min_edge_weight"), "8. Minimum Absolute Edge Weight", value = 0.1, min = 0, max = 1, step = 0.01),
+          numericInput(ns("max_taxa"), "9. Max Taxa for Network", value = 200, min = 20, max = 2000, step = 10),
           numericInput(ns("seed"), "10. Seed", value = 1001, min = 1, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 800, min = 400, max = 2400, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 550, min = 300, max = 2400, step = 50),
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 800, min = 400, max = 2400, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 550, min = 300, max = 2400, step = 50),
         tags$div(
           style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;",
           tags$button(
@@ -151,6 +128,7 @@ mod_spieceasi_ui <- function(id) {
       ),
       mainPanel(
         h4("SPIEC-EASI Network"),
+        analysis_run_view(ns, "run_network_btn",
         tags$div(
           id = ns("spieceasi_tab_container"),
           style = "max-width: 100%;",
@@ -208,10 +186,11 @@ mod_spieceasi_ui <- function(id) {
           )
           )
         ),
-        uiOutput(ns("spieceasi_legend_box")),
+        plot_legend_output(ns, "spieceasi_legend_box", c("network_plot_all", "network_plot_connected", "comparison_network_plot", "edge_table_all", "network_summary", "comparison_edge_table", "comparison_summary", "hub_table")),
         uiOutput(ns("spieceasi_status_separator")),
         h5(icon("circle-info"), "SPIEC-EASI Status"),
         uiOutput(ns("spieceasi_status_box"))
+        )
       )
     )
   )
@@ -220,6 +199,7 @@ mod_spieceasi_ui <- function(id) {
 ## Server
 mod_spieceasi_server <- function(id, ps_obj) {
   moduleServer(id, function(input, output, session) {
+    output$run_prompt <- analysis_run_prompt("Run SPIEC-EASI")
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
     observeEvent(ps_obj(), {
@@ -1638,33 +1618,24 @@ mod_spieceasi_server <- function(id, ps_obj) {
     )
 
     output$spieceasi_legend_box <- renderUI({
+      req_plot_legend_tab(session, "SPIEC-EASI")
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 800 else input$plot_width
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = sprintf("width: %spx;", box_width),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("spieceasi_figure_legend"))
+          spieceasi_figure_legend()
         )
       )
     })
+    outputOptions(output, "spieceasi_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
     output$spieceasi_status_box <- renderUI({
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 800 else input$plot_width
       tags$div(
-        class = "simple-result-card",
+        class = "app-result-card app-status-card",
         style = paste0("width: ", box_width, "px; max-width: 100%;"),
         verbatimTextOutput(session$ns("comparison_status"))
       )
@@ -1683,7 +1654,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
       )
     })
 
-    output$spieceasi_figure_legend <- renderUI({
+    spieceasi_figure_legend <- function() {
       res <- display_network_result()
       run_settings <- res$run_settings
       active_tab <- if (is.null(input$spieceasi_active_tab) || !nzchar(input$spieceasi_active_tab)) "Network Plot (All)" else input$spieceasi_active_tab
@@ -1723,7 +1694,7 @@ mod_spieceasi_server <- function(id, ps_obj) {
           )
         )
       )
-    })
+    }
 
   })
 }

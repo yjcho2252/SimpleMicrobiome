@@ -1,9 +1,11 @@
 ﻿# SimpleMicrobiome Guide
 
-## v1.1.6 Highlights
-- Association Heatmap shows categorical subgroups in separate primary-group panels.
-- Beta Diversity and Constrained Ordination can connect paired samples from the same subject.
-- Taxa Barplot and Association Heatmap offer automatic and manual plot sizing, and result tabs have clearer figure legends.
+## v1.2.0 Highlights
+
+- Taxa Profiles includes Taxa Bubble Plot for comparing abundance and prevalence across groups.
+- Association includes Taxa Correlogram for pairwise correlations and Upset Plot for group overlap, alongside Association Heatmap.
+- On larger screens, scroll settings and results independently. Figure legends and status cards appear in the results panel.
+- Data Loading accepts QZA feature and taxonomy files through the configured converter and Excel files for metadata.
 
 ## Module Guides
 - [Data Loading](/manual/data-loading.html)
@@ -30,7 +32,7 @@
 - **Network focus**:
   - SparCC + SPIEC-EASI
 - **Association visualization focus**:
-  - Association Heatmap
+  - Association Heatmap for taxa and metadata, Taxa Correlogram for taxon pairs, or Upset Plot for taxa shared across groups.
 - **Constrained community analysis**:
   - Constrained Ordination under Diversity
 

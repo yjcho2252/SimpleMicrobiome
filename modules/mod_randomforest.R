@@ -3,29 +3,6 @@ mod_randomforest_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .simple-result-card {
-        width: 600px;
-        max-width: 100%;
-        height: 130px;
-        overflow-y: auto;
-        font-size: 12px;
-        line-height: 1.45;
-        background: #f8fafc;
-        border: 1px solid #d9e2ec;
-        border-radius: 10px;
-        padding: 10px 12px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        margin-bottom: 10px;
-      }
-      .simple-result-card pre {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -51,28 +28,28 @@ mod_randomforest_ui <- function(id) {
         to { transform: rotate(360deg); }
       }
     ")),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("tree"), "Random Forest"),
         hr(),
-        selectInput(ns("group_var"), "1. Primary explanatory variable", choices = NULL),
-        checkboxInput(ns("use_subgroup"), "Select subgroup of primary explanatory variable", value = FALSE),
+        selectInput(ns("group_var"), "1. Primary Explanatory Variable", choices = NULL),
+        checkboxInput(ns("use_subgroup"), "Select Subgroup of Primary Explanatory Variable", value = FALSE),
         conditionalPanel(
           condition = "input.use_subgroup",
           ns = ns,
-          selectInput(ns("primary_level"), "Primary explanatory level to include", choices = NULL),
-          selectInput(ns("outcome_var"), "Secondary grouping variable", choices = NULL)
+          selectInput(ns("primary_level"), "Primary Explanatory Level to Include", choices = NULL),
+          selectInput(ns("outcome_var"), "Secondary Grouping Variable", choices = NULL)
         ),
         selectInput(
           ns("outcome_type"),
-          "2. Outcome type",
+          "2. Outcome Type",
           choices = c("Auto", "Classification", "Regression"),
           selected = "Classification"
         ),
         selectizeInput(
           ns("outcome_levels"),
-          "3. Levels to include (optional)",
+          "3. Levels to Include (Optional)",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -80,42 +57,42 @@ mod_randomforest_ui <- function(id) {
             plugins = list("remove_button")
           )
         ),
-        selectInput(ns("shap_target_class"), "4. SHAP target class", choices = NULL),
+        selectInput(ns("shap_target_class"), "4. SHAP Target Class", choices = NULL),
         selectInput(
           ns("tax_level"),
-          "5. Taxonomic level",
+          "5. Taxonomic Level",
           choices = c("ASV", "Genus", "Species", "Strain"),
           selected = "Genus"
         ),
         selectInput(
           ns("transform_method"),
-          "6. Feature transform",
+          "6. Feature Transform",
           choices = c("TSS", "CLR", "Presence/Absence", "log"),
           selected = "TSS"
         ),
-        numericInput(ns("prevalence_filter_pct"), "7. Feature prevalence cutoff (0-20%)", value = 5, min = 0, max = 20, step = 1),
-        sliderInput(ns("train_ratio"), "8. Train ratio", min = 0.6, max = 0.9, value = 0.8, step = 0.05),
+        numericInput(ns("prevalence_filter_pct"), "7. Feature Prevalence Cutoff (0-20%)", value = 5, min = 0, max = 20, step = 1),
+        sliderInput(ns("train_ratio"), "8. Train Ratio", min = 0.6, max = 0.9, value = 0.8, step = 0.05),
         tags$details(
           style = "margin-bottom: 10px;",
           tags$summary("Advanced Options"),
           br(),
-          numericInput(ns("top_n_features"), "9. Top N features by mean abundance", value = 100, min = 10, max = 5000, step = 10),
-          numericInput(ns("ntree"), "10. Number of trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
-          numericInput(ns("mtry"), "11. mtry (0 = auto)", value = 0, min = 0, max = 10000, step = 1),
+          numericInput(ns("top_n_features"), "9. Top N Features by Mean Abundance", value = 100, min = 10, max = 5000, step = 10),
+          numericInput(ns("ntree"), "10. Number of Trees (ntree)", value = 500, min = 100, max = 5000, step = 100),
+          numericInput(ns("mtry"), "11. mtry (0 = Auto)", value = 0, min = 0, max = 10000, step = 1),
           selectInput(
             ns("validation_mode"),
-            "12. Validation mode",
+            "12. Validation Mode",
             choices = c("Holdout split", "K-fold CV"),
             selected = "Holdout split"
           ),
-          numericInput(ns("cv_folds"), "13. K for K-fold CV", value = 5, min = 3, max = 10, step = 1),
-          numericInput(ns("seed"), "14. Random seed", value = 1234, min = 1, max = 999999, step = 1)
+          numericInput(ns("cv_folds"), "13. K for K-Fold CV", value = 5, min = 3, max = 10, step = 1),
+          numericInput(ns("seed"), "14. Random Seed", value = 1234, min = 1, max = 999999, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 1160, min = 600, max = 3200, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 1160, min = 600, max = 3200, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 500, min = 300, max = 2400, step = 50),
+        numericInput(ns("base_size"), "Base Font Size", value = 11, min = 6, max = 30, step = 1),
         tags$div(
           style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;",
           tags$button(
@@ -149,6 +126,7 @@ mod_randomforest_ui <- function(id) {
       mainPanel(
         width = 10,
         h4("Random Forest"),
+        analysis_run_view(ns, "run_rf",
         tags$div(
           id = ns("rf_tab_container"),
           style = "max-width: 100%;",
@@ -215,10 +193,11 @@ mod_randomforest_ui <- function(id) {
             )
           )
         ),
-        uiOutput(ns("rf_legend_box")),
+        plot_legend_output(ns, "rf_legend_box", c("importance_plot", "roc_plot", "shap_summary_plot", "importance_table", "shap_summary_table", "rf_result_box")),
         uiOutput(ns("rf_results_separator")),
         h5(icon("circle-info"), "Random Forest Status"),
         uiOutput(ns("rf_metrics_box"))
+        )
       )
     )
   )
@@ -227,6 +206,7 @@ mod_randomforest_ui <- function(id) {
 ## Server
 mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
   moduleServer(id, function(input, output, session) {
+    output$run_prompt <- analysis_run_prompt("Run Random Forest")
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
     observeEvent(ps_obj_filtered_raw(), {
@@ -1638,7 +1618,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1160 else input$plot_width
       tags$div(
-        class = "simple-result-card",
+        class = "app-result-card app-status-card",
         style = paste0("width: ", box_width, "px; max-width: 100%;"),
         verbatimTextOutput(session$ns("rf_sample_status"))
       )
@@ -1648,7 +1628,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1160 else input$plot_width
       tags$div(
-        class = "simple-result-card",
+        class = "app-result-card app-status-card",
         style = paste0("width: ", box_width, "px; max-width: 100%; height: 420px;"),
         verbatimTextOutput(session$ns("rf_result_text"))
       )
@@ -2400,27 +2380,18 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
     )
 
     output$rf_legend_box <- renderUI({
+      req_plot_legend_tab(session, "Random Forest")
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 1160 else input$plot_width
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = sprintf("width: %spx;", box_width),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("rf_figure_legend"))
+          rf_figure_legend()
         )
       )
     })
+    outputOptions(output, "rf_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
     output$rf_results_separator <- renderUI({
       req(input$plot_width)
@@ -2435,7 +2406,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
       )
     })
 
-    output$rf_figure_legend <- renderUI({
+    rf_figure_legend <- function() {
       req(display_model_result())
       req(input$outcome_var, input$tax_level, input$transform_method)
       active_tab <- if (is.null(input$rf_active_tab) || !nzchar(input$rf_active_tab)) "RF Bar plot" else input$rf_active_tab
@@ -2504,7 +2475,7 @@ mod_randomforest_server <- function(id, ps_obj_filtered_raw) {
           )
         )
       )
-    })
+    }
 
     output$roc_plot_ui <- renderUI({
       w <- as.integer(input$plot_width)

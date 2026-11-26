@@ -3,31 +3,6 @@ mod_beta_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .beta-result-card {
-        width: 600px;
-        height: 130px;
-        overflow-y: auto;
-        font-size: 12px;
-        line-height: 1.45;
-        background: #f8fafc;
-        border: 1px solid #d9e2ec;
-        border-radius: 10px;
-        padding: 10px 12px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        margin-bottom: 10px;
-      }
-      .beta-result-card pre {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-      }
-      .beta-result-card p {
-        margin-bottom: 0.4rem;
-      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -35,19 +10,19 @@ mod_beta_ui <- function(id) {
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
     ")),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("project-diagram"), "Beta Diversity"),
         hr(),
         
-        selectInput(ns("primary_group_var"), "Primary Variable (Color):", choices = character(0), selected = NULL),
-        selectInput(ns("secondary_group_var"), "Secondary Variable (Shape):", choices = c("None"), selected = "None"),
+        selectInput(ns("primary_group_var"), "Primary Variable (Color)", choices = character(0), selected = NULL),
+        selectInput(ns("secondary_group_var"), "Secondary Variable (Shape)", choices = c("None"), selected = "None"),
         hr(),
-        h4(icon("compass"), "Core Analysis"),
+        h4(icon("sliders"), "Analysis Settings"),
         selectInput(
           ns("distance_metric"),
-          "Distance metric:",
+          "Distance Metric",
           choices = c(
             "Bray-Curtis" = "bray",
             "Jaccard" = "jaccard",
@@ -62,7 +37,7 @@ mod_beta_ui <- function(id) {
         ),
         selectInput(
           ns("beta_tax_level"),
-          "Taxonomic level:",
+          "Taxonomic Level",
           choices = c("ASV" = "ASV", "Species" = "Species", "Genus" = "Genus"),
           selected = "ASV"
         ),
@@ -74,10 +49,10 @@ mod_beta_ui <- function(id) {
           checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
           conditionalPanel(
             condition = sprintf("!input['%s']", ns("enable_within_subject_pairing")),
-            checkboxInput(ns("permanova_adjust"), "Adjust for covariates", value = FALSE),
+            checkboxInput(ns("permanova_adjust"), "Adjust for Covariates", value = FALSE),
             conditionalPanel(
               condition = sprintf("input['%s']", ns("permanova_adjust")),
-              selectizeInput(ns("permanova_covariates"), "Covariates:", choices = NULL, multiple = TRUE)
+              selectizeInput(ns("permanova_covariates"), "Covariates", choices = NULL, multiple = TRUE)
             )
           ),
           conditionalPanel(
@@ -88,65 +63,16 @@ mod_beta_ui <- function(id) {
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("PERMDISP")),
           br(),
-          checkboxInput(ns("show_permdisp"), "Show PERMDISP results", value = FALSE)
+          checkboxInput(ns("show_permdisp"), "Show PERMDISP Results", value = FALSE)
         ),
-        hr(),
-        
-        h4(icon("sliders"), "Display Options"),
-        numericInput(ns("plot_width_px"), "Plot Width (pixels):", value = 700, min = 300, max = 1500, step = 50),
-        numericInput(ns("plot_height_px"), "Plot Height (pixels):", value = 500, min = 300, max = 1500, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
-        numericInput(ns("dot_size"), "Dot Size (point size):", value = 5, min = 0.5, max = 10, step = 0.5),
-        checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
-        checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
-        checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
-        checkboxInput(ns("show_centroid_lines"), "Show Sample-to-Centroid Lines", value = FALSE),
-        checkboxInput(ns("connect_subject_samples"), "Connect Samples Within Subjects", value = FALSE),
-        checkboxInput(ns("show_centroids"), "Show Centroids", value = FALSE),
-        checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
-        selectInput(ns("primary_color_palette"), "Primary Group Color Palette:",
-                    choices = c("Set2" = "set2", additional_plot_palettes), selected = "set2"),
-        tags$details(
-          tags$summary(strong("Sample Color Overlay")),
-          br(),
-          selectInput(
-            ns("sample_color_by"), "Color by:",
-            choices = c("None" = "none", "Alpha Diversity" = "alpha",
-                        "Taxon Relative Abundance" = "taxon")
-          ),
-          conditionalPanel(
-            condition = sprintf("input['%s'] == 'alpha'", ns("sample_color_by")),
-            selectInput(
-              ns("sample_alpha_metric"), "Alpha metric:",
-              choices = c("Shannon", "Observed", "Chao1", "Simpson (1-D)" = "Simpson")
-            )
-          ),
-          conditionalPanel(
-            condition = sprintf("input['%s'] == 'taxon'", ns("sample_color_by")),
-            uiOutput(ns("sample_color_tax_rank_ui")),
-            selectizeInput(ns("sample_color_taxon"), "Taxon:", choices = NULL)
-          )
-        ),
-        uiOutput(ns("primary_color_controls")),
-        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
-          tags$summary(strong("Axis Limits")),
-          br(),
-          helpText("Leave blank to use automatic limits."),
-          numericInput(ns("x_min"), "X-axis minimum:", value = NA),
-          numericInput(ns("x_max"), "X-axis maximum:", value = NA),
-          numericInput(ns("y_min"), "Y-axis minimum:", value = NA),
-          numericInput(ns("y_max"), "Y-axis maximum:", value = NA)
-        ),
-        hr(),
-        h4(icon("layer-group"), "Optional Post-Ordination"),
         tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("EnvFit")),
           br(),
           uiOutput(ns("envfit_var_selector")),
           uiOutput(ns("envfit_taxa_selector")),
-          checkboxInput(ns("envfit_only_sig"), "Show only significant vectors", value = TRUE),
-          numericInput(ns("envfit_p_cutoff"), "p-value cutoff:", value = 0.05, min = 0.001, max = 1, step = 0.01),
-          checkboxInput(ns("show_envfit_vectors"), "Overlay EnvFit vectors on plots", value = TRUE),
+          checkboxInput(ns("envfit_only_sig"), "Show Only Significant Vectors", value = TRUE),
+          numericInput(ns("envfit_p_cutoff"), "p-Value Cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
+          checkboxInput(ns("show_envfit_vectors"), "Overlay EnvFit Vectors on Plots", value = TRUE),
           actionButton(ns("run_envfit"), "Run EnvFit", class = "btn-secondary btn-sm", style = "font-size: 12px;"),
           tags$script(HTML(
             "Shiny.addCustomMessageHandler('toggle-envfit-run-btn', function(msg) {
@@ -168,23 +94,23 @@ mod_beta_ui <- function(id) {
           br(),
           selectInput(
             ns("cluster_mode"),
-            "Clustering mode:",
+            "Clustering Mode",
             choices = c("Manual k" = "manual", "Auto k (Silhouette)" = "auto"),
             selected = "manual"
           ),
           conditionalPanel(
             condition = sprintf("input['%s'] == 'manual'", ns("cluster_mode")),
-            numericInput(ns("cluster_k"), "Manual k:", value = 3, min = 2, max = 20, step = 1)
+            numericInput(ns("cluster_k"), "Manual k", value = 3, min = 2, max = 20, step = 1)
           ),
           conditionalPanel(
             condition = sprintf("input['%s'] == 'auto'", ns("cluster_mode")),
-            numericInput(ns("cluster_k_min"), "Auto k min:", value = 2, min = 2, max = 20, step = 1),
-            numericInput(ns("cluster_k_max"), "Auto k max:", value = 10, min = 3, max = 30, step = 1)
+            numericInput(ns("cluster_k_min"), "Auto k Min", value = 2, min = 2, max = 20, step = 1),
+            numericInput(ns("cluster_k_max"), "Auto k Max", value = 10, min = 3, max = 30, step = 1)
           ),
-          checkboxInput(ns("show_cluster_labels"), "Show cluster labels on plot", value = TRUE),
+          checkboxInput(ns("show_cluster_labels"), "Show Cluster Labels on Plot", value = TRUE),
           conditionalPanel(
             condition = sprintf("input['%s'] == 'none'", ns("sample_color_by")),
-            checkboxInput(ns("overlay_cluster_colors"), "Overlay cluster colors on dots", value = FALSE)
+            checkboxInput(ns("overlay_cluster_colors"), "Overlay Cluster Colors on Dots", value = FALSE)
           ),
           tags$div(
             style = "display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
@@ -200,52 +126,100 @@ mod_beta_ui <- function(id) {
             });"
           ))
         ),
+        hr(),
+
+        h4(icon("sliders"), "Display Options"),
+        numericInput(ns("plot_width_px"), "Plot Width (px)", value = 700, min = 300, max = 1500, step = 50),
+        numericInput(ns("plot_height_px"), "Plot Height (px)", value = 500, min = 300, max = 1500, step = 50),
+        numericInput(ns("base_size"), "Base Font Size", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (Point Size)", value = 5, min = 0.5, max = 10, step = 0.5),
+        selectInput(ns("primary_color_palette"), "Color Palette", group_plot_palettes, selected = "set2"),
+        checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
+        checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
+        checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
+        checkboxInput(ns("show_centroid_lines"), "Show Sample-to-Centroid Lines", value = FALSE),
+        checkboxInput(ns("connect_subject_samples"), "Connect Samples within Subjects", value = FALSE),
+        checkboxInput(ns("show_centroids"), "Show Centroids", value = FALSE),
+        checkboxInput(ns("show_sample_names"), "Show Sample Names", value = FALSE),
+        tags$details(
+          tags$summary(strong("Sample Color Overlay")),
+          br(),
+          selectInput(
+            ns("sample_color_by"), "Color by",
+            choices = c("None" = "none", "Alpha Diversity" = "alpha",
+                        "Taxon Relative Abundance" = "taxon")
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'alpha'", ns("sample_color_by")),
+            selectInput(
+              ns("sample_alpha_metric"), "Alpha Metric",
+              choices = c("Shannon", "Observed", "Chao1", "Simpson (1-D)" = "Simpson")
+            )
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'taxon'", ns("sample_color_by")),
+            uiOutput(ns("sample_color_tax_rank_ui")),
+            selectizeInput(ns("sample_color_taxon"), "Taxon", choices = NULL)
+          )
+        ),
+        uiOutput(ns("primary_color_controls")),
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("Axis Limits")),
+          br(),
+          helpText("Leave blank to use automatic limits."),
+          numericInput(ns("x_min"), "X-Axis Minimum", value = NA),
+          numericInput(ns("x_max"), "X-Axis Maximum", value = NA),
+          numericInput(ns("y_min"), "Y-Axis Minimum", value = NA),
+          numericInput(ns("y_max"), "Y-Axis Maximum", value = NA)
+        )
       ),
       
       mainPanel(
         width = 9,
         h4("Beta Diversity"),
-        tags$div(
-          id = ns("beta_tab_container"),
-          style = "max-width: 100%;",
-          tabsetPanel(
-            id = ns("beta_tabs"),
-            tabPanel("PCoA",
-              tags$div(
-                style = "margin-top: 8px;",
-                downloadButton(
-                  ns("download_pcoa"),
-                  "Download PCoA (PNG)",
-                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-                )
+        plot_data_wait_view(ns,
+          tags$div(
+            id = ns("beta_tab_container"),
+            style = "max-width: 100%;",
+            tabsetPanel(
+              id = ns("beta_tabs"),
+              tabPanel("PCoA",
+                tags$div(
+                  style = "margin-top: 8px;",
+                  downloadButton(
+                    ns("download_pcoa"),
+                    "Download PCoA (PNG)",
+                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                  )
+                ),
+                uiOutput(ns("pcoa_plot_ui"))
               ),
-              uiOutput(ns("pcoa_plot_ui"))
-            ),
-            tabPanel("NMDS",
-              tags$div(
-                style = "margin-top: 8px;",
-                downloadButton(
-                  ns("download_nmds"),
-                  "Download NMDS (PNG)",
-                  style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
-                )
-              ),
-              uiOutput(ns("nmds_plot_ui")),
-              tags$div(
-                style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
-                actionButton(
-                  ns("redraw_nmds"),
-                  "Re-run NMDS",
-                  style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
+              tabPanel("NMDS",
+                tags$div(
+                  style = "margin-top: 8px;",
+                  downloadButton(
+                    ns("download_nmds"),
+                    "Download NMDS (PNG)",
+                    style = "width: 200px; height: 34px; font-size: 11px; display: flex; align-items: center; justify-content: center; margin: 10px 0 12px 0;"
+                  )
+                ),
+                uiOutput(ns("nmds_plot_ui")),
+                tags$div(
+                  style = "margin-top: 12px; display: flex; gap: 10px; align-items: center;",
+                  actionButton(
+                    ns("redraw_nmds"),
+                    "Re-run NMDS",
+                    style = "width: 150px; height: 32px; font-size: 11px; padding: 3px 8px;"
+                  )
                 )
               )
             )
-          )
-        ),
-        uiOutput(ns("beta_legend_box")),
-        
-        uiOutput(ns("beta_results_separator")),
-        uiOutput(ns("beta_results_boxes"))
+          ),
+          plot_legend_output(ns, "beta_legend_box", c("pcoa_plot_out", "nmds_plot_out")),
+
+          uiOutput(ns("beta_results_separator")),
+          uiOutput(ns("beta_results_boxes"))
+        )
       )
     )
   )
@@ -254,6 +228,7 @@ mod_beta_ui <- function(id) {
 ## Server
 mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
+    register_plot_data_wait(output, ps_obj, "beta diversity plot")
     observe({
       width_px <- suppressWarnings(as.integer(input$plot_width_px))
       if (length(width_px) != 1L || !is.finite(width_px) || width_px <= 0) width_px <- 700L
@@ -390,7 +365,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       }
       selectInput(
         session$ns("subject_id_var"),
-        "Subject ID Variable:",
+        "Subject ID Variable",
         choices = subject_choices,
         selected = selected_subject
       )
@@ -512,7 +487,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
 
     primary_color_id <- function(index) {
       palette <- input$primary_color_palette
-      if (length(palette) == 1L && palette %in% additional_plot_palettes) {
+      if (length(palette) == 1L && palette %in% group_plot_palettes && palette != "set2") {
         return(paste0("primary_color_", palette, "_", index))
       }
       paste0("primary_color_", index)
@@ -593,7 +568,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       candidate_vars <- setdiff(colnames(meta_df), "SampleID")
       selectizeInput(
         session$ns("envfit_vars"),
-        "EnvFit variables (numeric + categorical):",
+        "EnvFit Variables (Numeric + Categorical)",
         choices = candidate_vars,
         selected = head(candidate_vars, min(1, length(candidate_vars))),
         multiple = TRUE,
@@ -615,7 +590,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
 
       selectizeInput(
         session$ns("envfit_taxa_vars"),
-        "Additional taxa abundance variables (optional):",
+        "Additional Taxa Abundance Variables (Optional)",
         choices = taxa_choices,
         selected = character(0),
         multiple = TRUE,
@@ -667,7 +642,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       req(sample_color_mode() == "taxon", ps_obj())
       taxonomy <- phyloseq::tax_table(ps_obj(), errorIfNULL = FALSE)
       ranks <- c("ASV", intersect(c("Species", "Genus"), colnames(taxonomy)))
-      selectInput(session$ns("sample_color_tax_rank"), "Taxonomic level:", choices = ranks)
+      selectInput(session$ns("sample_color_tax_rank"), "Taxonomic Level", choices = ranks)
     })
 
     sample_color_tax_counts <- reactive({
@@ -2302,10 +2277,17 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       return(p)
     })
     
+    nmds_legend_info <- reactiveVal(NULL)
+
     output$nmds_plot_out <- renderPlot({
       tryCatch(
-        nmds_plot_reactive(),
+        {
+          plot <- nmds_plot_reactive()
+          nmds_legend_info(tryCatch(nmds_run_info(), error = function(e) NULL))
+          plot
+        },
         error = function(e) {
+          nmds_legend_info(NULL)
           msg <- conditionMessage(e)
           if (grepl("No samples are currently selected|at least one sample", msg, ignore.case = TRUE)) {
             graphics::plot.new()
@@ -2599,27 +2581,18 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
     })
 
     output$beta_legend_box <- renderUI({
+      req_plot_legend_tab(session, "Beta Diversity")
       req(input$plot_width_px)
       box_width <- if (is.null(input$plot_width_px) || !is.finite(input$plot_width_px)) 500 else input$plot_width_px
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = sprintf("width: %spx;", box_width),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("beta_figure_legend"))
+          beta_figure_legend()
         )
       )
     })
+    outputOptions(output, "beta_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
     output$beta_results_separator <- renderUI({
       req(input$plot_width_px)
@@ -2634,7 +2607,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       )
     })
 
-    output$beta_figure_legend <- renderUI({
+    beta_figure_legend <- function() {
       req(input$beta_tabs, input$distance_metric, input$beta_tax_level)
       ord_label <- if (identical(input$beta_tabs, "NMDS")) "NMDS beta diversity ordination plot" else "PCoA beta diversity ordination plot"
       metric_label <- distance_label()
@@ -2657,7 +2630,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       }
       nmds_sentence <- ""
       if (identical(input$beta_tabs, "NMDS")) {
-        info <- tryCatch(nmds_run_info(), error = function(e) NULL)
+        info <- nmds_legend_info()
         if (!is.null(info)) {
           stress_text <- if (is.finite(info$stress)) format(round(info$stress, 3), nsmall = 3) else "not available"
           tries_text <- if (length(info$tries) > 0 && !is.na(info$tries)) {
@@ -2700,7 +2673,7 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
           )
         )
       )
-    })
+    }
 
     output$nmds_results_out <- renderUI({
       if (!identical(input$beta_tabs, "NMDS")) {
@@ -2731,13 +2704,13 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
       tags$div(
         tags$h5(icon("project-diagram"), "NMDS Run Details"),
         tags$div(
-          class = "beta-result-card",
+          class = "app-result-card app-status-card",
           style = paste0("width: ", box_width, "px; max-width: 100%;"),
           htmlOutput(session$ns("nmds_results_out"))
         ),
         tags$h5(icon("flask"), "Statistical Test: PERMANOVA Results"),
         tags$div(
-          class = "beta-result-card",
+          class = "app-result-card app-status-card",
           style = paste0("width: ", box_width, "px; max-width: 100%;",
                          if (isTRUE(input$permanova_adjust) &&
                              !isTRUE(input$enable_within_subject_pairing)) "height: auto;"),
@@ -2747,20 +2720,21 @@ mod_beta_server <- function(id, ps_obj, meta_cols, plot_order = function() NULL)
           tagList(
             tags$h5(icon("flask"), "PERMDISP Results"),
             tags$div(
-              style = paste0("width: ", box_width, "px; max-width: 100%; margin-bottom: 8px;"),
+              class = "app-result-card app-status-card",
+              style = paste0("width: ", box_width, "px; height: auto; margin-bottom: 8px;"),
               uiOutput(session$ns("permdisp_results_out"))
             )
           )
         },
         tags$h5(icon("object-group"), "Clustering Results"),
         tags$div(
-          class = "beta-result-card",
+          class = "app-result-card app-status-card",
           style = paste0("width: ", box_width, "px; max-width: 100%;"),
           verbatimTextOutput(session$ns("clustering_results_out"))
         ),
         tags$h5(icon("arrows-to-dot"), "EnvFit Results"),
         tags$div(
-          class = "beta-result-card",
+          class = "app-result-card app-status-card",
           style = paste0("width: ", box_width, "px; max-width: 100%;"),
           verbatimTextOutput(session$ns("envfit_results_out"))
         )

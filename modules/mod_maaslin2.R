@@ -3,29 +3,6 @@ mod_maaslin2_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .simple-result-card {
-        width: 600px;
-        max-width: 100%;
-        height: 130px;
-        overflow-y: auto;
-        font-size: 12px;
-        line-height: 1.45;
-        background: #f8fafc;
-        border: 1px solid #d9e2ec;
-        border-radius: 10px;
-        padding: 10px 12px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        margin-bottom: 10px;
-      }
-      .simple-result-card pre {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -57,28 +34,28 @@ mod_maaslin2_ui <- function(id) {
       "padding: 4px !important;",
       "}"
     ))),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("flask"), "MaAsLin2"),
         hr(),
 
-        selectInput(ns("group_var"), "1. Primary explanatory variable", choices = NULL),
+        selectInput(ns("group_var"), "1. Primary Explanatory Variable", choices = NULL),
         uiOutput(ns("primary_type_ui")),
         conditionalPanel(
           condition = "!output.continuous_primary",
           ns = ns,
-        checkboxInput(ns("use_subgroup"), "Select subgroup of primary explanatory variable", value = FALSE),
+        checkboxInput(ns("use_subgroup"), "Select Subgroup of Primary Explanatory Variable", value = FALSE),
         conditionalPanel(
           condition = "input.use_subgroup",
           ns = ns,
-          selectInput(ns("primary_level"), "Primary explanatory level to include", choices = NULL),
-          selectInput(ns("secondary_var"), "Secondary grouping variable", choices = NULL)
+          selectInput(ns("primary_level"), "Primary Explanatory Level to Include", choices = NULL),
+          selectInput(ns("secondary_var"), "Secondary Grouping Variable", choices = NULL)
         ),
 
         selectizeInput(
           ns("group_levels"),
-          "2. Explanatory variable levels to compare",
+          "2. Explanatory Variable Levels to Compare",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -88,20 +65,20 @@ mod_maaslin2_ui <- function(id) {
         ),
         uiOutput(ns("group_level_warning")),
 
-        selectInput(ns("reference_level"), "3. Reference level", choices = NULL),
+        selectInput(ns("reference_level"), "3. Reference Level", choices = NULL),
         ),
 
-        selectInput(ns("tax_level"), "4. Taxonomic level",
+        selectInput(ns("tax_level"), "4. Taxonomic Level",
                     choices = c("ASV", "Genus", "Species", "Strain"), selected = "Genus"),
 
-        selectInput(ns("volcano_y_axis"), "5. Statistical metric",
+        selectInput(ns("volcano_y_axis"), "5. Statistical Metric",
                     choices = c("q-value (FDR)" = "q_val",
                                 "p-value" = "p_val"),
                     selected = "q_val"),
 
         numericInput(
           ns("prevalence_filter_pct"),
-          "6. Prevalence filter (0-20%)",
+          "6. Prevalence Filter (0-20%)",
           value = 5,
           min = 0,
           max = 20,
@@ -113,13 +90,13 @@ mod_maaslin2_ui <- function(id) {
           br(),
           selectInput(
             ns("analysis_method"),
-            "7. Analysis method",
+            "7. Analysis Method",
             choices = c("LM" = "LM", "ZINB" = "ZINB"),
             selected = "LM"
           ),
           selectizeInput(
             ns("fix_covariates"),
-            "8. Additional covariates for fixed effects (optional)",
+            "8. Additional Covariates for Fixed Effects (Optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -129,7 +106,7 @@ mod_maaslin2_ui <- function(id) {
           ),
           selectizeInput(
             ns("fix_interactions"),
-            "9. Interaction terms for fixed effects (optional)",
+            "9. Interaction Terms for Fixed Effects (Optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -139,7 +116,7 @@ mod_maaslin2_ui <- function(id) {
           ),
           selectizeInput(
             ns("random_effects"),
-            "10. Random effects (optional)",
+            "10. Random Effects (Optional)",
             choices = NULL,
             multiple = TRUE,
             options = list(
@@ -151,9 +128,9 @@ mod_maaslin2_ui <- function(id) {
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2000, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 400, min = 300, max = 2000, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 11, min = 6, max = 30, step = 1),
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 700, min = 400, max = 2000, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 400, min = 300, max = 2000, step = 50),
+        numericInput(ns("base_size"), "Base Font Size", value = 11, min = 6, max = 30, step = 1),
         tags$button(
           id = ns("run_maaslin2_btn"),
           type = "button",
@@ -182,6 +159,7 @@ mod_maaslin2_ui <- function(id) {
       ),
       mainPanel(
         h4("MaAsLin2"),
+        analysis_run_view(ns, "run_maaslin2_btn",
         tags$div(
           id = ns("maaslin2_tab_container"),
           style = "max-width: 100%;",
@@ -216,12 +194,13 @@ mod_maaslin2_ui <- function(id) {
                      uiOutput(ns("table_association_detail")))
           )
         ),
-        uiOutput(ns("maaslin2_legend_box")),
+        plot_legend_output(ns, "maaslin2_legend_box", c("maaslin2_plot", "maaslin2_barplot", "association_heatmap", "maaslin2_table")),
         div(
           style = "clear: both; margin-top: 16px;",
           uiOutput(ns("maaslin2_status_separator")),
           h5(icon("circle-info"), "MaAsLin2 Status"),
           uiOutput(ns("maaslin2_status_box"))
+        )
         )
       )
     )
@@ -231,6 +210,7 @@ mod_maaslin2_ui <- function(id) {
 ## Server
 mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
   moduleServer(id, function(input, output, session) {
+    output$run_prompt <- analysis_run_prompt("Run MaAsLin2")
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
     observeEvent(ps_obj(), {
@@ -1943,6 +1923,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
     )
 
     output$maaslin2_legend_box <- renderUI({
+      req_plot_legend_tab(session, "MaAsLin2")
       req(input$plot_width)
       active_tab <- if (is.null(input$maaslin2_active_tab) || !nzchar(input$maaslin2_active_tab)) "Volcano plot" else input$maaslin2_active_tab
       if (active_tab %in% c("Table", "Association Heatmap")) {
@@ -1950,33 +1931,20 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       }
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          "clear: both;",
-          "position: relative;",
-          "z-index: 2;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = paste(sprintf("width: %spx;", box_width), "clear: both; position: relative; z-index: 2;"),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("maaslin2_figure_legend"))
+          maaslin2_figure_legend()
         )
       )
     })
+    outputOptions(output, "maaslin2_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
     output$maaslin2_status_box <- renderUI({
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 900 else input$plot_width
       tags$div(
-        class = "simple-result-card",
+        class = "app-result-card app-status-card",
         style = paste0("width: ", box_width, "px; max-width: 100%; position: relative; z-index: 2;"),
         verbatimTextOutput(session$ns("group_sample_counts"))
       )
@@ -1997,7 +1965,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       )
     })
 
-    output$maaslin2_figure_legend <- renderUI({
+    maaslin2_figure_legend <- function() {
       req(display_maaslin2_res())
       req(input$tax_level)
       active_tab <- if (is.null(input$maaslin2_active_tab) || !nzchar(input$maaslin2_active_tab)) "Volcano plot" else input$maaslin2_active_tab
@@ -2065,7 +2033,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
         ),
         tags$div(legend_body)
       )
-    })
+    }
 
   })
 }

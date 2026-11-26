@@ -12,7 +12,7 @@ SimpleMicrobiome is an R Shiny application for downstream microbiome analysis wi
 It integrates data loading, preprocessing, taxa profiling, diversity, differential abundance, network analysis, and association analysis in a single workflow.
 Public app: https://simplemicrobiome.mglab.org/
 
-Current source version: **v1.1.6**. See the [release notes](docs/releases/2026-11-26-v1.1.6.md), [changelog](CHANGELOG.md), [user manual](docs/manual/README.md), and [versioning policy](CONTRIBUTING.md#versioning-policy).
+Current source version: **v1.2.0**. See the [release notes](docs/releases/2026-11-26-v1.2.0.md), [changelog](CHANGELOG.md), [user manual](docs/manual/README.md), and [versioning policy](CONTRIBUTING.md#versioning-policy).
 
 ## About the App
 

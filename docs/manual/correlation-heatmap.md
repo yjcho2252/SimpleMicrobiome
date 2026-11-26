@@ -3,6 +3,7 @@
 ## 1. What This Module Does
 Association Heatmap visualizes associations between taxa and metadata groups as a matrix.
 The module supports abundance-based associations and prevalence-based binary associations.
+Use the sample-level view to inspect individual samples, or the grouped view to compare groups and display significance marks.
 
 ## 2. Left Panel Parameters
 

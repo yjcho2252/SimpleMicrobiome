@@ -55,9 +55,9 @@ options(shiny.error = function(...) {
 
 ## Module Loading
 mod_path <- file.path(app_root_dir, "modules")
-if (dir.exists(mod_path)) {
-  list.files(mod_path, pattern = "\\.R$", full.names = TRUE) %>% walk(source)
-}
+shared_path <- file.path(mod_path, "shared")
+list.files(shared_path, pattern = "\\.R$", full.names = TRUE) %>% walk(source)
+list.files(mod_path, pattern = "^mod_.*\\.R$", full.names = TRUE) %>% walk(source)
 
 ## App UI
 ui <- page_navbar(
@@ -69,7 +69,7 @@ ui <- page_navbar(
         alt = "SimpleMicrobiome",
         style = "height: 30px; width: auto; display: block;"
       ),
-      tags$span("v1.1.6", class = "navbar-app-version")
+      tags$span("v1.2.0", class = "navbar-app-version")
     ),
     style = "display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; padding: 0;"
   ),
@@ -84,8 +84,105 @@ ui <- page_navbar(
     tags$title("SimpleMicrobiome"),
     tags$link(rel = "icon", type = "image/png", sizes = "64x64", href = "260617_SimpleMicrobiome_icon_64.png"),
     tags$link(rel = "shortcut icon", type = "image/png", href = "260617_SimpleMicrobiome_icon_64.png"),
+    tags$script(src = "plot-scroll-layout.js", defer = NA),
+    tags$script(src = "plot-legend-readiness.js", defer = NA),
+    tags$script(src = "profile-group-selectors.js", defer = NA),
     tags$style(HTML("
       body { font-size: 14px; }
+      .app-plot-legend:not([data-legend-ready]) { display: none; }
+      .app-result-card,
+      .app-plot-legend > div {
+        max-width: 100%;
+        margin-top: 12px;
+        padding: 12px 14px;
+        border: 1px solid #e5e7eb;
+        border-left: 4px solid #6b7280;
+        border-radius: 8px;
+        background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        box-sizing: border-box;
+        color: #1f2937;
+        font-size: 12.5px;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+      }
+      .app-status-card {
+        width: 600px;
+        height: 130px;
+        overflow: auto;
+        margin-bottom: 10px;
+      }
+      .app-status-card pre {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .app-status-card p { margin-bottom: 0.4rem; }
+      .profile-group-selectors[disabled] > .shiny-input-container { pointer-events: none; }
+      :root {
+        --taxa-plot-loading-width: 900px;
+        --taxa-plot-loading-height: 700px;
+      }
+      .taxa-comparison-result > .taxa-plot-stage:has(:is(.taxa-plot-container, .shiny-plot-output):is(:empty, .recalculating, .shiny-output-error)) + div,
+      :is(.taxa-plot-stage, .taxa-barplot-view):has(.plotly.html-widget-output:is(.recalculating, .shiny-output-error, :not([data-taxa-ready]))) + .taxa-plot-details,
+      :is(.taxa-plot-stage, .taxa-barplot-view):has(.taxa-plot-container:is(:empty, .recalculating, .shiny-output-error)) + .taxa-plot-details {
+        display: none;
+      }
+      .taxa-plot-stage { position: relative; }
+      .taxa-plot-stage .shiny-output-error-taxa-plot-wait {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: min(var(--taxa-plot-loading-width), 100%);
+        min-height: var(--taxa-plot-loading-height);
+        text-align: center;
+        color: #334155;
+      }
+      .taxa-plot-stage:has(.plotly.html-widget-output:not(.shiny-output-error):not([data-taxa-ready])),
+      .taxa-plot-stage:has(.shiny-plot-output:empty:not(.shiny-output-error)),
+      .taxa-plot-stage:has(.taxa-plot-container:empty:not(.shiny-output-error)) {
+        min-height: var(--taxa-plot-loading-height);
+      }
+      .taxa-plot-stage:has(.taxa-plot-container:empty:not(.shiny-output-error)) {
+        width: min(var(--taxa-plot-loading-width), 100%);
+      }
+      .taxa-plot-loading {
+        position: absolute;
+        inset: 0;
+        max-width: var(--taxa-plot-loading-width);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .taxa-plot-loading span {
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.94);
+        color: #334155;
+      }
+      .taxa-plot-stage:has(.plotly.html-widget-output:not(.shiny-output-error):not([data-taxa-ready])) > .taxa-plot-loading,
+      .taxa-plot-stage:has(.plotly.html-widget-output.recalculating:not(.shiny-output-error)) > .taxa-plot-loading,
+      .taxa-plot-stage:has(.shiny-plot-output:is(:empty, .recalculating):not(.shiny-output-error)) > .taxa-plot-loading,
+      .taxa-plot-stage:has(.taxa-plot-container.recalculating:not(.shiny-output-error)) > .taxa-plot-loading,
+      .taxa-plot-stage:has(.taxa-plot-container:empty:not(.shiny-output-error)) > .taxa-plot-loading {
+        display: flex;
+      }
+      @media (min-width: 768px) and (min-height: 480px) {
+        .plot-scroll-layout > div {
+          max-height: var(--plot-scroll-height, calc(100vh - 5rem));
+          overflow: auto;
+          overscroll-behavior: contain;
+        }
+      }
       .navbar { min-height: 40px; }
       .navbar-brand { font-size: 15px; padding-top: 6px; padding-bottom: 6px; line-height: 1.1; }
       .navbar-app-version { color: #fff; font-size: 11px; white-space: nowrap; }
@@ -169,6 +266,7 @@ ui <- page_navbar(
     title = "Taxa Profiles",
     icon = icon("chart-line"),
     nav_panel("Taxa Bar Plot", icon = icon("chart-bar"), mod_barplot_ui("mod_barplot")),
+    nav_panel("Taxa Bubble Plot", icon = icon("circle"), mod_taxa_summary_ui("mod_taxa_summary")),
     nav_panel("Taxa Comparison", icon = icon("square-poll-vertical"), mod_taxa_comparison_ui("mod_taxa_comparison"))
   ),
   
@@ -198,7 +296,9 @@ ui <- page_navbar(
   nav_menu(
     title = "Association",
     icon = icon("diagram-next"),
-    nav_panel("Association Heatmap", icon = icon("table-cells"), mod_heatmap_ui("mod_heatmap"))
+    nav_panel("Association Heatmap", icon = icon("table-cells"), mod_heatmap_ui("mod_heatmap")),
+    nav_panel("Taxa Correlogram", icon = icon("braille"), mod_taxa_correlogram_ui("mod_taxa_correlogram")),
+    nav_panel("Upset Plot", icon = icon("layer-group"), mod_upset_ui("mod_upset"))
   ),
   nav_panel(
     title = "Citation",
@@ -219,6 +319,7 @@ server <- function(input, output, session) {
   meta_vars <- file_data$meta_vars
   
   active_tab <- reactive({ input$tab_panel_main })
+  session$userData$active_plot_tab <- active_tab
   
   preprocessing_data <- mod_preprocessing_server("mod_preprocessing", ps_obj_initial, active_tab)
   
@@ -226,6 +327,7 @@ server <- function(input, output, session) {
   
   plot_order <- preprocessing_data$plot_order
   mod_barplot_server("mod_barplot", preprocessing_data$ps_selected_raw, meta_vars, plot_order)
+  mod_taxa_summary_server("mod_taxa_summary", preprocessing_data$ps_selected_raw, plot_order)
   mod_taxa_comparison_server("mod_taxa_comparison", ps_obj_filtered_raw, meta_vars, active_tab, plot_order)
   mod_alpha_server("mod_alpha", ps_obj_filtered_raw, meta_vars, active_tab, plot_order)
   mod_beta_server("mod_beta", ps_obj_filtered_raw, meta_vars, plot_order)
@@ -235,7 +337,12 @@ server <- function(input, output, session) {
   mod_randomforest_server("mod_randomforest", ps_obj_filtered_raw)
   mod_spieceasi_server("mod_spieceasi", ps_obj_filtered_raw)
   mod_sparcc_server("mod_sparcc", ps_obj_filtered_raw)
-  mod_heatmap_server("mod_heatmap", ps_obj_filtered_raw, meta_vars, plot_order)
+  mod_heatmap_server("mod_heatmap", ps_obj_filtered_raw, meta_vars, plot_order,
+                     active = reactive(identical(active_tab(), "Association Heatmap")))
+  mod_taxa_correlogram_server("mod_taxa_correlogram", ps_obj_filtered_raw,
+                              active = reactive(identical(active_tab(), "Taxa Correlogram")))
+  mod_upset_server("mod_upset", ps_obj_filtered_raw, plot_order,
+                   active = reactive(identical(active_tab(), "Upset Plot")))
   mod_biplot_server("mod_biplot", ps_obj_filtered_raw, meta_vars)
   mod_citation_server("mod_citation")
   mod_top_server("mod_top")

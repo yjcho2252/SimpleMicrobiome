@@ -8,27 +8,6 @@ mod_taxa_comparison_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .taxa-result-card {
-        height: 130px;
-        overflow-y: auto;
-        font-size: 12px;
-        line-height: 1.45;
-        background: #f8fafc;
-        border: 1px solid #d9e2ec;
-        border-radius: 10px;
-        padding: 10px 12px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        margin-bottom: 10px;
-      }
-      .taxa-result-card pre {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -36,83 +15,24 @@ mod_taxa_comparison_ui <- function(id) {
       .well .form-control { font-size: 12px; }
       .well .btn { font-size: 11px; }
     ")),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("square-poll-vertical"), "Taxa Comparison"),
         hr(),
-        uiOutput(ns("group_selector")),
-        uiOutput(ns("secondary_group_selector")),
-        hr(),
-        div(
-          style = "display: flex; align-items: center; gap: 6px; margin-bottom: 6px;",
-          tags$input(
-            id = ns("enable_longitudinal"),
-            type = "checkbox",
-            style = "margin: 0;"
-          ),
-          tags$span(
-            style = "display: inline-flex; align-items: center; gap: 4px;",
-            icon("timeline"),
-            "Within-Subject Pairing"
-          )
-        ),
-        conditionalPanel(
-          condition = sprintf("input['%s'] == true", ns("enable_longitudinal")),
-          selectInput(
-            ns("subject_id_var"),
-            "Subject Identifier:",
-            choices = character(0),
-            selected = NULL
-          )
-        ),
-        div(
-          style = "display: flex; align-items: center; gap: 6px; margin-bottom: 6px;",
-          tags$input(
-            id = ns("show_trend_line"),
-            type = "checkbox",
-            style = "margin: 0;"
-          ),
-          tags$span(
-            style = "display: inline-flex; align-items: center; gap: 4px;",
-            icon("chart-line"),
-            "Show Regression Line"
-          )
-        ),
-        conditionalPanel(
-          condition = sprintf("input['%s'] == true", ns("show_trend_line")),
-          tagList(
-            selectInput(
-              ns("trend_group_type"),
-              "Group variable type:",
-              choices = c(
-                "Categorical" = "categorical",
-                "Continuous (numeric)" = "continuous"
-              ),
-              selected = "categorical"
-            ),
-            selectInput(
-              ns("trend_line_method"),
-              "Regression method:",
-              choices = c(
-                "Spearman" = "spearman",
-                "Pearson" = "pearson"
-              ),
-              selected = "spearman"
-            )
-          )
-        ),
+        profile_group_selectors(ns, "group_var", "Primary Group",
+                                "secondary_group_var", "Secondary Group (Optional)"),
         hr(),
         h4(icon("sliders"), "Analysis & Plot Settings"),
         selectInput(
           ns("tax_level"),
-          "Taxonomic Level:",
+          "Taxonomic Level",
           choices = c("ASV", "Phylum", "Class", "Order", "Family", "Genus", "Species"),
           selected = "Genus"
         ),
         selectizeInput(
           ns("taxa_selected"),
-          "Taxa to Compare:",
+          "Taxa to Compare",
           choices = NULL,
           multiple = TRUE,
           options = list(
@@ -122,12 +42,12 @@ mod_taxa_comparison_ui <- function(id) {
         ),
         checkboxInput(
           ns("show_p_lt_0_05_only"),
-          "Show only q-value < 0.05",
+          "Show Only q-Value < 0.05",
           value = FALSE
         ),
         selectInput(
           ns("abundance_mode"),
-          "Transformation:",
+          "Transformation",
           choices = c(
             "CLR Abundance" = "clr",
             "Relative Abundance (%)" = "relative",
@@ -137,62 +57,95 @@ mod_taxa_comparison_ui <- function(id) {
         ),
         selectInput(
           ns("plot_type"),
-          "Plot Type:",
+          "Plot Type",
           choices = taxa_comparison_plot_types,
           selected = "violin"
         ),
-        selectInput(
-          ns("color_palette"),
-          "Color Palette:",
-          choices = group_plot_palettes,
-          selected = "set2"
-        ),
-        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar plot)", value = FALSE),
-        hr(),
-        h4(icon("sliders"), "Statistical Testing"),
-        checkboxInput(ns("show_p_val"), "Show p-value bars", value = TRUE),
+        checkboxInput(ns("enable_longitudinal"), "Within-Subject Pairing", value = FALSE),
         conditionalPanel(
-          condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
-          checkboxInput(ns("show_sig_as_marks"), "Show as significant marks", value = TRUE)
+          condition = sprintf("input['%s'] == true", ns("enable_longitudinal")),
+          selectInput(
+            ns("subject_id_var"),
+            "Subject Identifier",
+            choices = character(0),
+            selected = NULL
+          )
         ),
-        selectInput(
-          ns("stat_method"),
-          "Statistical Method:",
-          choices = c(
-            "Wilcoxon" = "wilcox.test",
-            "T-test" = "t.test"
-          ),
-          selected = "t.test"
+        checkboxInput(ns("show_trend_line"), "Show Regression Line", value = FALSE),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("show_trend_line")),
+          tagList(
+            selectInput(
+              ns("trend_group_type"),
+              "Group Variable Type",
+              choices = c(
+                "Categorical" = "categorical",
+                "Continuous (numeric)" = "continuous"
+              ),
+              selected = "categorical"
+            ),
+            selectInput(
+              ns("trend_line_method"),
+              "Regression Method",
+              choices = c(
+                "Spearman" = "spearman",
+                "Pearson" = "pearson"
+              ),
+              selected = "spearman"
+            )
+          )
         ),
-        selectInput(
-          ns("p_adjust_method"),
-          "Pairwise Multiple Testing Correction:",
-          choices = c(
-            "None" = "none",
-            "Holm" = "holm",
-            "BH (FDR)" = "BH",
-            "Bonferroni" = "bonferroni"
+        hr(),
+        tags$details(
+          tags$summary(
+            h4(icon("sliders"), "Statistical Testing", style = "display: inline; margin: 0;")
           ),
-          selected = "BH"
+          checkboxInput(ns("show_p_val"), "Show p-Value Bars", value = TRUE),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == true", ns("show_p_val")),
+            checkboxInput(ns("show_sig_only"), "Show Only p-Value < 0.05", value = TRUE),
+            checkboxInput(ns("show_sig_as_marks"), "Show as Significant Marks", value = TRUE)
+          ),
+          selectInput(
+            ns("stat_method"),
+            "Statistical Method",
+            choices = c(
+              "Wilcoxon" = "wilcox.test",
+              "T-test" = "t.test"
+            ),
+            selected = "t.test"
+          ),
+          selectInput(
+            ns("p_adjust_method"),
+            "Pairwise Multiple Testing Correction",
+            choices = c(
+              "None" = "none",
+              "Holm" = "holm",
+              "BH (FDR)" = "BH",
+              "Bonferroni" = "bonferroni"
+            ),
+            selected = "BH"
+          )
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        checkboxInput(ns("manual_facet_layout"), "Manual facet rows/cols", value = FALSE),
+        checkboxInput(ns("manual_facet_layout"), "Manual Facet Rows/Cols", value = FALSE),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("manual_facet_layout")),
-          numericInput(ns("facet_ncol"), "Facet Columns (ncol):", value = 0, min = 0, step = 1),
-          numericInput(ns("facet_nrow"), "Facet Rows (nrow):", value = 0, min = 0, step = 1),
+          numericInput(ns("facet_ncol"), "Facet Columns (ncol)", value = 0, min = 0, step = 1),
+          numericInput(ns("facet_nrow"), "Facet Rows (nrow)", value = 0, min = 0, step = 1),
           tags$small("Use 0 to keep automatic value for each field.")
         ),
-        numericInput(ns("plot_width"), "Plot Width (px):", value = 400, min = 300, step = 50),
-        numericInput(ns("plot_height"), "Plot Height (px):", value = 500, min = 300, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
-        numericInput(ns("dot_size"), "Dot Size (point size):", value = 4, min = 0.5, max = 10, step = 0.5),
-        selectInput(ns("x_label_angle"), "X-axis label angle:",
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 400, min = 300, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 500, min = 300, step = 50),
+        numericInput(ns("base_size"), "Base Font Size", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (Point Size)", value = 4, min = 0.5, max = 10, step = 0.5),
+        selectInput(ns("x_label_angle"), "X-Axis Label Angle",
                     choices = c("0° Horizontal" = "0", "45° Diagonal" = "45", "90° Vertical" = "90"),
                     selected = "0"),
-        checkboxInput(ns("exclude_plot_outliers"), "Exclude outliers from plot", value = FALSE),
+        selectInput(ns("color_palette"), "Color Palette", group_plot_palettes, selected = "set2"),
+        checkboxInput(ns("use_ggpattern"), "Use ggpattern (Bar Plot)", value = FALSE),
+        checkboxInput(ns("exclude_plot_outliers"), "Exclude Outliers from Plot", value = FALSE),
         hr(),
         h5(icon("download"), "Download Plot"),
         div(
@@ -227,11 +180,21 @@ mod_taxa_comparison_ui <- function(id) {
       mainPanel(
         width = 9,
         h4("Taxa Comparison"),
-        plotOutput(ns("taxa_comparison_plot"), height = "auto"),
-        uiOutput(ns("taxa_legend_box")),
-        uiOutput(ns("taxa_status_separator")),
-        h5(icon("circle-info"), "Comparison Status"),
-        uiOutput(ns("comparison_status_box"))
+        div(
+          class = "taxa-comparison-result",
+          div(
+            class = "taxa-plot-stage",
+            uiOutput(ns("taxa_comparison_container"), class = "taxa-plot-container"),
+            taxa_plot_loading("taxa comparison plot")
+          ),
+          conditionalPanel(
+            "output.taxa_comparison_plot_ready === 'ready'", ns = ns,
+            plot_legend_output(ns, "taxa_legend_box", c("taxa_comparison_plot")),
+            uiOutput(ns("taxa_status_separator")),
+            h5(icon("circle-info"), "Comparison Status"),
+            uiOutput(ns("comparison_status_box"))
+          )
+        )
       )
     )
   )
@@ -388,35 +351,10 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
       identical(current_tab, "Taxa Comparison")
     })
     
-    output$group_selector <- renderUI({
-      req(meta_cols())
-      group_choices <- meta_cols()
-      non_sampleid_choices <- setdiff(group_choices, "SampleID")
-      selected_col <- if (length(non_sampleid_choices) > 0) non_sampleid_choices[1] else if (length(group_choices) > 0) group_choices[1] else NULL
-      selectInput(
-        session$ns("group_var"),
-        "Primary Group:",
-        choices = group_choices,
-        selected = selected_col
-      )
-    })
-
-    output$secondary_group_selector <- renderUI({
-      req(meta_cols())
-      primary_input <- input$group_var
-      if (is.null(primary_input) || !nzchar(primary_input)) {
-        base_choices <- setdiff(meta_cols(), "SampleID")
-        primary_input <- if (length(base_choices) > 0) base_choices[1] else NULL
-      }
-      resolved_primary <- resolve_meta_colname(primary_input, meta_cols())
-      group_choices <- setdiff(meta_cols(), c("SampleID", primary_input, resolved_primary))
-      selectInput(
-        session$ns("secondary_group_var"),
-        "Secondary Group (Optional):",
-        choices = c("(None)" = "none", group_choices),
-        selected = "none"
-      )
-    })
+    register_profile_group_selectors(
+      input, output, session, meta_cols, "group_var", "secondary_group_var",
+      secondary_none = c("(None)" = "none"), exclude_sample_id = TRUE
+    )
 
     observe({
       req(meta_cols(), input$group_var)
@@ -1463,38 +1401,21 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
       p
     })
     
+    comparison_plot_ready <- reactiveVal(FALSE)
+    output$taxa_comparison_plot_ready <- renderText(if (comparison_plot_ready()) "ready" else "waiting")
+    outputOptions(output, "taxa_comparison_plot_ready", suspendWhenHidden = FALSE)
+
+    output$taxa_comparison_container <- renderUI({
+      validate_taxa_plot_data(ps_obj(), "taxa comparison plot")
+      plotOutput(session$ns("taxa_comparison_plot"), height = "auto")
+    })
+
     output$taxa_comparison_plot <- renderPlot({
-      ps_now <- ps_obj()
-      if (is.null(ps_now)) {
-        graphics::plot.new()
-        graphics::text(
-          0.5, 0.5,
-          "Applying selected samples and preparing taxa comparison.\nPlease wait...",
-          cex = 0.85
-        )
-        return(invisible(NULL))
-      }
-      if (phyloseq::nsamples(ps_now) == 0) {
-        graphics::plot.new()
-        graphics::text(
-          0.5, 0.5,
-          "No samples are currently selected.\nPlease select at least one sample in Preprocessing.",
-          cex = 0.85
-        )
-        return(invisible(NULL))
-      }
-      tryCatch(
-        taxa_plot_reactive(),
-        shiny.silent.error = function(e) stop(e),
-        error = function(e) {
-          graphics::plot.new()
-          graphics::text(
-            0.5, 0.5,
-            paste0("Taxa comparison is not ready yet. Please wait...\n", conditionMessage(e)),
-            cex = 0.85
-          )
-        }
-      )
+      comparison_plot_ready(FALSE)
+      req(ps_obj())
+      plot <- taxa_plot_reactive()
+      comparison_plot_ready(TRUE)
+      plot
     }, height = function() { req(input$plot_height); input$plot_height },
        width = function() { req(input$plot_width); input$plot_width })
 
@@ -1581,7 +1502,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 400 else input$plot_width
       tags$div(
-        class = "taxa-result-card",
+        class = "app-result-card app-status-card",
         style = paste(sprintf("width: %spx;", box_width), "max-width: 100%; box-sizing: border-box;"),
         verbatimTextOutput(session$ns("comparison_status"))
       )
@@ -1654,27 +1575,18 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
     )
 
     output$taxa_legend_box <- renderUI({
+      req_plot_legend_tab(session, "Taxa Comparison")
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 400 else input$plot_width
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = sprintf("width: %spx;", box_width),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("taxa_figure_legend"))
+          taxa_figure_legend()
         )
       )
     })
+    outputOptions(output, "taxa_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
     output$taxa_status_separator <- renderUI({
       req(input$plot_width)
@@ -1689,7 +1601,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
       )
     })
 
-    output$taxa_figure_legend <- renderUI({
+    taxa_figure_legend <- function() {
       req(input$tax_level, input$plot_type, input$abundance_mode)
       tax_level_label <- tolower(input$tax_level)
       figure_title <- paste0(input$tax_level, "-Level Taxa Comparison")
@@ -1759,7 +1671,7 @@ mod_taxa_comparison_server <- function(id, ps_obj, meta_cols, active_tab = NULL,
           )
         )
       )
-    })
+    }
 
   })
 }

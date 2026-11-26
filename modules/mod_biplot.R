@@ -3,29 +3,6 @@ mod_biplot_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .simple-result-card {
-        width: 600px;
-        max-width: 100%;
-        height: 130px;
-        overflow-y: auto;
-        font-size: 12px;
-        line-height: 1.45;
-        background: #f8fafc;
-        border: 1px solid #d9e2ec;
-        border-radius: 10px;
-        padding: 10px 12px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        margin-bottom: 10px;
-      }
-      .simple-result-card pre {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-      }
       .well h4 { font-size: 16px; }
       .well h5 { font-size: 13px; }
       .well .control-label { font-size: 12px; }
@@ -51,27 +28,29 @@ mod_biplot_ui <- function(id) {
         to { transform: rotate(360deg); }
       }
     ")),
-    sidebarLayout(
+    plot_scroll_layout(
       sidebarPanel(
         width = 2,
         h4(icon("arrows-up-down-left-right"), "Constrained Ordination"),
         hr(),
-        selectInput(ns("group_var"), "Primary explanatory variable", choices = NULL),
+        selectInput(ns("group_var"), "Primary Explanatory Variable", choices = NULL),
+        hr(),
+        h4(icon("sliders"), "Analysis Settings"),
         selectInput(
           ns("tax_level"),
-          "Taxonomic level",
+          "Taxonomic Level",
           choices = c("ASV", "Genus", "Species", "Strain"),
           selected = "Genus"
         ),
         selectInput(
           ns("analysis_method"),
-          "Analysis method",
+          "Analysis Method",
           choices = c("dbRDA (capscale)" = "dbrda", "CCA" = "cca"),
           selected = "dbrda"
         ),
         selectInput(
           ns("distance_metric"),
-          "Distance metric",
+          "Distance Metric",
           choices = c(
             "Bray-Curtis" = "bray",
             "Jaccard" = "jaccard",
@@ -84,38 +63,33 @@ mod_biplot_ui <- function(id) {
           condition = sprintf("input['%s'] == 'jaccard'", ns("distance_metric")),
           textOutput(ns("jaccard_rarefaction_depth"))
         ),
-        tags$details(
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
           tags$summary(strong("Advanced Model Settings")),
           br(),
           selectizeInput(
             ns("additional_vars"),
-            "Additional explanatory variables",
+            "Additional Explanatory Variables",
             choices = NULL,
             multiple = TRUE,
             options = list(plugins = list("remove_button"))
           ),
           selectizeInput(
             ns("conditioning_vars"),
-            "Conditioning variables",
+            "Conditioning Variables",
             choices = NULL,
             multiple = TRUE,
             options = list(plugins = list("remove_button"))
           ),
-          checkboxInput(ns("standardize_continuous"), "Standardize continuous variables", value = TRUE),
+          checkboxInput(ns("standardize_continuous"), "Standardize Continuous Variables", value = TRUE),
           uiOutput(ns("model_formula_preview"))
         ),
-        hr(),
-        tags$details(
-          tags$summary(
-            style = "font-size: 16px; font-weight: 500; margin-bottom: 8px;",
-            icon("dna"),
-            " Taxa Settings"
-          ),
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("Taxa Settings")),
           br(),
-          checkboxInput(ns("show_taxa_vectors"), "Show taxa scores", value = FALSE),
+          checkboxInput(ns("show_taxa_vectors"), "Show Taxa Scores", value = FALSE),
           numericInput(
             ns("prevalence_filter_pct"),
-            "Prevalence filter (%)",
+            "Prevalence Filter (%)",
             value = 10,
             min = 0,
             max = 100,
@@ -123,7 +97,7 @@ mod_biplot_ui <- function(id) {
           ),
           numericInput(
             ns("max_taxa"),
-            "Max taxa",
+            "Max Taxa",
             value = 100,
             min = 10,
             max = 500,
@@ -131,7 +105,7 @@ mod_biplot_ui <- function(id) {
           ),
           numericInput(
             ns("top_taxa_vectors"),
-            "Top taxa scores",
+            "Top Taxa Scores",
             value = 15,
             min = 0,
             max = 100,
@@ -139,7 +113,7 @@ mod_biplot_ui <- function(id) {
           ),
           selectizeInput(
             ns("selected_taxa"),
-            "Selected taxa (optional)",
+            "Selected Taxa (Optional)",
             choices = NULL,
             selected = NULL,
             multiple = TRUE,
@@ -149,38 +123,33 @@ mod_biplot_ui <- function(id) {
             )
           )
         ),
-        hr(),
-        tags$details(
-          tags$summary(
-            style = "font-size: 16px; font-weight: 500; margin-bottom: 8px;",
-            icon("leaf"),
-            " Explanatory Vectors"
-          ),
+        tags$details(style = "margin-top: 8px; margin-bottom: 8px;",
+          tags$summary(strong("Explanatory Vectors")),
           br(),
-          checkboxInput(ns("show_environment_vectors"), "Show explanatory vectors", value = TRUE),
+          checkboxInput(ns("show_environment_vectors"), "Show Explanatory Vectors", value = TRUE),
           selectizeInput(
             ns("environment_vector_vars"),
-            "Explanatory vectors to display",
+            "Explanatory Vectors to Display",
             choices = NULL,
             multiple = TRUE,
             options = list(plugins = list("remove_button"))
           ),
-          checkboxInput(ns("environment_only_significant"), "Show only significant variables", value = FALSE),
-          numericInput(ns("environment_p_cutoff"), "P-value cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
-          checkboxInput(ns("show_environment_pvalues"), "Show p-values in labels", value = FALSE),
-          numericInput(ns("max_environment_vectors"), "Maximum vectors", value = 10, min = 1, max = 50, step = 1)
+          checkboxInput(ns("environment_only_significant"), "Show Only Significant Variables", value = FALSE),
+          numericInput(ns("environment_p_cutoff"), "P-Value Cutoff", value = 0.05, min = 0.001, max = 1, step = 0.01),
+          checkboxInput(ns("show_environment_pvalues"), "Show p-Values in Labels", value = FALSE),
+          numericInput(ns("max_environment_vectors"), "Maximum Vectors", value = 10, min = 1, max = 50, step = 1)
         ),
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        numericInput(ns("plot_width"), "Plot width (px)", value = 700, min = 400, max = 2400, step = 50),
-        numericInput(ns("plot_height"), "Plot height (px)", value = 500, min = 300, max = 2400, step = 50),
-        numericInput(ns("base_size"), "Base Font Size:", value = 14, min = 6, max = 30, step = 1),
-        numericInput(ns("dot_size"), "Dot Size (point size):", value = 5, min = 0.5, max = 10, step = 0.5),
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 700, min = 400, max = 2400, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 500, min = 300, max = 2400, step = 50),
+        numericInput(ns("base_size"), "Base Font Size", value = 14, min = 6, max = 30, step = 1),
+        numericInput(ns("dot_size"), "Dot Size (Point Size)", value = 5, min = 0.5, max = 10, step = 0.5),
         checkboxInput(ns("show_dot_outline"), "Show Dot Outline", value = TRUE),
         checkboxInput(ns("show_ellipses"), "Show Group Ellipses", value = FALSE),
         checkboxInput(ns("show_group_hulls"), "Show Group Hulls", value = FALSE),
         checkboxInput(ns("show_centroid_lines"), "Show Sample-to-Centroid Lines", value = FALSE),
-        checkboxInput(ns("connect_subject_samples"), "Connect Samples Within Subjects", value = FALSE),
+        checkboxInput(ns("connect_subject_samples"), "Connect Samples within Subjects", value = FALSE),
         uiOutput(ns("subject_id_selector")),
         checkboxInput(ns("show_group_centroid"), "Show Primary-Group Centroids", value = TRUE),
         checkboxInput(ns("show_additional_centroids"), "Show Centroids for Additional Categorical Variables", value = FALSE),
@@ -233,8 +202,9 @@ mod_biplot_ui <- function(id) {
       ),
       mainPanel(
         h4("Constrained Ordination"),
+        analysis_run_view(ns, "run_biplot",
         plotOutput(ns("biplot_plot"), height = "auto"),
-        uiOutput(ns("biplot_legend_box")),
+        plot_legend_output(ns, "biplot_legend_box", c("biplot_plot")),
         uiOutput(ns("biplot_status_separator")),
         tabsetPanel(
           id = ns("biplot_results_tab"),
@@ -242,6 +212,7 @@ mod_biplot_ui <- function(id) {
           tabPanel("Term Tests", tableOutput(ns("biplot_term_tests"))),
           tabPanel("Collinearity", tableOutput(ns("biplot_vif_table"))),
           tabPanel("Sample Exclusions", tableOutput(ns("biplot_exclusions")))
+        )
         )
       )
     )
@@ -251,6 +222,7 @@ mod_biplot_ui <- function(id) {
 ## Server
 mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
   moduleServer(id, function(input, output, session) {
+    output$run_prompt <- analysis_run_prompt("Run Ordination")
     output$subject_id_selector <- renderUI({
       req(isTRUE(input$connect_subject_samples), ps_obj())
       metadata <- phyloseq::sample_data(ps_obj(), errorIfNULL = FALSE)
@@ -258,7 +230,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       choices <- setdiff(colnames(metadata), input$group_var)
       choices <- choices[gsub("[^a-z0-9]", "", tolower(choices)) != "sampleid"]
       if (!length(choices)) return(helpText("No metadata columns are available for Subject ID."))
-      selectInput(session$ns("subject_id_var"), "Subject ID Variable:", choices = choices)
+      selectInput(session$ns("subject_id_var"), "Subject ID Variable", choices = choices)
     })
     supported_taxonomic_ranks <- c("Genus", "Species", "Strain")
 
@@ -437,7 +409,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       }
       tags$div(
         style = "font-size: 11px; padding: 8px; background: #f8fafc; border: 1px solid #d9e2ec; border-radius: 6px; margin-bottom: 8px;",
-        tags$strong("Model formula"),
+        tags$strong("Model Formula"),
         tags$div(paste0("Community ~ ", rhs), style = "overflow-wrap: anywhere;"),
         if (!is.null(sample_line)) tags$div(sample_line, style = "margin-top: 4px; color: #4b5563;")
       )
@@ -1262,7 +1234,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 700 else input$plot_width
       tags$div(
-        class = "simple-result-card",
+        class = "app-result-card app-status-card",
         style = paste0("width: ", box_width, "px; max-width: 100%; height: 280px;"),
         verbatimTextOutput(session$ns("biplot_status"))
       )
@@ -1295,27 +1267,18 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
     }, striped = TRUE, bordered = TRUE, spacing = "s")
 
     output$biplot_legend_box <- renderUI({
+      req_plot_legend_tab(session, "Constrained Ordination")
       req(input$plot_width)
       box_width <- if (is.null(input$plot_width) || !is.finite(input$plot_width)) 700 else input$plot_width
       tags$div(
-        style = paste(
-          "margin-top: 12px;",
-          sprintf("width: %spx;", box_width),
-          "max-width: 100%;",
-          "padding: 12px 14px;",
-          "border: 1px solid #e5e7eb;",
-          "border-left: 4px solid #6b7280;",
-          "border-radius: 8px;",
-          "background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);",
-          "box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
-          "box-sizing: border-box;"
-        ),
+        style = sprintf("width: %spx;", box_width),
         tags$div(
           style = "color: #1f2937; font-size: 12.5px; line-height: 1.55;",
-          uiOutput(session$ns("biplot_figure_legend"))
+          biplot_figure_legend()
         )
       )
     })
+    outputOptions(output, "biplot_legend_box", suspendWhenHidden = FALSE, priority = -10)
 
     output$biplot_status_separator <- renderUI({
       req(input$plot_width)
@@ -1330,7 +1293,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
       )
     })
 
-    output$biplot_figure_legend <- renderUI({
+    biplot_figure_legend <- function() {
       payload <- display_biplot_payload()
       req(input$group_var, input$tax_level, input$analysis_method, input$distance_metric)
       distance_label <- switch(
@@ -1427,7 +1390,7 @@ mod_biplot_server <- function(id, ps_obj, meta_vars = NULL) {
         tags$div(style = "font-weight: 600; margin-bottom: 4px;", "Constrained ordination"),
         tags$div(body_text)
       )
-    })
+    }
 
     output$download_biplot_png <- downloadHandler(
       filename = function() paste0("constrained_ordination_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),

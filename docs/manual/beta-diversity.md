@@ -82,10 +82,10 @@ The distance choice is the most important modeling decision in this module.
 
 ## 3. Analysis Structure
 
-- **Core Analysis** contains PCoA, NMDS, PERMANOVA, and PERMDISP.
-- **Optional Post-Ordination** contains EnvFit and clustering.
+- **Analysis Settings** groups the distance and taxonomic settings with PERMANOVA, PERMDISP, EnvFit, and Clustering.
+- Switch between PCoA and NMDS in the results panel.
 
-### 3.1 Core Analysis: PERMANOVA and PERMDISP
+### 3.1 PERMANOVA and PERMDISP
 PERMANOVA is the main hypothesis test shown in the results box.
 
 - **Adjust for covariates** fits a model for independent samples. The results compare adjusted and unadjusted group effects using the same complete samples and permutations.
@@ -102,7 +102,7 @@ PERMANOVA is the main hypothesis test shown in the results box.
   - This keeps the test aligned with repeated-measures structure rather than independent-sample permutations.
   - If pairing is enabled but not ready, the UI explicitly says so instead of implying paired inference.
 
-### 3.2 Optional Post-Ordination: Clustering
+### 3.2 Clustering
 Used to segment samples in ordination-derived space.
 
 #### Clustering mode
@@ -138,7 +138,7 @@ Used to segment samples in ordination-derived space.
 - `Average silhouette width` is the mean silhouette value across all samples (not a mean of per-cluster means).
 - In auto mode, optimal `k` is selected by maximizing average silhouette width.
 
-### 3.3 Optional Post-Ordination: EnvFit
+### 3.3 EnvFit
 Fits metadata/taxa vectors onto ordination to identify directional associations.
 
 #### EnvFit variable selector

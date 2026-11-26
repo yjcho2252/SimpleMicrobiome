@@ -1,9 +1,12 @@
 ﻿# Taxa Profiles Manual
 
 ## 1. Scope
-Taxa Profiles includes two menus:
+Taxa Profiles includes three modules:
 - **Taxa Bar Plot**: composition overview
+- **Taxa Bubble Plot**: compares prevalence and mean relative abundance across groups
 - **Taxa Comparison**: group-wise statistical comparison
+
+Group selectors become active when grouping metadata is available. In Taxa Bubble Plot, choose the taxonomic level and number of taxa, then use **Display Options** to set what bubble size and color represent.
 
 Taxa Bar Plot subsamples samples above 2,000 reads to that depth. Samples at or below 2,000 reads retain their counts.
 

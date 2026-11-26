@@ -6,6 +6,8 @@ It is used to interpret how variables align with major ordination axes.
 
 ## 2. Left Panel Parameters (Detailed)
 
+**Analysis Settings** includes the collapsible **Advanced Model Settings**, **Taxa Settings**, and **Explanatory Vectors** sections.
+
 ### 2.1 Primary and Additional Model Variables
 - **Primary explanatory variable** defines the main constrained-model term, sample color, and primary centroid labels when categorical.
 - **Additional explanatory variables** extend the constrained model with continuous environmental measurements or categorical metadata.

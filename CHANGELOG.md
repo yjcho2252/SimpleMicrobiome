@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-26] v1.2.0
+
+- Added Taxa Bubble Plot, Taxa Correlogram, and Upset Plot.
+- Expanded Association Heatmap views and standardized plot settings, palettes, and result panels.
+- Added independent scrolling for settings and results on larger screens and aligned waiting messages and grouping controls.
+- Added direct QZA feature and taxonomy uploads through the configured converter and support for Excel metadata. See the [release notes](docs/releases/2026-11-26-v1.2.0.md).
+
 ## [2026-11-26] v1.1.6
 
 - Added primary-group panels for categorical subgroups in Association Heatmap.

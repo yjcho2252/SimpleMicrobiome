@@ -1,21 +1,3 @@
-plot_order_levels <- function(default, preferred) {
-  c(intersect(preferred, default), setdiff(default, preferred))
-}
-
-plot_order_factor <- function(values, variable, plot_order = NULL, default = levels(factor(values))) {
-  preferred <- if (identical(variable, "SampleID")) {
-    plot_order$samples
-  } else if (length(variable) == 1L && !is.na(variable)) {
-    groups <- plot_order$groups
-    if (!variable %in% names(groups) && length(groups)) {
-      matches <- names(groups)[make.names(names(groups)) == make.names(variable)]
-      if (length(matches) == 1L) variable <- matches
-    }
-    groups[[variable]]
-  }
-  factor(values, levels = plot_order_levels(default, preferred))
-}
-
 parse_plot_order <- function(text, available) {
   entries <- trimws(strsplit(if (is.null(text)) "" else text, "\n", fixed = TRUE)[[1L]])
   entries <- entries[nzchar(entries)]
@@ -90,7 +72,7 @@ mod_preprocessing_ui <- function(id) {
               verbatimTextOutput(ns("sample_count_info"))
           ),
           hr(),
-          h5(icon("layer-group"), "Group-based Toggle"),
+          h5(icon("layer-group"), "Group-Based Toggle"),
           selectInput(ns("toggle_group_var"), "Group Variable", choices = NULL),
           selectizeInput(
             ns("toggle_group_levels"),
