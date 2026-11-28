@@ -68,6 +68,14 @@ mod_preprocessing_ui <- function(id) {
           hr(),
           h5(icon("filter"), "Read Counts Filtering"),
           uiOutput(ns("read_count_filter_ui")),
+          checkboxInput(ns("cap_reads"), "Cap Reads per Sample", value = FALSE),
+          conditionalPanel(
+            condition = "input.cap_reads",
+            ns = ns,
+            numericInput(ns("max_read_count"), "Maximum reads per sample",
+                         value = 100000, min = 1, step = 1),
+            textOutput(ns("read_cap_info"))
+          ),
           div(style = "background: #f8f9fa; padding: 10px; border-radius: 5px;",
               verbatimTextOutput(ns("sample_count_info"))
           ),
@@ -465,6 +473,22 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       sort(unique(as.integer(selected_indices)))
     })
     
+    read_cap <- reactive({
+      if (!isTRUE(input$cap_reads)) return(Inf)
+      cap <- input$max_read_count
+      if (length(cap) != 1L || !is.finite(cap) || cap < 1 || cap != floor(cap)) {
+        return(NA_real_)
+      }
+      cap
+    })
+
+    output$read_cap_info <- renderText({
+      cap <- read_cap()
+      if (is.na(cap)) return("Enter a positive whole number.")
+      depths <- meta_df_for_dt()$`Read Count`[selected_indices_for_apply()]
+      sprintf("Selected samples above the cap: %d", sum(depths > cap))
+    })
+
     apply_current_selection <- function(selected_indices) {
       req(ps_obj_initial(), meta_df_for_dt())
       if (is.null(selected_indices)) {
@@ -473,7 +497,15 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
         selected_indices <- sort(unique(as.integer(selected_indices)))
       }
       
-      if (identical(selected_indices, last_applied_selection())) {
+      cap <- read_cap()
+      if (is.na(cap)) {
+        showNotification("Enter a positive whole number for the read cap.",
+                         type = "error", id = session$ns("invalid_read_cap"))
+        return(invisible(NULL))
+      }
+      removeNotification(session$ns("invalid_read_cap"))
+      selection <- list(indices = selected_indices, cap = cap)
+      if (identical(selection, last_applied_selection())) {
         return(invisible(NULL))
       }
 
@@ -482,6 +514,19 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       } else {
         selected_samples <- meta_df_for_dt()$SampleID[selected_indices]
         ps_new <- phyloseq::prune_samples(selected_samples, ps_obj_initial())
+        depths <- phyloseq::sample_sums(ps_new)
+        deep_samples <- names(depths)[depths > cap]
+        if (length(deep_samples) > 0L) {
+          otu <- phyloseq::otu_table(ps_new)
+          taxa_rows <- phyloseq::taxa_are_rows(otu)
+          counts <- as(otu, "matrix")
+          if (taxa_rows) counts <- t(counts)
+          counts[deep_samples, ] <- withr::with_seed(
+            42, vegan::rrarefy(counts[deep_samples, , drop = FALSE], cap)
+          )
+          if (taxa_rows) counts <- t(counts)
+          phyloseq::otu_table(ps_new) <- phyloseq::otu_table(counts, taxa_are_rows = taxa_rows)
+        }
       }
       ps_selected_raw(ps_new)
 
@@ -490,7 +535,7 @@ mod_preprocessing_server <- function(id, ps_obj_initial, active_tab) {
       }
       
       ps_filtered(ps_new)
-      last_applied_selection(selected_indices)
+      last_applied_selection(selection)
       invisible(NULL)
     }
     

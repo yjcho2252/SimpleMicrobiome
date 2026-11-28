@@ -1,22 +1,28 @@
 ﻿# SimpleMicrobiome Guide
 
+## v1.2.2 Highlights
+
+- Preprocessing offers an optional read cap, and Core Taxa results include group mean relative abundance.
+- Alpha Diversity and Association Heatmap have updated analysis and plot controls.
+
 ## v1.2.1 Highlights
 
 - Alpha and Beta Diversity exports are in the left settings panel. Use **Analysis Method** in Beta Diversity to switch between PCoA and NMDS.
-- The manual index links directly to Taxa Bubble Plot, Taxa Correlogram, and UpSet Plot.
+- The manual index links directly to Taxa Bubble Plot, Taxa Correlogram, and Core & Indicator Taxa.
 
 ## v1.2.0 Highlights
 
 - Taxa Profiles includes Taxa Bubble Plot for comparing abundance and prevalence across groups.
-- Association includes Taxa Correlogram for pairwise correlations and Upset Plot for group overlap, alongside Association Heatmap.
+- Association includes Taxa Correlogram for pairwise correlations and Core & Indicator Taxa for group overlap and indicator analysis, alongside Association Heatmap.
 - On larger screens, scroll settings and results independently. Figure legends and status cards appear in the results panel.
 - Data Loading accepts QZA feature and taxonomy files through the configured converter and Excel files for metadata.
 
 ## Module Guides
 - [Data Loading](/manual/data-loading.html)
 - [Preprocessing](/manual/preprocessing.html)
-- [Taxa Profiles](/manual/taxa-profiles.html)
-  - [Taxa Bubble Plot](/manual/taxa-profiles.html#taxa-bubble-plot)
+- [Taxa Bar Plot](/manual/taxa-bar-plot.html)
+- [Taxa Bubble Plot](/manual/taxa-bubble-plot.html)
+- [Taxa Comparison](/manual/taxa-comparison.html)
 - [Alpha Diversity](/manual/alpha-diversity.html)
 - [Beta Diversity](/manual/beta-diversity.html)
 - [Constrained Ordination](/manual/association-biplot.html)
@@ -27,12 +33,12 @@
 - [SparCC](/manual/sparcc.html)
 - [SPIEC-EASI](/manual/spieceasi.html)
 - [Association Heatmap](/manual/correlation-heatmap.html)
-- [Taxa Correlogram](/manual/correlation-heatmap.html#taxa-correlogram)
-- [UpSet Plot](/manual/correlation-heatmap.html#upset-plot)
+- [Taxa Correlogram](/manual/taxa-correlogram.html)
+- [Core & Indicator Taxa](/manual/upset-plot.html)
 
 ## Quick Goal-Based Path
 - **Start-to-finish first analysis**:
-  - Data Loading -> Preprocessing -> Taxa Profiles -> Alpha/Beta Diversity
+  - Data Loading -> Preprocessing -> Taxa Bar Plot or Taxa Bubble Plot -> Alpha/Beta Diversity
 - **Differential abundance focus**:
   - ANCOM-BC2, MaAsLin2, or MaAsLin3
 - **Prediction focus**:
@@ -40,7 +46,7 @@
 - **Network focus**:
   - SparCC + SPIEC-EASI
 - **Association visualization focus**:
-  - Association Heatmap for taxa and metadata, Taxa Correlogram for taxon pairs, or Upset Plot for taxa shared across groups.
+  - Association Heatmap for taxa and metadata, Taxa Correlogram for taxon pairs, or Core & Indicator Taxa for shared taxa and group indicators.
 - **Constrained community analysis**:
   - Constrained Ordination under Diversity
 

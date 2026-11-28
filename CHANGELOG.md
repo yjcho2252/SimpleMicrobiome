@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-11-28] v1.2.2
+
+- Added an optional, adjustable per-sample read cap and group mean relative abundance in Core Taxa results.
+- Refined Alpha Diversity, Association Heatmap, and Core & Indicator Taxa controls, result displays, and module guides. See the [release notes](docs/releases/2026-11-28-v1.2.2.md).
+
 ## [2026-11-27] v1.2.1
 
 - Moved Alpha and Beta Diversity downloads to the settings panel, added a Beta Diversity analysis selector, and refined result-card visibility.

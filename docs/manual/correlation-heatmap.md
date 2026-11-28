@@ -9,11 +9,12 @@ Use the sample-level view to inspect individual samples, or the grouped view to 
 
 ### 2.1 Primary grouping variable
 - Defines the metadata variable used for group-aware association summaries.
-- In subgroup mode, the analysis can be restricted to one primary level before using the secondary grouping variable.
+- All primary levels are included. In Individual Samples, each primary level defines a panel.
 
-### 2.2 Select subgroup / primary level / secondary grouping variable
-- With a categorical secondary variable, choose `All` to show one panel per primary group or select one primary level to show that panel only.
-- Panels share a color scale and secondary-column order. Comparisons are made within each panel.
+### 2.2 Secondary grouping variable
+- Choose `None` to use the primary variable alone. In Individual Samples, a secondary variable divides each primary panel into labeled subpanels.
+- In Group Summary, categorical secondary groups are compared within each primary panel. Panels share a color scale and secondary-column order.
+- For a continuous secondary variable in Group Summary, the correlation pools samples with a recorded primary level.
 - Small subgroup sample sizes can make associations unstable.
 
 ### 2.3 Group type
@@ -109,33 +110,3 @@ Use the sample-level view to inspect individual samples, or the grouped view to 
 - Prevalence filter and max taxa
 - Value scale and color scale limit
 - Whether FDR masking was used and the q cutoff
-
-<a id="taxa-correlogram"></a>
-
-## Taxa Correlogram
-
-Use Taxa Correlogram to visualize pairwise correlations between taxa across samples.
-
-1. Analyze all samples or use **Primary Grouping Variable** and **Group Level to Include** to focus on a subset.
-2. Select **Genus** or **ASV**. Use **Prevalence Filter (%)** and **Max Taxa** to limit the matrix. Eligible taxa are ranked by mean relative abundance.
-3. Choose abundance-based or presence/absence association. For abundance, select CLR or TSS and Pearson or Spearman correlation. The presence/absence mode uses phi correlation.
-4. Read the circle color for the sign and the circle size for the magnitude of each correlation. Use **Mask Non-Significant Pairs (FDR)** and **FDR Cutoff (q)** to hide pairs above the adjusted significance threshold.
-
-Use **Plot (PNG)** to save the figure and **Matrix (TSV)** to export the pairwise results. Correlation describes an association across samples and does not establish a direct interaction.
-
-The default prevalence filter is 10%, and **Max Taxa** is 20. FDR masking and significance marks are off by default, and the q cutoff is 0.05. **Cluster Taxa** is on, the default palette is blue–red, and the maximum circle size is 8. Plot sizing defaults to **Auto**. Manual dimensions start at 850 × 750 px, and the base font size is 11.
-
-<a id="upset-plot"></a>
-
-## UpSet Plot
-
-Use UpSet Plot to see which taxa are unique to a group or shared across groups.
-
-1. Choose a **Grouping Variable** and select 2 to 12 groups under **Groups to Include**.
-2. Select **Genus** or **ASV** and set **Prevalence Filter (%)**. A taxon belongs to a group when it is detected in at least one sample and meets the threshold within that group.
-3. Read the filled dots to identify the groups in each intersection. The top bar counts taxa belonging to exactly those groups among the selected groups. The side bars show the total number of included taxa in each group.
-4. Use **Max Intersections to Plot** to limit the figure to the largest intersections. The intersection table lists all observed intersections.
-
-Use **Plot (PNG)** to save the figure and **Intersections (TSV)** to export the intersection table.
-
-After data are loaded, the app keeps a valid grouping selection or selects the first available metadata column other than sample ID. It selects all available group levels when there are at most 12. When there are more than 12, choose the levels to include. The default prevalence filter is 10%, and the plot shows up to 25 intersections. Plot sizing defaults to **Auto**. Manual dimensions start at 900 × 550 px, and the base font size is 11.

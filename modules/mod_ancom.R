@@ -136,13 +136,18 @@ mod_ancom_ui <- function(id) {
           tags$span(class = "ancom-run-label", "Run ANCOM-BC2")
         ),
         tags$script(HTML(
-          "Shiny.addCustomMessageHandler('toggle-ancom-run-btn', function(msg) {
-             var btn = document.getElementById(msg.id);
+          "function setancomRunButton(btn, msg) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              btn.classList.toggle('is-running', !!msg.running);
              var label = btn.querySelector('.ancom-run-label');
              if (label && msg.label) label.textContent = msg.label;
+           }
+           Shiny.addCustomMessageHandler('toggle-ancom-run-btn', function(msg) {
+             setancomRunButton(document.getElementById(msg.id), msg);
+           });
+           $(document).on('click.ancom', '.ancom-run-btn', function() {
+             setancomRunButton(this, { disabled: true, running: true, label: 'Running...' });
            });
             Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
              var el = document.getElementById(msg.id);
@@ -719,6 +724,15 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
       !is.null(previous) && !identical(previous, current_analysis_settings())
     })
 
+    update_run_button <- function(running) {
+      session$sendCustomMessage("toggle-ancom-run-btn", list(
+        id = session$ns("run_ancom_btn"),
+        disabled = running,
+        running = running,
+        label = if (running) "Running..." else "Run ANCOM-BC2"
+      ))
+    }
+
     observeEvent(input$run_ancom_btn, {
       now_ts <- Sys.time()
       next_allowed <- ancom_next_allowed_at()
@@ -729,6 +743,7 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
       }
 
       if (!is.na(next_allowed) && now_ts < next_allowed) {
+        update_run_button(FALSE)
         wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
         showNotification(
           paste0("Please wait ", wait_sec, " second(s) before running again."),
@@ -743,25 +758,15 @@ mod_ancom_server <- function(id, ps_obj, plot_order = function() NULL) {
     }, ignoreInit = TRUE)
 
     ancom_res <- eventReactive(ancom_run_nonce(), {
+      on.exit({
+        ancom_running(FALSE)
+        update_run_button(FALSE)
+      }, add = TRUE)
       req(ps_filtered(), input$secondary_var, input$reference_level)
       current_group_var <- if (identical(input$secondary_var, "None")) group_var_resolved() else secondary_var_resolved()
       ancom_running(TRUE)
 
-      session$sendCustomMessage("toggle-ancom-run-btn", list(
-        id = session$ns("run_ancom_btn"),
-        disabled = TRUE,
-        running = TRUE,
-        label = "Running..."
-      ))
-      on.exit({
-        ancom_running(FALSE)
-        session$sendCustomMessage("toggle-ancom-run-btn", list(
-          id = session$ns("run_ancom_btn"),
-          disabled = FALSE,
-          running = FALSE,
-          label = "Run ANCOM-BC2"
-        ))
-      }, add = TRUE)
+      update_run_button(TRUE)
 
       result <- tryCatch({
         withProgress(message = "Running ANCOM-BC2...", value = 0, {

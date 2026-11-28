@@ -1,5 +1,6 @@
 (() => {
   const legends = ".app-plot-legend[data-legend-results]";
+  const imageOutputs = ".shiny-plot-output, .shiny-image-output";
   const observed = new WeakSet();
   const expectedImages = new WeakMap();
   const pendingWidgets = new WeakSet();
@@ -13,7 +14,7 @@
         result.matches(".recalculating, .shiny-output-error")) {
       return false;
     }
-    if (result.matches(".shiny-plot-output")) {
+    if (result.matches(imageOutputs)) {
       const image = result.querySelector("img");
       const expected = expectedImages.get(result);
       return image?.complete && image.naturalWidth > 0 &&
@@ -57,7 +58,7 @@
     .on("shiny:value.plotLegend", (event) => {
       const result = event.target;
       if (!relevant(result)) return;
-      if (result.matches?.(".shiny-plot-output") && event.value?.src) {
+      if (result.matches?.(imageOutputs) && event.value?.src) {
         expectedImages.set(result, event.value.src);
       }
       if (result.matches?.(".plotly.html-widget-output")) {
@@ -76,7 +77,7 @@
   document.addEventListener("shown.bs.tab", schedule);
   function onImageEvent(event) {
     if (event.target.matches?.("img") &&
-        relevant(event.target.closest(".shiny-plot-output") || event.target)) schedule();
+        relevant(event.target.closest(imageOutputs) || event.target)) schedule();
   }
   document.addEventListener("load", onImageEvent, true);
   document.addEventListener("error", onImageEvent, true);

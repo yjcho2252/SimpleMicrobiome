@@ -99,22 +99,11 @@ mod_heatmap_ui <- function(id) {
           choices = character(0),
           selected = NULL
         ),
-        checkboxInput(ns("use_subgroup"), "Select Subgroup", value = FALSE),
-        conditionalPanel(
-          condition = "input.use_subgroup",
-          ns = ns,
-          selectInput(
-            ns("primary_level"),
-            "Primary Level to Include",
-            choices = character(0),
-            selected = NULL
-          ),
-          selectInput(
-            ns("secondary_var"),
-            "Secondary Grouping Variable",
-            choices = c("None"),
-            selected = "None"
-          )
+        selectInput(
+          ns("secondary_var"),
+          "Secondary Grouping Variable",
+          choices = "None",
+          selected = "None"
         ),
         selectInput(ns("column_view"), "Column View", choices = c(
           "Group Summary" = "group", "Individual Samples" = "samples"
@@ -191,12 +180,17 @@ mod_heatmap_ui <- function(id) {
           ),
           checkboxInput(ns("show_row_dendrogram"), "Show Row Dendrogram (Cluster Row)", value = TRUE),
           conditionalPanel(
+            "input.column_view === 'samples'", ns = ns,
+            checkboxInput(ns("cluster_sample_columns"), "Cluster Samples Within Groups", value = FALSE)
+          ),
+          conditionalPanel(
             "input.column_view !== 'samples'", ns = ns,
             checkboxInput(ns("show_col_dendrogram"), "Show Column Dendrogram (Cluster Column)", value = TRUE)
           ),
           numericInput(ns("abs_limit"), "Signed Color Scale Abs Limit (0 = Auto)", value = 0, min = 0, max = 100, step = 0.1),
           conditionalPanel(
             "input.column_view !== 'samples'", ns = ns,
+            checkboxInput(ns("show_significance_marks"), "Show Significance Marks (*)", value = FALSE),
             checkboxInput(ns("apply_sig_filter"), "Mask Non-Significant Cells (FDR)", value = FALSE),
             numericInput(ns("q_cutoff"), "FDR Cutoff (q)", value = 0.05, min = 0.0001, max = 1, step = 0.01)
           )
@@ -220,10 +214,6 @@ mod_heatmap_ui <- function(id) {
         conditionalPanel(
           "output.palette_mode === 'sequential'", ns = ns,
           selectInput(ns("sequential_color_palette"), "Color Palette", sequential_plot_palettes, selected = "plasma")
-        ),
-        conditionalPanel(
-          "input.column_view !== 'samples'", ns = ns,
-          checkboxInput(ns("show_significance_marks"), "Show Significance Marks (*)", value = FALSE)
         ),
         checkboxInput(ns("show_cell_values"), "Show Cell Values", value = FALSE),
         hr(),
@@ -265,15 +255,13 @@ mod_heatmap_ui <- function(id) {
             `data-heatmap-loading` = "true",
             tags$script(HTML(sprintf(
               "$(document).on('shiny:inputchanged', function(event) {
-                if (event.name !== '%s' && event.name !== '%s') return;
+                if (event.name !== '%s') return;
                 const plot = document.getElementById('%s');
                 if (!plot) return;
                 const stage = plot.parentElement;
-                if (event.name === '%s') stage.dataset.columnView = event.value;
-                else stage.dataset.sizeMode = event.value;
-                stage.dataset.fitWidth = stage.dataset.columnView === 'samples' && stage.dataset.sizeMode === 'auto';
+                stage.dataset.fitWidth = event.value === 'samples';
               });",
-              ns("column_view"), ns("plot_size_mode"), ns("corr_heatmap_plot"), ns("column_view")
+              ns("column_view"), ns("corr_heatmap_plot")
             ))),
             plotOutput(ns("corr_heatmap_plot"), height = "auto"),
             conditionalPanel(
@@ -409,9 +397,6 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
 
     secondary_var_resolved <- reactive({
       meta_df <- metadata_df()
-      if (!isTRUE(input$use_subgroup)) {
-        return(NULL)
-      }
       if (is.null(input$secondary_var) || identical(input$secondary_var, "None")) {
         return(NULL)
       }
@@ -427,27 +412,14 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       updateSelectInput(session, "group_var", choices = columns, selected = selected)
     })
 
-    observeEvent(list(metadata_df(), input$group_var, input$use_subgroup), {
-      meta_df <- metadata_df()
+    observeEvent(list(group_columns(), input$group_var), {
       columns <- group_columns()
       primary <- resolve_meta_colname(input$group_var, columns)
       valid_primary <- isTruthy(primary) && primary %in% columns
 
-      levels <- character()
-      if (valid_primary) {
-        values <- as.character(meta_df[[primary]])
-        values <- sort(unique(values[!is.na(values) & nzchar(values)]))
-        if (length(values) < 10L) levels <- values
-      }
-      levels <- c("All", levels)
-      current_level <- isolate(input$primary_level)
-      selected_level <- if (isTRUE(input$use_subgroup) &&
-                            isTruthy(current_level) && current_level %in% levels) current_level else "All"
-      updateSelectInput(session, "primary_level", choices = levels, selected = selected_level)
-
       secondary_choices <- if (valid_primary) setdiff(columns, primary) else columns
       current_secondary <- isolate(input$secondary_var)
-      selected_secondary <- if (isTRUE(input$use_subgroup) && isTruthy(current_secondary) &&
+      selected_secondary <- if (isTruthy(current_secondary) &&
                                 current_secondary %in% secondary_choices) current_secondary else "None"
       updateSelectInput(session, "secondary_var",
                         choices = c("None" = "None", secondary_choices), selected = selected_secondary)
@@ -517,8 +489,6 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       list(
         samples = samples_view(),
         group_var = input$group_var,
-        use_subgroup = isTRUE(input$use_subgroup),
-        primary_level = input$primary_level,
         secondary_var = input$secondary_var,
         group_type = if (!samples_view()) input$group_type else NULL,
         tax_level = input$tax_level,
@@ -575,16 +545,10 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
           column_group <- NULL
           rep("", length(ids))
         }
-        keep <- rep(TRUE, length(ids))
-        if (isTRUE(input$use_subgroup) && isTruthy(input$primary_level) && input$primary_level != "All") {
-          keep <- primary_values == input$primary_level
-        }
-        validate(need(any(keep), "No samples are available for the selected primary level."))
-        otu_mat <- otu_mat[, keep, drop = FALSE]
         sample_totals <- colSums(otu_mat, na.rm = TRUE)
         column_panels <- data.frame(
-          primary = primary_values[keep], secondary = secondary[keep], sample = ids[keep],
-          row.names = ids[keep], stringsAsFactors = FALSE
+          primary = primary_values, secondary = secondary, sample = ids,
+          row.names = ids, stringsAsFactors = FALSE
         )
       }
 
@@ -679,11 +643,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
           secondary_levels <- unique(as.character(group_vec[!is.na(primary_vec)]))
           secondary_levels[is.na(secondary_levels) | !nzchar(secondary_levels)] <- "(Missing)"
           secondary_levels <- unique(secondary_levels)
-          if (!isTruthy(input$primary_level) || identical(as.character(input$primary_level), "All")) {
-            keep_idx <- !is.na(primary_vec)
-          } else {
-            keep_idx <- !is.na(primary_vec) & (as.character(primary_vec) == as.character(input$primary_level))
-          }
+          keep_idx <- !is.na(primary_vec)
           group_vec <- group_vec[keep_idx]
           analysis_mat <- analysis_mat[, keep_idx, drop = FALSE]
           sample_ids <- sample_ids[keep_idx]
@@ -747,7 +707,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
             column_ids <- column_levels
           } else {
             primary_levels <- unique(primary_vec)
-            validate(need(length(primary_levels) > 0L, "No samples are available for the selected primary level."))
+            validate(need(length(primary_levels) > 0L, "No samples have a valid primary level."))
             column_panels <- expand.grid(
               secondary = levels_keep, primary = primary_levels,
               stringsAsFactors = FALSE
@@ -1007,12 +967,15 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       }
     }
 
+    sample_tree_height_pt <- function(base_size) max(36, base_size * 4)
+
     heatmap_plot_spec <- function(canvas_width_mm) {
       payload <- display_corr_payload()
       heat_df <- payload$heat_df
       assoc_mat <- payload$assoc_mat
       panels <- payload$column_panels
       by_sample <- isTRUE(payload$run_settings$samples)
+      show_subfacets <- by_sample && !is.null(panels) && !is.null(payload$column_group)
       if (!is.null(panels)) {
         order_config <- plot_order()
         primary_order <- plot_order_factor(panels$primary, input$group_var, order_config, unique(panels$primary))
@@ -1044,6 +1007,27 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         need(requireNamespace("ComplexHeatmap", quietly = TRUE), "Package 'ComplexHeatmap' is required."),
         need(requireNamespace("circlize", quietly = TRUE), "Package 'circlize' is required.")
       )
+
+      column_trees <- list()
+      if (by_sample && !is.null(panels) && isTRUE(input$cluster_sample_columns)) {
+        previous <- seq_len(nrow(panels) - 1L)
+        starts <- c(TRUE, panels$primary[previous] != panels$primary[previous + 1L] |
+          panels$secondary[previous] != panels$secondary[previous + 1L])
+        groups <- split(seq_len(ncol(assoc_mat)), cumsum(starts))
+        column_order <- seq_len(ncol(assoc_mat))
+        for (columns in groups) {
+          if (length(columns) < 2L) next
+          tree <- tryCatch(
+            stats::hclust(stats::dist(t(assoc_mat[, columns, drop = FALSE])), method = "average"),
+            error = function(e) NULL
+          )
+          if (is.null(tree)) next
+          column_order[columns] <- columns[tree$order]
+          column_trees[[length(column_trees) + 1L]] <- list(columns = columns, tree = tree)
+        }
+        assoc_mat <- assoc_mat[, column_order, drop = FALSE]
+        panels <- panels[column_order, , drop = FALSE]
+      }
 
       raw_tss_mean <- cell_values_are_percent(payload)
       sequential_tss <- raw_tss_mean || length(tss_value_scale_label(payload)) > 0L
@@ -1160,21 +1144,84 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         labels_gp = grid::gpar(fontfamily = font_family, fontsize = legend_fonts[["labels"]])
       ), legend_ticks)
       panel_titles <- NULL
+      secondary_breaks <- integer()
       if (!is.null(panels)) {
         # Match the relative text size and vertical margins of the Taxa Summary facet strips.
         facet_labels <- levels(panel_split)
         facet_gp <- grid::gpar(fontfamily = font_family, fontsize = base_size * 0.8, fontface = "bold")
         label_height <- max(grid::grobHeight(grid::textGrob(facet_labels, gp = facet_gp)))
-        panel_titles <- ComplexHeatmap::HeatmapAnnotation(
-          facet = ComplexHeatmap::anno_block(
+        primary_strip <- ComplexHeatmap::anno_block(
             labels = facet_labels,
             gp = grid::gpar(fill = "#F1F3F5", col = "#595959", lwd = 0.8),
             labels_gp = facet_gp,
             labels_offset = grid::unit(0.5, "npc"), labels_just = "center",
             height = label_height + grid::unit(base_size * 0.8, "pt")
-          ),
-          show_annotation_name = FALSE
         )
+        annotations <- list()
+        if (length(column_trees)) {
+          annotations$trees <- ComplexHeatmap::AnnotationFunction(
+            which = "column",
+            n = ncol(assoc_mat),
+            height = grid::unit(sample_tree_height_pt(base_size), "pt"),
+            fun = function(index) {
+              for (entry in column_trees) {
+                positions <- match(entry$columns, index)
+                if (anyNA(positions)) next
+                tree <- entry$tree
+                leaf_x <- (positions[order(tree$order)] - 0.5) / length(index)
+                node_x <- numeric(nrow(tree$merge))
+                max_height <- max(tree$height)
+                node_y <- if (max_height > 0) 0.92 * tree$height / max_height else rep(0.08, length(node_x))
+                left_x <- right_x <- left_y <- right_y <- node_x
+                for (k in seq_along(node_x)) {
+                  left <- tree$merge[k, 1L]
+                  right <- tree$merge[k, 2L]
+                  left_x[k] <- if (left < 0L) leaf_x[-left] else node_x[left]
+                  right_x[k] <- if (right < 0L) leaf_x[-right] else node_x[right]
+                  left_y[k] <- if (left < 0L) 0 else node_y[left]
+                  right_y[k] <- if (right < 0L) 0 else node_y[right]
+                  node_x[k] <- (left_x[k] + right_x[k]) / 2
+                }
+                grid::grid.segments(
+                  x0 = c(left_x, right_x, left_x), x1 = c(left_x, right_x, right_x),
+                  y0 = c(left_y, right_y, node_y), y1 = rep(node_y, 3L),
+                  gp = grid::gpar(col = "#595959")
+                )
+              }
+            }
+          )
+        }
+        annotations$facet <- primary_strip
+        if (show_subfacets) {
+          secondary_labels <- panels$secondary
+          previous <- seq_len(nrow(panels) - 1L)
+          secondary_breaks <- previous[
+            panels$primary[previous] == panels$primary[previous + 1L] &
+              secondary_labels[previous] != secondary_labels[previous + 1L]
+          ] + 1L
+          secondary_strip <- ComplexHeatmap::AnnotationFunction(
+            which = "column",
+            n = ncol(assoc_mat),
+            height = grid::unit(base_size * 1.6, "pt"),
+            fun = function(index) {
+              blocks <- rle(secondary_labels[index])
+              ends <- cumsum(blocks$lengths)
+              for (k in seq_along(ends)) {
+                span <- blocks$lengths[k] / length(index)
+                center <- ends[k] / length(index) - span / 2
+                grid::pushViewport(grid::viewport(x = center, width = span, clip = "on"))
+                grid::grid.rect(gp = grid::gpar(fill = "#FAFBFC", col = "#8A8A8A", lwd = 0.6))
+                grid::grid.text(blocks$values[k], gp = grid::gpar(
+                  fontfamily = font_family, fontsize = base_size * 0.72
+                ))
+                grid::popViewport()
+              }
+            }
+          )
+          annotations$subgroup <- secondary_strip
+        }
+        panel_titles <- do.call(ComplexHeatmap::HeatmapAnnotation,
+                                c(annotations, list(show_annotation_name = FALSE)))
       }
       heatmap <- ComplexHeatmap::Heatmap(
         assoc_mat,
@@ -1202,7 +1249,13 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         show_heatmap_legend = FALSE,
         height = body_height,
         column_title = NULL,
-        layer_fun = if (show_values || show_marks) function(j, i, x, y, width, height, fill) {
+        layer_fun = if (show_values || show_marks || length(secondary_breaks)) function(j, i, x, y, width, height, fill) {
+          boundaries <- which(!duplicated(j) & j %in% secondary_breaks)
+          if (length(boundaries)) {
+            edge <- x[boundaries] - width[boundaries] / 2
+            grid::grid.segments(x0 = edge, x1 = edge, y0 = 0, y1 = 1,
+                                gp = grid::gpar(col = "#595959", lwd = 1.2))
+          }
           text <- labels[cbind(i, j)]
           drawn <- which(nzchar(text))
           if (!length(drawn)) return(invisible(NULL))
@@ -1238,6 +1291,9 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
     })
 
     plot_dims_px <- reactive({
+      tree_space_px <- if (samples_view() && isTRUE(input$cluster_sample_columns)) {
+        ceiling(sample_tree_height_pt(heatmap_base_size()) * 110 / 72) + 4L
+      } else 0L
       if (identical(input$plot_size_mode, "manual")) {
         clamp_dimension <- function(value, fallback, minimum) {
           if (is.null(value) || !is.finite(value)) value <- fallback
@@ -1245,7 +1301,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         }
         return(list(
           width_px = clamp_dimension(input$plot_width, 900L, 400L),
-          height_px = clamp_dimension(input$plot_height, 700L, 300L)
+          height_px = clamp_dimension(input$plot_height, 700L, 300L) + tree_space_px
         ))
       }
       payload <- tryCatch(display_corr_payload(), error = function(e) NULL)
@@ -1288,26 +1344,24 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       )
       horizontal_space <- row_labels_px + legend_px + if (isTRUE(input$show_row_dendrogram)) 170 else 100
       vertical_space <- max(230, column_labels_px + if (isTRUE(input$show_col_dendrogram)) 120 else 80)
+      if (by_sample && !is.null(payload$column_group)) {
+        vertical_space <- vertical_space + ceiling(base_size * 1.6 * 110 / 72)
+      }
       panel_gap_px <- if (is.null(panels)) 0 else 8 * (length(unique(panels$primary)) - 1L)
       label_span_px <- column_label_width * cos(radians) + label_height * sin(radians)
       target_cell_width <- max(if (by_sample) 24 else 36, ceiling(base_size * 2.8), min(120, label_span_px + 8))
       width_px <- as.integer(ceiling(max(500, n_cols * target_cell_width + horizontal_space + panel_gap_px)))
-      height_px <- as.integer(ceiling(max(700, n_rows * auto_cell_height(n_rows) + vertical_space)))
+      height_px <- as.integer(ceiling(max(700, n_rows * auto_cell_height(n_rows) + vertical_space))) + tree_space_px
 
       list(width_px = width_px, height_px = height_px)
-    })
-
-    last_visible_plot_width <- reactiveVal(900L)
-    observe({
-      req(isTRUE(active()))
-      available <- session$clientData[[paste0("output_", session$ns("corr_heatmap_plot"), "_width")]]
-      if (isTruthy(available) && available > 0) last_visible_plot_width(floor(available))
     })
 
     display_plot_width <- reactive({
       width <- plot_dims_px()$width_px
       if (samples_view() && !identical(input$plot_size_mode, "manual")) {
-        width <- min(width, last_visible_plot_width())
+        # Keep the render size independent of the output container's layout.
+        # The browser fits the resulting image to the available width.
+        width <- min(width, 2400L)
       }
       width
     })
@@ -1360,8 +1414,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       draw_heatmap(),
       width = function() display_plot_width(),
       height = function() plot_dims_px()$height_px,
-      res = 110,
-      execOnResize = TRUE
+      res = 110
     )
     # Draw while the result panel is still hidden so the "Preparing the heatmap"
     # prompt stays visible until the finished image is ready.
@@ -1373,22 +1426,20 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
       by_sample <- isTRUE(payload$run_settings$samples)
       sample_detection <- by_sample && identical(input$association_mode, "prevalence")
       primary_group_label <- if (is.null(input$group_var) || !nzchar(input$group_var)) "(Not selected)" else input$group_var
-      primary_level_label <- if (is.null(input$primary_level) || !nzchar(input$primary_level)) "(All / Not selected)" else as.character(input$primary_level)
       current_secondary_var <- secondary_var_resolved()
       secondary_group_label <- if (is.null(current_secondary_var)) "(None)" else current_secondary_var
       analysis_scope_label <- if (by_sample) {
-        "Each column is one sample. Primary groups define panels and secondary groups organize samples within each panel."
+        if (is.null(payload$column_group)) {
+          "Each column is one sample. Primary groups define panels."
+        } else {
+          "Each column is one sample. Primary groups define panels with labeled secondary subpanels."
+        }
       } else if (is.null(current_secondary_var)) {
-        "Primary group is used directly (no primary-level prefilter)."
+        "Primary groups are used directly."
       } else if (!is.null(payload$column_panels)) {
         "Secondary groups are analyzed separately within each displayed primary group."
-      } else if (!isTruthy(input$primary_level) || identical(input$primary_level, "All")) {
-        "All primary levels are pooled for the continuous secondary variable."
       } else {
-        paste0(
-          "Filtered to Primary level '", primary_level_label,
-          "' and compared across Secondary group levels."
-        )
+        "All primary levels are pooled for the continuous secondary variable."
       }
       analyzed_group_levels <- if (ncol(payload$assoc_mat) > 1) {
         paste(colnames(payload$assoc_mat), collapse = ", ")
@@ -1423,10 +1474,8 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         c(
           paste0("Column view: ", if (by_sample) "Individual Samples" else "Group Summary"),
           paste0("Association type: ", payload$assoc_type),
-          paste0("1) Primary group variable: ", primary_group_label),
-          paste0("2) Primary level filter: ", primary_level_label),
-          "Primary-level dropdown is shown only when the number of distinct levels is fewer than 10.",
-          paste0("3) Secondary group variable: ", secondary_group_label),
+          paste0("Primary group variable: ", primary_group_label),
+          paste0("Secondary group variable: ", secondary_group_label),
           paste0("Current analysis scope: ", analysis_scope_label),
           if (!by_sample) paste0("Analyzed group levels/axis: ", analyzed_group_levels) else NULL,
           paste0("Samples used: ", payload$n_samples),
@@ -1583,7 +1632,7 @@ mod_heatmap_server <- function(id, ps_obj, meta_vars = NULL, plot_order = functi
         paste(
           "Each column is one sample, labeled by SampleID.",
           paste0("Panels show ", settings$group_var, " groups."),
-          if (!is.null(payload$column_group)) paste0("Samples are grouped by ", payload$column_group, " within each panel.") else "",
+          if (!is.null(payload$column_group)) paste0("Labeled subpanels show ", payload$column_group, " groups within each panel.") else "",
           measurement,
           "Panels share the same color scale. Gray marks unavailable values."
         )

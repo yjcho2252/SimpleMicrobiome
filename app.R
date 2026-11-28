@@ -69,7 +69,7 @@ ui <- page_navbar(
         alt = "SimpleMicrobiome",
         style = "height: 30px; width: auto; display: block;"
       ),
-      tags$span("v1.2.1", class = "navbar-app-version")
+      tags$span("v1.2.2", class = "navbar-app-version")
     ),
     style = "display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; padding: 0;"
   ),
@@ -298,7 +298,7 @@ ui <- page_navbar(
     icon = icon("diagram-next"),
     nav_panel("Association Heatmap", icon = icon("table-cells"), mod_heatmap_ui("mod_heatmap")),
     nav_panel("Taxa Correlogram", icon = icon("braille"), mod_taxa_correlogram_ui("mod_taxa_correlogram")),
-    nav_panel("Upset Plot", icon = icon("layer-group"), mod_upset_ui("mod_upset"))
+    nav_panel("Core & Indicator Taxa", icon = icon("layer-group"), mod_upset_ui("mod_upset"), value = "mod_upset")
   ),
   nav_panel(
     title = "Citation",
@@ -342,7 +342,7 @@ server <- function(input, output, session) {
   mod_taxa_correlogram_server("mod_taxa_correlogram", ps_obj_filtered_raw,
                               active = reactive(identical(active_tab(), "Taxa Correlogram")))
   mod_upset_server("mod_upset", ps_obj_filtered_raw, plot_order,
-                   active = reactive(identical(active_tab(), "Upset Plot")))
+                   active = reactive(identical(active_tab(), "mod_upset")))
   mod_biplot_server("mod_biplot", ps_obj_filtered_raw, meta_vars)
   mod_citation_server("mod_citation")
   mod_top_server("mod_top")

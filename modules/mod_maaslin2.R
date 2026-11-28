@@ -141,13 +141,18 @@ mod_maaslin2_ui <- function(id) {
           tags$span(class = "maaslin2-run-label", "Run MaAsLin2")
         ),
         tags$script(HTML(
-          "Shiny.addCustomMessageHandler('toggle-maaslin2-run-btn', function(msg) {
-             var btn = document.getElementById(msg.id);
+          "function setmaaslin2RunButton(btn, msg) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              btn.classList.toggle('is-running', !!msg.running);
              var label = btn.querySelector('.maaslin2-run-label');
              if (label && msg.label) label.textContent = msg.label;
+           }
+           Shiny.addCustomMessageHandler('toggle-maaslin2-run-btn', function(msg) {
+             setmaaslin2RunButton(document.getElementById(msg.id), msg);
+           });
+           $(document).on('click.maaslin2', '.maaslin2-run-btn', function() {
+             setmaaslin2RunButton(this, { disabled: true, running: true, label: 'Running...' });
            });
            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
              var el = document.getElementById(msg.id);
@@ -831,6 +836,15 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       !is.null(previous) && !identical(previous, current_analysis_settings())
     })
 
+    update_run_button <- function(running) {
+      session$sendCustomMessage("toggle-maaslin2-run-btn", list(
+        id = session$ns("run_maaslin2_btn"),
+        disabled = running,
+        running = running,
+        label = if (running) "Running..." else "Run MaAsLin2"
+      ))
+    }
+
     observeEvent(input$run_maaslin2_btn, {
       now_ts <- Sys.time()
       next_allowed <- maaslin2_next_allowed_at()
@@ -841,6 +855,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       }
 
       if (!is.na(next_allowed) && now_ts < next_allowed) {
+        update_run_button(FALSE)
         wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
         showNotification(
           paste0("Please wait ", wait_sec, " second(s) before running again."),
@@ -855,6 +870,10 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
     }, ignoreInit = TRUE)
 
     maaslin2_res <- eventReactive(maaslin2_run_nonce(), {
+      on.exit({
+        maaslin2_running(FALSE)
+        update_run_button(FALSE)
+      }, add = TRUE)
       req(ps_filtered())
 
       validate(
@@ -865,21 +884,7 @@ mod_maaslin2_server <- function(id, ps_obj, plot_order = function() NULL) {
       current_group_var <- if (is.null(secondary_var_resolved())) group_var_resolved() else secondary_var_resolved()
       maaslin2_running(TRUE)
 
-      session$sendCustomMessage("toggle-maaslin2-run-btn", list(
-        id = session$ns("run_maaslin2_btn"),
-        disabled = TRUE,
-        running = TRUE,
-        label = "Running..."
-      ))
-      on.exit({
-        maaslin2_running(FALSE)
-        session$sendCustomMessage("toggle-maaslin2-run-btn", list(
-          id = session$ns("run_maaslin2_btn"),
-          disabled = FALSE,
-          running = FALSE,
-          label = "Run MaAsLin2"
-        ))
-      }, add = TRUE)
+      update_run_button(TRUE)
 
       result <- tryCatch({
         withProgress(message = "Running MaAsLin2...", value = 0, {

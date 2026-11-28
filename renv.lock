@@ -10259,6 +10259,13 @@
       "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
+    "indicspecies": {
+      "Package": "indicspecies",
+      "Version": "1.8.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": ["permute"]
+    },
     "permute": {
       "Package": "permute",
       "Version": "0.9-8",

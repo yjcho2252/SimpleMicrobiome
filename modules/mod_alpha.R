@@ -19,25 +19,28 @@ mod_alpha_ui <- function(id) {
         uiOutput(ns("secondary_group_selector")), 
         hr(),
         
-        h4(icon("list-check"), "Index Selection"),
-        tags$style(HTML(sprintf(
-          "#%s > label.control-label { display: none; margin: 0; } #%s { margin-bottom: 4px; }",
-          ns("alpha_methods"), ns("alpha_methods")
-        ))),
-        checkboxGroupInput(ns("alpha_methods"), "",
-                           choices = c(
-                             "Observed" = "Observed",
-                             "Chao1" = "Chao1",
-                             "Shannon" = "Shannon",
-                             "Simpson (1-D)" = "Simpson"
-                           ),
-                           selected = c("Chao1", "Shannon")),
+        tags$details(
+          tags$summary(
+            h4(icon("list-check"), "Index Selection", style = "display: inline;")
+          ),
+          br(),
+          tags$style(HTML(sprintf(
+            "#%s > label.control-label { display: none; margin: 0; } #%s { margin-bottom: 4px; }",
+            ns("alpha_methods"), ns("alpha_methods")
+          ))),
+          checkboxGroupInput(
+            ns("alpha_methods"), "",
+            choices = c(
+              "Observed" = "Observed",
+              "Chao1" = "Chao1",
+              "Shannon" = "Shannon",
+              "Simpson (1-D)" = "Simpson"
+            ),
+            selected = c("Observed", "Chao1", "Shannon", "Simpson")
+          )
+        ),
         hr(),
-        h4(icon("link"), "Pairing"),
-        checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
-        uiOutput(ns("subject_id_selector")),
-        hr(),
-        h4(icon("sliders"), "Plot Style"),
+        h4(icon("sliders"), "Plot Settings"),
         selectInput(
           ns("plot_type"),
           "Plot Type",
@@ -49,42 +52,49 @@ mod_alpha_ui <- function(id) {
           ),
           selected = "violin"
         ),
+        checkboxInput(ns("enable_within_subject_pairing"), "Within-Subject Pairing", value = FALSE),
+        uiOutput(ns("subject_id_selector")),
         
         hr(),
-        h4(icon("sliders"), "Statistical Testing"),
-        tags$style(HTML(sprintf(
-          "#%s { margin-bottom: 2px; } #%s, #%s { margin-top: 0; margin-bottom: 4px; }",
-          ns("show_p_val"), ns("show_sig_only"), ns("show_sig_as_marks")
-        ))),
-        checkboxInput(ns("show_p_val"), "Show p-value Bars", value = TRUE),
-        
-        conditionalPanel(
-          condition = sprintf("input['%s'] == true", ns("show_p_val")),
-          checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
-          checkboxInput(ns("show_sig_as_marks"), "Show as Significant Marks", value = TRUE)
-        ),
-        
-        selectInput(ns("stat_method"), "Statistical Method",
-                    choices = c("Wilcoxon" = "wilcox.test", 
-                                "T-test" = "t.test",
-                                "Kruskal-Wallis" = "kruskal.test"),
-                    selected = "wilcox.test"),
-        selectInput(
-          ns("p_adjust_method"),
-          "Pairwise Multiple Testing Correction",
-          choices = c(
-            "None" = "none",
-            "Holm" = "holm",
-            "BH" = "BH",
-            "Bonferroni" = "bonferroni"
+        tags$details(
+          tags$summary(
+            h4(icon("sliders"), "Statistical Testing", style = "display: inline;")
           ),
-          selected = "BH"
+          br(),
+          tags$style(HTML(sprintf(
+            "#%s { margin-bottom: 2px; } #%s, #%s { margin-top: 0; margin-bottom: 4px; }",
+            ns("show_p_val"), ns("show_sig_only"), ns("show_sig_as_marks")
+          ))),
+          checkboxInput(ns("show_p_val"), "Show p-value Bars", value = TRUE),
+
+          conditionalPanel(
+            condition = sprintf("input['%s'] == true", ns("show_p_val")),
+            checkboxInput(ns("show_sig_only"), "Show only p-value < 0.05", value = TRUE),
+            checkboxInput(ns("show_sig_as_marks"), "Show as Significant Marks", value = TRUE)
+          ),
+
+          selectInput(ns("stat_method"), "Statistical Method",
+                      choices = c("Wilcoxon" = "wilcox.test",
+                                  "T-test" = "t.test",
+                                  "Kruskal-Wallis" = "kruskal.test"),
+                      selected = "wilcox.test"),
+          selectInput(
+            ns("p_adjust_method"),
+            "Pairwise Multiple Testing Correction",
+            choices = c(
+              "None" = "none",
+              "Holm" = "holm",
+              "BH" = "BH",
+              "Bonferroni" = "bonferroni"
+            ),
+            selected = "BH"
+          ),
         ),
         
         hr(),
         h4(icon("up-right-and-down-left-from-center"), "Display Options"),
-        numericInput(ns("plot_width"), "Plot Width (px)", value = 600, min = 300, step = 50),
-        numericInput(ns("plot_height"), "Plot Height (px)", value = 500, min = 300, step = 50),
+        numericInput(ns("plot_width"), "Plot Width (px)", value = 500, min = 300, step = 50),
+        numericInput(ns("plot_height"), "Plot Height (px)", value = 700, min = 300, step = 50),
         numericInput(ns("base_size"), "Base Font Size", value = 14, min = 6, max = 30, step = 1),
         numericInput(ns("dot_size"), "Dot Size (Point Size)", value = 4, min = 0.5, max = 10, step = 0.5),
         selectInput(ns("x_label_angle"), "X-Axis Label Angle",

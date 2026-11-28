@@ -249,8 +249,8 @@ mod_taxa_correlogram_server <- function(id, ps_obj, active = function() TRUE) {
             legend.key.width = grid::unit(3, "mm"), legend.key.height = grid::unit(26, "mm")
           ))
         ) +
-        ggplot2::scale_x_discrete(limits = view$labels) +
-        ggplot2::scale_y_discrete(limits = rev(view$labels)) +
+        ggplot2::scale_x_discrete(limits = levels(droplevels(view$cells$x))) +
+        ggplot2::scale_y_discrete(limits = levels(droplevels(view$cells$y))) +
         ggplot2::coord_fixed() +
         ggplot2::labs(x = NULL, y = NULL) +
         ggplot2::theme_minimal(base_size = font) +

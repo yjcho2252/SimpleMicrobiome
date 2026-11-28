@@ -102,11 +102,18 @@ mod_maaslin3_ui <- function(id) {
             )
           )
         ),
+        plot_legend_output(
+          ns, "figure_legend", c("summary_image", "volcano", "detail_abundance", "detail_prevalence")
+        ),
         div(
           style = "clear: both; margin-top: 16px;",
-          hr(),
+          tags$hr(style = "margin: 14px 0 12px 0; border-top: 1px solid #d1d5db;"),
           h5(icon("circle-info"), "MaAsLin3 Status"),
-          div(class = "app-result-card app-status-card", verbatimTextOutput(ns("status")))
+          div(
+            class = "app-result-card app-status-card",
+            style = "width: 100%;",
+            verbatimTextOutput(ns("status"))
+          )
         )
       )
       )
@@ -610,10 +617,11 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
     })
 
     output$status <- renderText({
-      req(ps_obj())
       run <- result()
       message <- status()
+      if (isTRUE(running())) return("MaAsLin3 is running. Please wait...")
       if (startsWith(message, "MaAsLin3:")) return(message)
+      if (is.null(ps_obj())) return("Load data to run MaAsLin3.")
       if (!is.null(run) && !identical(run$settings, settings())) {
         return("Data or model settings changed. Run MaAsLin3 again to see updated results.")
       }
@@ -637,19 +645,62 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
         paste("Samples used:", nrow(run$model$metadata)),
         paste("Taxonomic level:", rank),
         sprintf("Prevalence filter: %g%%", run$settings$prevalence),
-        "",
-        switch(
-          if (is.null(input$result_tab)) "Summary Plot" else input$result_tab,
-          "Volcano Plot" = sprintf(
-            "Points show model effects relative to the tested null value. The dashed line marks the individual q-value cutoff (%g). Red and blue mark positive and negative effects at or below that cutoff.",
-            run$settings$q
-          ),
-          "Results Table" = "Abundance effects describe fold changes among samples where the taxon was detected. Prevalence effects describe odds ratios for detection. Joint q-values combine evidence from both models.",
-          "The summary plot shows associations from the abundance and prevalence models."
-        )
+        sprintf("Significance threshold (q): %g", run$settings$q)
       )
       paste(lines, collapse = "\n")
     })
+
+    output$figure_legend <- renderUI({
+      req_plot_legend_tab(session, "MaAsLin3")
+      run <- current()
+      width <- input$summary_width
+      req(length(width) == 1L, is.finite(width), width >= 400, width <= 4000)
+      tab <- if (is.null(input$result_tab)) "Summary Plot" else input$result_tab
+      if (identical(tab, "Summary Plot")) {
+        req(!is.null(run$summary_plot))
+        plot_legend_box(
+          width, "MaAsLin3 summary plot",
+          paste(
+            "The summary shows associations from the abundance and prevalence models.",
+            "Coefficient panels show estimated effects. Where a heatmap is shown,",
+            "color represents model coefficients and stars mark small individual q-values."
+          )
+        )
+      } else if (identical(tab, "Volcano Plot")) {
+        plot_legend_box(
+          width, "MaAsLin3 volcano plot",
+          sprintf(
+            paste(
+              "The panels separate abundance and prevalence models.",
+              "Each point shows a model coefficient relative to its tested null value on the x-axis",
+              "and −log10(individual q-value) on the y-axis.",
+              "The dashed line marks the run's q-value cutoff (%g).",
+              "Red and blue indicate positive and negative effects at or below that cutoff."
+            ),
+            run$settings$q
+          )
+        )
+      } else if (identical(tab, "Results Table")) {
+        detail <- selected_association()
+        observations <- if (is.factor(detail$data$predictor)) {
+          paste(
+            "Abundance shows the distribution among detected samples in each group.",
+            "Prevalence shows the fraction detected and the detected/total count for each group."
+          )
+        } else {
+          paste(
+            "Abundance plots detected samples against the continuous predictor.",
+            "Prevalence compares predictor values by detection status.",
+            "Adjusted model effects are reported per standard deviation of the predictor."
+          )
+        }
+        plot_legend_box(
+          width, "MaAsLin3 association detail",
+          paste(observations, "Effect sizes and individual q-values come from the adjusted model.")
+        )
+      }
+    })
+    outputOptions(output, "figure_legend", suspendWhenHidden = FALSE, priority = -10)
 
     styled_summary <- reactive({
       plot <- current()$summary_plot
@@ -950,7 +1001,6 @@ mod_maaslin3_server <- function(id, ps_obj, plot_order = function() NULL) {
       div(
         style = "max-width: 100%; margin-top: 16px; padding: 16px; border: 1px solid #d9e2ec; border-radius: 8px;",
         h4("Association Detail"), h5(heading),
-        p("Plots show observed samples. Effect sizes and individual q-values come from the adjusted model. Continuous predictor effects are per standard deviation."),
         div(
           style = "display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px;",
           div(style = "min-width: 0;", h5("Abundance"), p(association_fit_label(detail, "abundance")),

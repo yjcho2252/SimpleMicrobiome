@@ -32,6 +32,8 @@ If `Within-Subject Pairing` is enabled and the selected subject ID has repeated 
   - Enable only when subgroup interpretation is required.
 
 ### 2.3 Index Selection (`Observed`, `Chao1`, `Shannon`, `Simpson`)
+
+All four indices are selected by default. Expand **Index Selection** to change the selection.
 - You can select one or multiple indices at once.
 - **Effect of selecting multiple indices**:
   - Creates multi-index panel output.
@@ -128,7 +130,7 @@ If `Within-Subject Pairing` is enabled and the selected subject ID has repeated 
 
 ### 2.13 Plot Width / Plot Height / Base Font Size
 - **What it controls**: readability of multi-group/multi-index output.
-- The plot defaults to 600 × 500 px, with a base font size of 14 and dot size of 4. X-axis labels default to 0° and can be rotated to 45° or 90°.
+- The plot defaults to 500 × 700 px, with a base font size of 14 and dot size of 4. X-axis labels default to 0° and can be rotated to 45° or 90°.
 - Use **Plot (PNG)** and **Data (TSV)** in the **Download** section at the bottom of the left panel.
 - **Practical guidance**:
   - Many groups or long labels -> increase width.

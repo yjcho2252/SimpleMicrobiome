@@ -11,7 +11,7 @@ Applies sample/taxa filtering and selection before all downstream analyses.
 
 ### 2.2 Selection state controls
 - Sample selection applies when you switch to an analysis tab.
-- The selected read counts are passed to downstream modules. Alpha Diversity, Jaccard beta diversity, and Taxa Bar Plot handle subsampling within their own modules.
+- **Cap Reads per Sample** is off by default. Enable it to subsample selected samples above the adjustable cap, which starts at 100,000 reads. The sample table shows original read counts.
 - The selection summary box reports counts as `Total: N samples` and `Selected: M samples`.
 
 ## 3. Plot Order

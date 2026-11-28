@@ -683,12 +683,7 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
       df_plot <- data$df_plot
       x_var <- if (identical(input$plot_mode, "Group_Mean")) "Combined_Group" else "Sample"
       n_bars <- length(unique(as.character(df_plot[[x_var]])))
-      width <- auto_plot_width(n_bars)
-      available_width <- input$available_plot_width
-      if (length(available_width) == 1L && is.finite(available_width)) {
-        width <- min(width, max(150, floor(available_width)))
-      }
-      width
+      auto_plot_width(n_bars)
     })
     
     build_barplot <- function(interactive = FALSE) {
@@ -1187,27 +1182,42 @@ mod_barplot_server <- function(id, ps_obj, meta_cols, plot_order = function() NU
           items.style.gridTemplateRows = 'repeat(' + Math.ceil(buttons.size / 2) + ', max-content)';
         }
         if (el.taxaWidthObserver) el.taxaWidthObserver.disconnect();
+        if (el.taxaWidthFrame) {
+          cancelAnimationFrame(el.taxaWidthFrame);
+          el.taxaWidthFrame = null;
+        }
         if (!config.autoWidth) return;
         const canvas = el.closest('.taxa-barplot-stage');
         const panel = canvas.parentElement.parentElement;
-        function reportWidth() {
-          if (!panel.clientWidth) return;
+        const preferredWidth = x.layout.width;
+        let appliedWidth = preferredWidth;
+        function fitWidth() {
+          el.taxaWidthFrame = null;
+          if (!el.isConnected || !panel.clientWidth) return;
           const panelStyle = getComputedStyle(panel);
           const gap = parseFloat(getComputedStyle(canvas).columnGap) || 0;
-          const width = Math.floor(panel.clientWidth - parseFloat(panelStyle.paddingLeft) -
+          const availableWidth = Math.floor(panel.clientWidth - parseFloat(panelStyle.paddingLeft) -
             parseFloat(panelStyle.paddingRight) - legend.getBoundingClientRect().width - gap);
-          if (width === el.taxaAvailableWidth) return;
-          el.taxaAvailableWidth = width;
-          Shiny.setInputValue(config.widthInput, width);
+          const width = Math.min(preferredWidth, Math.max(150, availableWidth));
+          if (width === appliedWidth) return;
+          appliedWidth = width;
+          el.style.width = width + 'px';
+          Plotly.relayout(el, {width: width});
         }
-        el.taxaWidthObserver = new ResizeObserver(reportWidth);
+        function scheduleFit() {
+          if (!el.isConnected) {
+            el.taxaWidthObserver.disconnect();
+            return;
+          }
+          if (!el.taxaWidthFrame) el.taxaWidthFrame = requestAnimationFrame(fitWidth);
+        }
+        el.taxaWidthObserver = new ResizeObserver(scheduleFit);
         el.taxaWidthObserver.observe(panel);
         el.taxaWidthObserver.observe(legend);
-        reportWidth();
+        scheduleFit();
       }", data = list(id = session$ns("barplot_taxa_legend"), title = plot$labels$fill,
                       legendTitleSize = input$base_size, legendTextSize = input$base_size * 0.8,
-                      fontFamily = font_family, autoWidth = !manual_plot_size(),
-                      widthInput = session$ns("available_plot_width")))
+                      fontFamily = font_family, autoWidth = !manual_plot_size()))
     })
     
     output$download_barplot <- downloadHandler(

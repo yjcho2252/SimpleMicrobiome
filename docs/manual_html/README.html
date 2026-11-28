@@ -3,7 +3,7 @@
 <head>
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
-  <title>README | SimpleMicrobiome Guide</title>
+  <title>Guide Index | SimpleMicrobiome Guide</title>
   <script src='https://cdn.jsdelivr.net/npm/marked/marked.min.js'></script>
   <style>
     :root{--bg:#f4f7fb;--ink:#1f2937;--muted:#5b6b82;--brand:#0f3568;--card:#fff;--line:#dbe5f2;--code:#f8fafc}
@@ -14,7 +14,7 @@
     .hero h1{margin:0;font-size:20px}.hero p{margin:4px 0 0;font-size:13px;opacity:.9}
     .layout{display:grid;grid-template-columns:240px 1fr;gap:16px}
     .side,.main{background:var(--card);border:1px solid var(--line);border-radius:14px}
-    .side{padding:12px;position:sticky;top:14px;height:fit-content}
+    .side{padding:12px;position:sticky;top:14px;height:fit-content;max-height:calc(100vh - 28px);overflow-y:auto}
     .side h3{margin:0 0 8px;font-size:13px;color:var(--brand);text-transform:uppercase;letter-spacing:.6px}
     .side a{display:block;text-decoration:none;color:#0f4c92;padding:7px 9px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:2px}
     .side a:hover{background:#eef4ff}
@@ -25,32 +25,34 @@
     #content pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto} #content code{background:var(--code);padding:2px 5px;border-radius:5px}
     #content table{width:100%;border-collapse:collapse;margin:10px 0} #content th,#content td{border:1px solid var(--line);padding:8px 10px;text-align:left}
     .loading{color:var(--muted);font-size:14px}
-    @media (max-width:920px){.layout{grid-template-columns:1fr}.side{position:static}}
+    @media (max-width:920px){.layout{grid-template-columns:1fr}.side{position:static;max-height:none}}
   </style>
 </head>
 <body>
   <div class='wrap'>
-    <div class='hero'><div><h1>SimpleMicrobiome Guide</h1><p>README</p></div></div>
+    <div class='hero'><div><h1>SimpleMicrobiome Guide</h1><p>Guide Index</p></div></div>
     <div class='layout'>
       <aside class='side'>
         <h3>Modules</h3>
-        <a class='active' href='/manual/README.html'>Guide Index</a>
-<a href='/manual/data-loading.html'>Data Loading</a>
-<a href='/manual/preprocessing.html'>Preprocessing</a>
-<a href='/manual/taxa-profiles.html'>Taxa Profiles</a>
-<a href='/manual/taxa-profiles.html#taxa-bubble-plot'>Taxa Bubble Plot</a>
-<a href='/manual/alpha-diversity.html'>Alpha Diversity</a>
-<a href='/manual/beta-diversity.html'>Beta Diversity</a>
-<a href='/manual/association-biplot.html'>Constrained Ordination</a>
-<a href='/manual/ancom-bc2.html'>ANCOM-BC2</a>
-<a href='/manual/maaslin2.html'>MaAsLin2</a>
-<a href='/manual/maaslin3.html'>MaAsLin3</a>
-<a href='/manual/random-forest.html'>Random Forest</a>
-<a href='/manual/sparcc.html'>SparCC</a>
-<a href='/manual/spieceasi.html'>SPIEC-EASI</a>
-<a href='/manual/correlation-heatmap.html'>Association Heatmap</a>
-<a href='/manual/correlation-heatmap.html#taxa-correlogram'>Taxa Correlogram</a>
-<a href='/manual/correlation-heatmap.html#upset-plot'>UpSet Plot</a>
+        <a class='active' aria-current='page' href='/manual/README.html'>Guide Index</a>
+        <a href='/manual/data-loading.html'>Data Loading</a>
+        <a href='/manual/preprocessing.html'>Preprocessing</a>
+        <a href='/manual/taxa-bar-plot.html'>Taxa Bar Plot</a>
+        <a href='/manual/taxa-bubble-plot.html'>Taxa Bubble Plot</a>
+        <a href='/manual/taxa-comparison.html'>Taxa Comparison</a>
+        <a href='/manual/alpha-diversity.html'>Alpha Diversity</a>
+        <a href='/manual/beta-diversity.html'>Beta Diversity</a>
+        <a href='/manual/association-biplot.html'>Constrained Ordination</a>
+        <a href='/manual/ancom-bc2.html'>ANCOM-BC2</a>
+        <a href='/manual/maaslin2.html'>MaAsLin2</a>
+        <a href='/manual/maaslin3.html'>MaAsLin3</a>
+        <a href='/manual/random-forest.html'>Random Forest</a>
+        <a href='/manual/sparcc.html'>SparCC</a>
+        <a href='/manual/spieceasi.html'>SPIEC-EASI</a>
+        <a href='/manual/correlation-heatmap.html'>Association Heatmap</a>
+        <a href='/manual/taxa-correlogram.html'>Taxa Correlogram</a>
+        <a href='/manual/upset-plot.html'>Core &amp; Indicator Taxa</a>
+        <a href='/manual/citation.html'>Citation</a>
       </aside>
       <main class='main'><div id='content' class='loading'>Loading guide...</div></main>
     </div>

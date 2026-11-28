@@ -110,14 +110,19 @@ mod_sparcc_ui <- function(id) {
           tags$span("May take a long time.", style = "font-size: 11px; color: #b94a48;")
         ),
         tags$script(HTML(
-          "Shiny.addCustomMessageHandler('toggle-sparcc-run-btn', function(msg) {
-             var btn = document.getElementById(msg.id);
+          "function setSparccRunButton(btn, msg) {
              if (!btn) return;
              btn.disabled = !!msg.disabled;
              btn.classList.toggle('is-running', !!msg.running);
              var label = btn.querySelector('.sparcc-run-label');
              if (label && msg.label) label.textContent = msg.label;
-            });
+           }
+           Shiny.addCustomMessageHandler('toggle-sparcc-run-btn', function(msg) {
+             setSparccRunButton(document.getElementById(msg.id), msg);
+           });
+           $(document).on('click.sparcc', '.sparcc-run-btn', function() {
+             setSparccRunButton(this, { disabled: true, running: true, label: 'Running...' });
+           });
            Shiny.addCustomMessageHandler('set-tab-container-width', function(msg) {
              var el = document.getElementById(msg.id);
              if (!el) return;
@@ -547,6 +552,15 @@ mod_sparcc_server <- function(id, ps_obj) {
       !identical(previous, current_analysis_settings())
     })
 
+    update_run_button <- function(running) {
+      session$sendCustomMessage("toggle-sparcc-run-btn", list(
+        id = session$ns("run_network_btn"),
+        disabled = running,
+        running = running,
+        label = if (running) "Running..." else "Run SparCC"
+      ))
+    }
+
     observeEvent(input$run_network_btn, {
       now_ts <- Sys.time()
       next_allowed <- network_next_allowed_at()
@@ -555,6 +569,7 @@ mod_sparcc_server <- function(id, ps_obj) {
         return(invisible(NULL))
       }
       if (!is.na(next_allowed) && now_ts < next_allowed) {
+        update_run_button(FALSE)
         wait_sec <- ceiling(as.numeric(difftime(next_allowed, now_ts, units = "secs")))
         showNotification(paste0("Please wait ", wait_sec, " second(s) before running again."), type = "message", duration = 2)
         return(invisible(NULL))
@@ -566,6 +581,10 @@ mod_sparcc_server <- function(id, ps_obj) {
     }, ignoreInit = TRUE)
 
     network_result <- eventReactive(network_run_nonce(), {
+      on.exit({
+        network_running(FALSE)
+        update_run_button(FALSE)
+      }, add = TRUE)
       req(!is.null(input$run_network_btn) && input$run_network_btn > 0)
       req(build_network_inputs())
       validate(
@@ -575,11 +594,7 @@ mod_sparcc_server <- function(id, ps_obj) {
       network_running(TRUE)
       run_settings <- isolate(current_analysis_settings())
 
-      session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = TRUE, running = TRUE, label = "Running..."))
-      on.exit({
-        network_running(FALSE)
-        session$sendCustomMessage("toggle-sparcc-run-btn", list(id = session$ns("run_network_btn"), disabled = FALSE, running = FALSE, label = "Run SparCC"))
-      }, add = TRUE)
+      update_run_button(TRUE)
 
       set.seed(as.integer(input$seed))
       built <- build_network_inputs()
